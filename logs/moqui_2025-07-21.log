@@ -1,0 +1,15 @@
+2025-07-21 13:33:58,624 - moqui - INFO - All components initialized successfully
+2025-07-21 13:33:58,624 - moqui - INFO - Starting MOQUI automation system
+2025-07-21 13:33:58,625 - moqui - INFO - Performing startup recovery checks
+2025-07-21 13:33:58,626 - moqui - INFO - No stale cases found during startup
+2025-07-21 13:33:58,718 - moqui - INFO - No zombie GPU processes found
+2025-07-21 13:33:58,719 - moqui - INFO - Background workers started successfully
+2025-07-21 13:33:58,719 - moqui - INFO - Performing initial system health check and display update.
+2025-07-21 13:34:00,015 - moqui - INFO - Performing initial scan for new cases.
+2025-07-21 13:34:00,029 - moqui - INFO - Starting case scan
+2025-07-21 13:34:00,041 - moqui - INFO - Case scan completed. Found 0 new cases
+2025-07-21 13:34:05,373 - moqui - INFO - Received keyboard interrupt, shutting down...
+2025-07-21 13:34:05,373 - moqui - INFO - Shutting down MOQUI automation system
+2025-07-21 13:34:12,753 - moqui - INFO - MOQUI automation system shutdown complete
+2025-07-21 13:34:12,755 - moqui - INFO - Shutting down MOQUI automation system
+2025-07-21 13:34:12,757 - moqui - INFO - MOQUI automation system shutdown complete

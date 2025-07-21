@@ -1,0 +1,28 @@
+{
+  "servers": {
+    "windows_pc": "25.2.191.53",
+    "linux_gpu": "25.2.190.194"
+  },
+  "credentials": {
+    "username": "gpuadmin",
+    "password": "smc1234567"
+  },
+  "paths": {
+    "local_logdata": "C:\\moqui\\log_data",
+    "remote_workspace": "MOQUI_SMC/tps",
+    "local_output": "C:\\moqui\\dose_dcm",
+    "linux_mqi_interpreter": "/home/gpuadmin/MOQUI_SMC/mqi_interpreter/main_cli.py",
+    "linux_moqui_binary": "/home/gpuadmin/MOQUI_SMC/moqui/main",
+    "linux_raw_to_dcm": "/home/gpuadmin/MOQUI_SMC/RawToDCM/moqui_raw2dicom.py"
+  },
+  "scanning": {
+    "interval_minutes": 30,
+    "max_concurrent_cases": 2
+  },
+  "gpu_management": {
+    "total_gpus": 8,
+    "reserved_gpus": [7],
+    "memory_threshold_mb": 1024,
+    "monitoring_interval_sec": 5
+  }
+}
