@@ -5,6 +5,8 @@ import threading
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass
+from collections import deque
+from queue import Queue
 
 
 @dataclass
@@ -23,7 +25,7 @@ class CaseDisplayInfo:
 class StatusDisplay:
     """Real-time console status display for MOQUI automation system."""
     
-    def __init__(self, update_interval: int = 2):
+    def __init__(self, update_interval: int = 2, log_queue: Optional[Queue] = None):
         self.update_interval = update_interval
         self.running = False
         self.display_thread: Optional[threading.Thread] = None
@@ -32,6 +34,8 @@ class StatusDisplay:
         # Display data
         self.cases: Dict[str, CaseDisplayInfo] = {}
         self.system_info: Dict[str, Any] = {}
+        self.log_queue = log_queue
+        self.log_messages = deque(maxlen=10)  # Store last 10 log messages
         self.last_update = datetime.now()
         
         # Display configuration
@@ -111,10 +115,23 @@ class StatusDisplay:
             self.system_info.update(info)
             self.last_update = datetime.now()
     
+    def _update_logs(self) -> None:
+        """Update log messages from the queue."""
+        if not self.log_queue:
+            return
+        
+        while not self.log_queue.empty():
+            try:
+                log_record = self.log_queue.get_nowait()
+                self.log_messages.append(log_record.getMessage())
+            except Exception:
+                break
+
     def _display_loop(self) -> None:
         """Main display loop."""
         while self.running:
             try:
+                self._update_logs()
                 if self.use_rich:
                     self._display_rich()
                 else:
@@ -144,6 +161,7 @@ class StatusDisplay:
             layout.split_column(
                 Layout(name="header", size=3),
                 Layout(name="main"),
+                Layout(name="logs", ratio=1),
                 Layout(name="footer", size=5)
             )
             
@@ -152,6 +170,9 @@ class StatusDisplay:
             
             # Main content with case table
             layout["main"].update(self._create_cases_table())
+
+            # Logs panel
+            layout["logs"].update(self._create_logs_panel())
             
             # Footer with system stats
             layout["footer"].update(self._create_footer_panel())
@@ -228,6 +249,13 @@ class StatusDisplay:
                 print("No active cases")
             
             print()
+            print("-" * self.terminal_width)
+            print("[Logs]:")
+            for msg in self.log_messages:
+                print(f"  {msg}")
+            print("-" * self.terminal_width)
+            print()
+
             print("=" * self.terminal_width)
             print(f"Last updated: {self.last_update.strftime('%H:%M:%S')} | Press Ctrl+C to stop")
     
@@ -286,6 +314,17 @@ class StatusDisplay:
             return table
         except ImportError:
             return "Cases table (rich not available)"
+
+    def _create_logs_panel(self):
+        """Create logs panel for rich display."""
+        try:
+            from rich.panel import Panel
+            from rich.text import Text
+
+            log_text = "\n".join(self.log_messages)
+            return Panel(Text(log_text, style="white"), title="[Logs]", style="dim")
+        except ImportError:
+            return "Logs (rich not available)"
     
     def _create_footer_panel(self):
         """Create footer panel for rich display."""
@@ -317,6 +356,7 @@ class StatusDisplay:
                 console = Console()
                 console.print(self._create_header_panel())
                 console.print(self._create_cases_table())
+                console.print(self._create_logs_panel())
                 console.print(self._create_footer_panel())
                 return
             except ImportError:
@@ -327,9 +367,9 @@ class StatusDisplay:
 
 
 # Convenience functions for integration
-def create_status_display(update_interval: int = 2) -> StatusDisplay:
+def create_status_display(update_interval: int = 2, log_queue: Optional[Queue] = None) -> StatusDisplay:
     """Create and return a StatusDisplay instance."""
-    return StatusDisplay(update_interval=update_interval)
+    return StatusDisplay(update_interval=update_interval, log_queue=log_queue)
 
 
 def update_case_progress(display: StatusDisplay, case_id: str, stage: str, 

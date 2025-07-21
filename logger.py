@@ -8,12 +8,14 @@ import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Union
+from queue import Queue
 
 
 class Logger:
-    def __init__(self, log_directory: str = "logs", config: Optional[Dict[str, Any]] = None):
+    def __init__(self, log_directory: str = "logs", config: Optional[Dict[str, Any]] = None, log_queue: Optional[Queue] = None):
         self.log_directory = Path(log_directory)
         self.config = config or {}
+        self.log_queue = log_queue
         self.lock = threading.Lock()
         
         # Default configuration
@@ -77,6 +79,10 @@ class Logger:
             # Set up console handler if requested
             if self.console_output:
                 self._setup_console_handler(formatter)
+
+            # Set up queue handler if a queue is provided
+            if self.log_queue:
+                self._setup_queue_handler(formatter)
                 
         except Exception as e:
             print(f"Error setting up logger: {e}")
@@ -140,6 +146,15 @@ class Logger:
             
         except Exception as e:
             print(f"Error setting up console handler: {e}")
+
+    def _setup_queue_handler(self, formatter: logging.Formatter) -> None:
+        """Set up queue handler for UI display."""
+        try:
+            handler = logging.handlers.QueueHandler(self.log_queue)
+            handler.setFormatter(formatter)
+            self.logger.addHandler(handler)
+        except Exception as e:
+            print(f"Error setting up queue handler: {e}")
     
     def _filter_sensitive_data(self, message: str) -> str:
         """Filter sensitive information from log messages."""

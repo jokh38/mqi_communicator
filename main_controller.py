@@ -59,8 +59,11 @@ class MainController:
         # Register cleanup function
         atexit.register(self._cleanup_lock_file)
         
+        # Initialize log queue for UI
+        self.log_queue = queue.Queue()
+
         # Initialize status display
-        self.status_display = StatusDisplay(update_interval=2)
+        self.status_display = StatusDisplay(update_interval=2, log_queue=self.log_queue)
         
         # Initialize workflow engine
         self.workflow_engine = WorkflowEngine()
@@ -221,7 +224,7 @@ class MainController:
             self.monitoring_interval = self.config.get("gpu_management", {}).get("monitoring_interval_sec", 5)
 
             # Initialize logger first
-            self.logger = Logger(log_directory="logs", config=self.config.get("logging", {}))
+            self.logger = Logger(log_directory="logs", config=self.config.get("logging", {}), log_queue=self.log_queue)
             
             # Log session start with spacer
             logging.info("=" * 80)
