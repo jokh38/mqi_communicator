@@ -2,12 +2,18 @@ import paramiko
 import socket
 import time
 import logging
-from typing import Optional, Any
+import threading
+from typing import Optional, Any, Dict, ClassVar
 from abc import ABC, abstractmethod
 
 
 class BaseSSHConnector(ABC):
     """Base class for SSH/SFTP connections with common functionality."""
+    
+    # Class-level connection rate limiter
+    _connection_locks: ClassVar[Dict[str, threading.Lock]] = {}
+    _last_connection_times: ClassVar[Dict[str, float]] = {}
+    _global_lock: ClassVar[threading.Lock] = threading.Lock()
     
     def __init__(self, host: str, username: str, password: str, port: int = 22, timeout: int = 30):
         self.host = host
@@ -18,9 +24,10 @@ class BaseSSHConnector(ABC):
         self.transport: Optional[paramiko.Transport] = None
         self.connected = False
         
-        # Retry configuration
-        self.max_retries = 3
-        self.retry_delay = 5  # seconds
+        # Gentle retry configuration
+        self.max_retries = 10  # Max retries set to 10
+        self.retry_delay = 2   # Initial delay reduced to 2 seconds
+        self.min_connection_interval = 1.0 # Reduced to 1 second for faster retries in a controlled test
         self.network_error_types = (
             socket.error,
             paramiko.SSHException,
@@ -34,6 +41,30 @@ class BaseSSHConnector(ABC):
         """Check if the exception is a network-related error."""
         return isinstance(exception, self.network_error_types)
     
+    def _enforce_connection_rate_limit(self):
+        """Enforce rate limiting to prevent server overload."""
+        host_key = f"{self.host}:{self.port}"
+        
+        with self._global_lock:
+            # Get or create lock for this host
+            if host_key not in self._connection_locks:
+                self._connection_locks[host_key] = threading.Lock()
+            
+            host_lock = self._connection_locks[host_key]
+        
+        with host_lock:
+            current_time = time.time()
+            last_connection_time = self._last_connection_times.get(host_key, 0)
+            
+            time_since_last = current_time - last_connection_time
+            if time_since_last < self.min_connection_interval:
+                sleep_time = self.min_connection_interval - time_since_last
+                logging.debug(f"Rate limiting: waiting {sleep_time:.2f}s before connecting to {host_key}")
+                time.sleep(sleep_time)
+            
+            # Update last connection time
+            self._last_connection_times[host_key] = time.time()
+    
     def _retry_on_network_error(self, func, *args, **kwargs):
         """Retry function execution on network errors with exponential backoff."""
         last_exception = None
@@ -44,13 +75,18 @@ class BaseSSHConnector(ABC):
             except Exception as e:
                 last_exception = e
                 
+                # Explicitly check for FileNotFoundError and do not retry
+                if isinstance(e, FileNotFoundError):
+                    logging.error(f"Local file not found: {e}. This is not a network error and will not be retried.")
+                    raise e
+
                 if not self._is_network_error(e):
                     # Not a network error, don't retry
                     raise e
                 
                 if attempt < self.max_retries:
-                    # Calculate delay with exponential backoff
-                    delay = self.retry_delay * (2 ** attempt)
+                    # Use a fixed delay instead of exponential backoff
+                    delay = self.retry_delay
                     logging.warning(f"Network error on attempt {attempt + 1}/{self.max_retries + 1}: {e}. "
                                   f"Retrying in {delay} seconds...")
                     time.sleep(delay)
@@ -64,6 +100,44 @@ class BaseSSHConnector(ABC):
         # If we get here, all retries failed
         raise last_exception
     
+    def _create_transport(self):
+        """Create and configure a Paramiko transport object with socket validation."""
+        try:
+            # Create transport with socket validation
+            transport = paramiko.Transport((self.host, self.port))
+            
+            # Validate socket is properly created
+            if not hasattr(transport, 'sock') or not transport.sock:
+                raise paramiko.SSHException("Transport socket was not created properly")
+            
+            # Check socket file descriptor
+            try:
+                fd = transport.sock.fileno()
+                if fd == -1:
+                    raise paramiko.SSHException("Transport socket has invalid file descriptor")
+            except (OSError, AttributeError) as e:
+                raise paramiko.SSHException(f"Transport socket validation failed: {e}")
+            
+            # Very gentle timeouts to give server maximum time
+            transport.banner_timeout = 120  # 2 minutes - very patient
+            transport.auth_timeout = 120    # 2 minutes for auth
+            transport.handshake_timeout = 120  # 2 minutes for handshake
+            
+            # Gentle keepalive settings
+            transport.set_keepalive(60)  # Even less frequent keepalives
+            
+            # Conservative transport configuration
+            transport.use_compression(False)  # Disable compression for stability
+            transport.window_size = 65536      # Smaller window size
+            transport.max_packet_size = 32768  # Smaller packet size
+            
+            return transport
+        except paramiko.SSHException as e:
+            # This helps catch issues even before the banner is read
+            raise paramiko.SSHException(f"Failed to create transport: {e}")
+        except Exception as e:
+            raise paramiko.SSHException(f"Unexpected error creating transport: {e}")
+
     def connect(self) -> bool:
         """Establish SSH connection with improved timeout and retry logic."""
         max_attempts = 3
@@ -78,35 +152,18 @@ class BaseSSHConnector(ABC):
                         pass
                     self.transport = None
                 
-                # Add a small delay between attempts to avoid overwhelming the server
+                # Add a small fixed delay between attempts
                 if attempt > 0:
-                    delay = 2 ** attempt  # Exponential backoff: 2, 4 seconds
+                    delay = self.retry_delay
                     logging.info(f"Retrying SSH connection in {delay} seconds (attempt {attempt + 1}/{max_attempts})")
                     time.sleep(delay)
                 
-                # Test socket connectivity first
-                import socket
-                test_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                test_socket.settimeout(10)
-                try:
-                    test_socket.connect((self.host, self.port))
-                    test_socket.close()
-                except Exception as e:
-                    logging.warning(f"Socket connectivity test failed on attempt {attempt + 1}: {e}")
-                    if attempt < max_attempts - 1:
-                        continue
-                    else:
-                        raise
+                self._enforce_connection_rate_limit()
                 
-                # Create transport with more conservative timeouts
-                self.transport = paramiko.Transport((self.host, self.port))
-                self.transport.banner_timeout = 15  # Further reduced to avoid corrupted data
-                self.transport.auth_timeout = 30    
+                # Create a new transport and connect
+                sock = socket.create_connection((self.host, self.port), timeout=self.timeout)
+                self.transport = paramiko.Transport(sock)
                 
-                # Set more frequent keepalive to detect issues sooner
-                self.transport.set_keepalive(15)
-                
-                # Connect with authentication
                 self.transport.connect(username=self.username, password=self.password)
                 
                 self.connected = True
@@ -117,15 +174,46 @@ class BaseSSHConnector(ABC):
                 
             except paramiko.SSHException as e:
                 error_msg = str(e)
-                if any(keyword in error_msg for keyword in ["Invalid packet blocking", "Error reading SSH protocol banner", "utf-8", "UnicodeDecodeError"]):
-                    logging.warning(f"SSH protocol/encoding error on attempt {attempt + 1}/{max_attempts}: {error_msg}")
+                
+                # Log the raw banner if it's a banner error
+                if "banner" in error_msg.lower():
+                    try:
+                        # Attempt to read raw data from the socket for logging
+                        raw_banner_data = self.transport.sock.recv(1024) if self.transport and self.transport.sock else b''
+                        logging.error(f"Raw data received from server on banner error: {raw_banner_data!r}")
+                    except Exception as sock_err:
+                        logging.error(f"Could not retrieve raw banner data from socket: {sock_err}")
+
+                # Comprehensive list of retryable SSH errors
+                retryable_errors = [
+                    "Invalid packet blocking", 
+                    "Error reading SSH protocol banner", 
+                    "utf-8", 
+                    "UnicodeDecodeError",
+                    "WinError 10038",
+                    "소켓 이외의 개체에 작업을 시도했습니다",
+                    "Bad file descriptor",
+                    "Socket is not valid",
+                    "EOFError",
+                    "Connection lost",
+                    "Connection reset",
+                    "Connection refused",
+                    "Timeout"
+                ]
+                
+                if any(keyword in error_msg for keyword in retryable_errors):
+                    logging.warning(f"SSH connection error on attempt {attempt + 1}/{max_attempts}: {error_msg}")
                     if attempt < max_attempts - 1:
-                        continue  # Retry on encoding or protocol errors
+                        # Use a fixed delay for retrying
+                        total_delay = self.retry_delay
+                        logging.info(f"Retrying SSH connection in {total_delay} seconds (attempt {attempt + 2}/{max_attempts})")
+                        time.sleep(total_delay)
+                        continue  # Retry on all retryable errors
                     else:
-                        logging.error(f"SSH connection failed after {max_attempts} attempts due to protocol/encoding errors")
+                        logging.error(f"SSH connection failed after {max_attempts} attempts due to persistent errors")
                 else:
-                    logging.error(f"SSH connection failed: {error_msg}")
-                    break  # Don't retry on other SSH errors
+                    logging.error(f"SSH connection failed with non-retryable error: {error_msg}")
+                    break  # Don't retry on authentication errors, etc.
                 
             except Exception as e:
                 logging.error(f"SSH connection failed on attempt {attempt + 1}/{max_attempts}: {e}")
@@ -142,18 +230,33 @@ class BaseSSHConnector(ABC):
         pass
     
     def disconnect(self) -> None:
-        """Close SSH connection."""
+        """Close SSH connection and perform aggressive cleanup."""
+        logging.info(f"Disconnecting from {self.host}:{self.port}...")
         try:
             self._pre_disconnect_cleanup()
             
             if self.transport:
-                self.transport.close()
-                self.transport = None
-                
+                try:
+                    # Check if transport is still connected before closing
+                    if self.transport.is_active():
+                        self.transport.close()
+                        logging.info("Transport closed successfully.")
+                except Exception as e:
+                    logging.warning(f"Error while closing transport: {e}")
+                finally:
+                    # Aggressively clean up transport and its socket
+                    self.transport.sock = None
+                    self.transport = None
+            
             self.connected = False
+            logging.info(f"Disconnection from {self.host}:{self.port} completed.")
             
         except Exception as e:
             logging.error(f"Error during disconnect: {e}")
+        finally:
+            # Ensure all resources are released
+            self.transport = None
+            self.connected = False
     
     @abstractmethod
     def _pre_disconnect_cleanup(self) -> None:

@@ -54,58 +54,85 @@ class SFTPManager(BaseSSHConnector):
 
     def upload_file(self, local_path: str, remote_path: str, 
                    progress_callback: Optional[Callable] = None) -> bool:
-        """Upload single file with optional progress callback and network retry."""
+        """Upload single file with pre-flight checks, post-flight verification, and network retry."""
         def _upload_file_internal():
             if not self._ensure_connected():
                 raise ConnectionError("Failed to establish SFTP connection")
             
             local_file = Path(local_path)
             
-            if not local_file.exists():
-                raise FileNotFoundError(f"Local file does not exist: {local_path}")
+            # 1. Pre-flight check: Ensure local file exists right before upload
+            if not local_file.exists() or not local_file.is_file():
+                logging.error(f"[SFTP] Pre-flight check failed: Local file not found at {local_path}")
+                raise FileNotFoundError(f"Local file does not exist or is not a file: {local_path}")
             
-            # Create remote directory if needed
-            remote_dir = str(Path(remote_path).parent)
-            if remote_dir != ".":
-                self.create_remote_directory(remote_dir)
+            local_size = local_file.stat().st_size
+            logging.info(f"[SFTP] Starting upload of '{local_path}' ({local_size} bytes) to '{remote_path}'")
+
+            # The remote directory structure is assumed to be pre-created by `upload_directory`.
+            # This function is now only responsible for the atomic upload operation.
             
-            # Upload file
+            # 3. Upload file
             self.sftp.put(str(local_file), remote_path, callback=progress_callback)
-            return True
-        
+            logging.info(f"[SFTP] Upload command for '{local_path}' completed.")
+
+            # 4. Post-flight verification: Check existence and size
+            try:
+                remote_stat = self.sftp.stat(remote_path)
+                if remote_stat.st_size == local_size:
+                    logging.info(f"[SFTP] Post-flight verification successful for '{remote_path}'. Size matches ({local_size} bytes).")
+                    return True
+                else:
+                    logging.error(f"[SFTP] Post-flight verification failed for '{remote_path}'. Size mismatch: local={local_size}, remote={remote_stat.st_size}")
+                    raise IOError(f"SFTP size mismatch for {remote_path}")
+            except FileNotFoundError:
+                logging.error(f"[SFTP] Post-flight verification failed for '{remote_path}'. File not found on remote server.")
+                raise
+            except Exception as e:
+                logging.error(f"[SFTP] Post-flight verification failed for '{remote_path}' with error: {e}")
+                raise
+
         try:
             return self._retry_on_network_error(_upload_file_internal)
         except Exception as e:
-            logging.error(f"Failed to upload file {local_path} after retries: {e}")
+            logging.error(f"Failed to upload file {local_path} after all checks and retries: {e}")
             return False
 
     def upload_directory(self, local_path: str, remote_path: str, 
                         progress_callback: Optional[Callable] = None) -> bool:
-        """Upload entire directory recursively."""
+        """Upload entire directory recursively by first creating the full directory structure."""
         if not self._ensure_connected():
             return False
         
+        local_dir = Path(local_path)
+        if not local_dir.is_dir():
+            logging.error(f"Local path is not a directory: {local_dir}")
+            return False
+
         try:
-            local_dir = Path(local_path)
+            # Step 1: Create all directories on the remote first.
+            logging.info(f"[SFTP] Creating remote directory structure for {remote_path}")
+            self.create_remote_directory(remote_path) # Create the root directory
+            for local_subdir in local_dir.rglob("*"):
+                if local_subdir.is_dir():
+                    relative_dir = local_subdir.relative_to(local_dir)
+                    remote_subdir_path = f"{remote_path.rstrip('/')}/{str(relative_dir).replace(chr(92), '/')}"
+                    self.create_remote_directory(remote_subdir_path)
+
+            # Step 2: Upload all files now that directories are guaranteed to exist.
+            logging.info(f"[SFTP] Starting file uploads for {local_dir}")
+            all_files = [p for p in local_dir.rglob("*") if p.is_file()]
+            logging.info(f"[SFTP] Found {len(all_files)} file(s) to upload.")
+
+            for file_path in all_files:
+                relative_path = file_path.relative_to(local_dir)
+                remote_file_path = f"{remote_path.rstrip('/')}/{str(relative_path).replace(chr(92), '/')}"
+                
+                if not self.upload_file(str(file_path), remote_file_path, progress_callback):
+                    logging.error(f"Stopping upload due to failure on file: {file_path}")
+                    return False
             
-            if not local_dir.exists() or not local_dir.is_dir():
-                logging.error(f"Local directory does not exist: {local_path}")
-                return False
-            
-            # Create remote directory
-            if not self.create_remote_directory(remote_path):
-                return False
-            
-            # Upload all files
-            for file_path in local_dir.rglob("*"):
-                if file_path.is_file():
-                    # Calculate relative path
-                    relative_path = file_path.relative_to(local_dir)
-                    remote_file_path = f"{remote_path.rstrip('/')}/{str(relative_path).replace(chr(92), '/')}"
-                    
-                    if not self.upload_file(str(file_path), remote_file_path, progress_callback):
-                        return False
-            
+            logging.info(f"Successfully uploaded all files from {local_dir}")
             return True
             
         except Exception as e:

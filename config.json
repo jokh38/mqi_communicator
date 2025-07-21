@@ -16,7 +16,7 @@
     "linux_raw_to_dcm": "/home/gpuadmin/MOQUI_SMC/RawToDCM/moqui_raw2dicom.py"
   },
   "scanning": {
-    "interval_minutes": 30,
+    "interval_minutes": 1,
     "max_concurrent_cases": 2
   },
   "gpu_management": {

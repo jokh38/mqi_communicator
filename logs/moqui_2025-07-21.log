@@ -13,3 +13,1105 @@
 2025-07-21 13:34:12,753 - moqui - INFO - MOQUI automation system shutdown complete
 2025-07-21 13:34:12,755 - moqui - INFO - Shutting down MOQUI automation system
 2025-07-21 13:34:12,757 - moqui - INFO - MOQUI automation system shutdown complete
+2025-07-21 13:56:15,579 - moqui - INFO - All components initialized successfully
+2025-07-21 13:56:15,580 - moqui - INFO - Starting MOQUI automation system
+2025-07-21 13:56:15,580 - moqui - INFO - Performing startup recovery checks
+2025-07-21 13:56:15,581 - moqui - INFO - No stale cases found during startup
+2025-07-21 13:56:15,661 - moqui - INFO - No zombie GPU processes found
+2025-07-21 13:56:15,662 - moqui - INFO - Background workers started successfully
+2025-07-21 13:56:15,662 - moqui - INFO - Performing initial system health check and display update.
+2025-07-21 13:56:16,963 - moqui - INFO - Performing initial scan for new cases.
+2025-07-21 13:56:16,963 - moqui - INFO - Starting case scan
+2025-07-21 13:56:19,338 - moqui - INFO - Received keyboard interrupt, shutting down...
+2025-07-21 13:56:19,339 - moqui - INFO - Shutting down MOQUI automation system
+2025-07-21 13:56:23,697 - moqui - INFO - MOQUI automation system shutdown complete
+2025-07-21 13:56:23,698 - moqui - INFO - Shutting down MOQUI automation system
+2025-07-21 13:56:23,698 - moqui - INFO - MOQUI automation system shutdown complete
+2025-07-21 14:02:18,837 - moqui - INFO - All components initialized successfully
+2025-07-21 14:02:18,838 - moqui - INFO - Starting MOQUI automation system
+2025-07-21 14:02:18,838 - moqui - INFO - Performing startup recovery checks
+2025-07-21 14:02:18,838 - moqui - INFO - No stale cases found during startup
+2025-07-21 14:02:18,910 - moqui - INFO - No zombie GPU processes found
+2025-07-21 14:02:18,910 - moqui - INFO - Background workers started successfully
+2025-07-21 14:02:18,911 - moqui - INFO - Performing initial system health check and display update.
+2025-07-21 14:02:20,208 - moqui - INFO - Performing initial scan for new cases.
+2025-07-21 14:02:20,209 - moqui - INFO - Starting case scan
+2025-07-21 14:02:20,236 - moqui - INFO - Added new case to queue: 1.2.840.113854.19.1.19271.1
+2025-07-21 14:02:20,236 - moqui - INFO - Case scan completed. Found 1 new cases
+2025-07-21 14:02:25,084 - moqui - INFO - Added case 1.2.840.113854.19.1.19271.1 to waiting list (retry #1, next retry in 131 seconds)
+2025-07-21 14:02:25,085 - moqui - WARNING - Failed to schedule case 1.2.840.113854.19.1.19271.1 - added to waiting list
+2025-07-21 14:02:28,700 - moqui - INFO - Received keyboard interrupt, shutting down...
+2025-07-21 14:02:28,702 - moqui - INFO - Shutting down MOQUI automation system
+2025-07-21 14:02:31,461 - moqui - INFO - Shutting down MOQUI automation system
+2025-07-21 14:02:32,987 - moqui - INFO - MOQUI automation system shutdown complete
+2025-07-21 14:13:27,805 - moqui - INFO - All components initialized successfully
+2025-07-21 14:13:27,806 - moqui - INFO - Starting MOQUI automation system
+2025-07-21 14:13:27,807 - moqui - INFO - Performing startup recovery checks
+2025-07-21 14:13:27,807 - moqui - INFO - No stale cases found during startup
+2025-07-21 14:13:28,134 - moqui - INFO - No zombie GPU processes found
+2025-07-21 14:13:28,136 - moqui - INFO - Background workers started successfully
+2025-07-21 14:13:28,136 - moqui - INFO - Performing initial system health check and display update.
+2025-07-21 14:13:29,585 - moqui - INFO - Performing initial scan for new cases.
+2025-07-21 14:13:29,587 - moqui - INFO - Starting case scan
+2025-07-21 14:13:29,589 - moqui - INFO - Case scan completed. Found 0 new cases
+2025-07-21 14:18:04,542 - moqui - INFO - All components initialized successfully
+2025-07-21 14:18:04,542 - moqui - INFO - Starting MOQUI automation system
+2025-07-21 14:18:04,542 - moqui - INFO - Performing startup recovery checks
+2025-07-21 14:18:04,542 - moqui - INFO - No stale cases found during startup
+2025-07-21 14:18:04,616 - moqui - INFO - No zombie GPU processes found
+2025-07-21 14:18:04,616 - moqui - INFO - Background workers started successfully
+2025-07-21 14:18:04,616 - moqui - INFO - Performing initial system health check and display update.
+2025-07-21 14:18:05,924 - moqui - INFO - Performing initial scan for new cases.
+2025-07-21 14:18:05,924 - moqui - INFO - Starting case scan
+2025-07-21 14:18:05,930 - moqui - INFO - Case scan completed. Found 0 new cases
+2025-07-21 14:18:11,066 - moqui - INFO - Received keyboard interrupt, shutting down...
+2025-07-21 14:18:11,066 - moqui - INFO - Shutting down MOQUI automation system
+2025-07-21 14:18:18,673 - moqui - INFO - MOQUI automation system shutdown complete
+2025-07-21 14:18:18,673 - moqui - INFO - Shutting down MOQUI automation system
+2025-07-21 14:18:18,673 - moqui - INFO - MOQUI automation system shutdown complete
+2025-07-21 14:18:32,768 - moqui - INFO - All components initialized successfully
+2025-07-21 14:18:32,768 - moqui - INFO - Starting MOQUI automation system
+2025-07-21 14:18:32,771 - moqui - INFO - Performing startup recovery checks
+2025-07-21 14:18:32,771 - moqui - INFO - No stale cases found during startup
+2025-07-21 14:18:32,834 - moqui - INFO - No zombie GPU processes found
+2025-07-21 14:18:32,834 - moqui - INFO - Background workers started successfully
+2025-07-21 14:18:32,834 - moqui - INFO - Performing initial system health check and display update.
+2025-07-21 14:18:34,133 - moqui - INFO - Performing initial scan for new cases.
+2025-07-21 14:18:34,133 - moqui - INFO - Starting case scan
+2025-07-21 14:18:34,145 - moqui - INFO - Added new case to queue: 1.2.840.113854.19.1.19271.1
+2025-07-21 14:18:34,145 - moqui - INFO - Case scan completed. Found 1 new cases
+2025-07-21 14:18:40,371 - moqui - INFO - Received keyboard interrupt, shutting down...
+2025-07-21 14:18:40,371 - moqui - INFO - Shutting down MOQUI automation system
+2025-07-21 14:18:45,375 - moqui - INFO - Shutting down MOQUI automation system
+2025-07-21 14:18:46,893 - moqui - INFO - MOQUI automation system shutdown complete
+2025-07-21 14:21:12,154 - moqui - INFO - All components initialized successfully
+2025-07-21 14:21:12,156 - moqui - INFO - Starting MOQUI automation system
+2025-07-21 14:21:12,156 - moqui - INFO - Performing startup recovery checks
+2025-07-21 14:21:12,157 - moqui - INFO - No stale cases found during startup
+2025-07-21 14:21:12,375 - moqui - INFO - No zombie GPU processes found
+2025-07-21 14:21:12,376 - moqui - INFO - Background workers started successfully
+2025-07-21 14:21:12,377 - moqui - INFO - Performing initial system health check and display update.
+2025-07-21 14:21:13,773 - moqui - INFO - Performing initial scan for new cases.
+2025-07-21 14:21:13,776 - moqui - INFO - Starting case scan
+2025-07-21 14:21:13,778 - moqui - INFO - Case scan completed. Found 0 new cases
+2025-07-21 14:25:26,604 - moqui - INFO - All components initialized successfully
+2025-07-21 14:25:26,607 - moqui - INFO - Starting MOQUI automation system
+2025-07-21 14:25:26,609 - moqui - INFO - Performing startup recovery checks
+2025-07-21 14:25:26,609 - moqui - INFO - No stale cases found during startup
+2025-07-21 14:25:26,849 - moqui - INFO - No zombie GPU processes found
+2025-07-21 14:25:26,851 - moqui - INFO - Background workers started successfully
+2025-07-21 14:25:26,851 - moqui - INFO - Performing initial system health check and display update.
+2025-07-21 14:25:28,288 - moqui - INFO - Performing initial scan for new cases.
+2025-07-21 14:25:28,290 - moqui - INFO - Starting case scan
+2025-07-21 14:25:28,291 - moqui - INFO - Case scan completed. Found 0 new cases
+2025-07-21 14:26:38,076 - moqui - INFO - All components initialized successfully
+2025-07-21 14:26:38,076 - moqui - INFO - Starting MOQUI automation system
+2025-07-21 14:26:38,076 - moqui - INFO - Performing startup recovery checks
+2025-07-21 14:26:38,076 - moqui - INFO - No stale cases found during startup
+2025-07-21 14:26:38,148 - moqui - INFO - No zombie GPU processes found
+2025-07-21 14:26:38,148 - moqui - INFO - Background workers started successfully
+2025-07-21 14:26:38,148 - moqui - INFO - Performing initial system health check and display update.
+2025-07-21 14:26:39,452 - moqui - INFO - Performing initial scan for new cases.
+2025-07-21 14:26:39,452 - moqui - INFO - Starting case scan
+2025-07-21 14:26:39,465 - moqui - INFO - Added new case to queue: 1.2.840.113854.19.1.19271.1
+2025-07-21 14:26:39,465 - moqui - INFO - Case scan completed. Found 1 new cases
+2025-07-21 14:26:46,680 - moqui - INFO - Received keyboard interrupt, shutting down...
+2025-07-21 14:26:46,680 - moqui - INFO - Shutting down MOQUI automation system
+2025-07-21 14:26:52,228 - moqui - INFO - MOQUI automation system shutdown complete
+2025-07-21 14:26:52,231 - moqui - INFO - Shutting down MOQUI automation system
+2025-07-21 14:28:40,208 - moqui - INFO - All components initialized successfully
+2025-07-21 14:28:40,209 - moqui - INFO - Starting MOQUI automation system
+2025-07-21 14:28:40,210 - moqui - INFO - Performing startup recovery checks
+2025-07-21 14:28:40,211 - moqui - INFO - No stale cases found during startup
+2025-07-21 14:28:40,443 - moqui - INFO - No zombie GPU processes found
+2025-07-21 14:28:40,443 - moqui - INFO - Background workers started successfully
+2025-07-21 14:28:40,444 - moqui - INFO - Performing initial system health check and display update.
+2025-07-21 14:28:41,892 - moqui - INFO - Performing initial scan for new cases.
+2025-07-21 14:28:41,896 - moqui - INFO - Starting case scan
+2025-07-21 14:28:41,898 - moqui - INFO - Case scan completed. Found 0 new cases
+2025-07-21 14:30:21,825 - moqui - INFO - All components initialized successfully
+2025-07-21 14:30:21,838 - moqui - INFO - Starting MOQUI automation system
+2025-07-21 14:30:21,838 - moqui - INFO - Performing startup recovery checks
+2025-07-21 14:30:21,838 - moqui - INFO - No stale cases found during startup
+2025-07-21 14:30:21,925 - moqui - INFO - No zombie GPU processes found
+2025-07-21 14:30:21,925 - moqui - INFO - Background workers started successfully
+2025-07-21 14:30:21,925 - moqui - INFO - Performing initial system health check and display update.
+2025-07-21 14:30:23,223 - moqui - INFO - Performing initial scan for new cases.
+2025-07-21 14:30:23,223 - moqui - INFO - Starting case scan
+2025-07-21 14:30:23,230 - moqui - INFO - Case scan completed. Found 0 new cases
+2025-07-21 14:30:26,835 - moqui - INFO - Received keyboard interrupt, shutting down...
+2025-07-21 14:30:26,835 - moqui - INFO - Shutting down MOQUI automation system
+2025-07-21 14:30:29,952 - moqui - INFO - MOQUI automation system shutdown complete
+2025-07-21 14:30:29,957 - moqui - INFO - Shutting down MOQUI automation system
+2025-07-21 14:30:29,960 - moqui - INFO - MOQUI automation system shutdown complete
+2025-07-21 14:38:09,543 - moqui - INFO - All components initialized successfully
+2025-07-21 14:38:09,543 - moqui - INFO - Starting MOQUI automation system
+2025-07-21 14:38:09,543 - moqui - INFO - Performing startup recovery checks
+2025-07-21 14:38:09,543 - moqui - INFO - No stale cases found during startup
+2025-07-21 14:38:09,613 - moqui - INFO - No zombie GPU processes found
+2025-07-21 14:38:09,613 - moqui - INFO - Background workers started successfully
+2025-07-21 14:38:09,613 - moqui - INFO - Performing initial system health check and display update.
+2025-07-21 14:38:10,913 - moqui - INFO - Performing initial scan for new cases.
+2025-07-21 14:38:10,913 - moqui - INFO - Starting case scan
+2025-07-21 14:38:10,929 - moqui - INFO - Case scan completed. Found 0 new cases
+2025-07-21 14:38:29,839 - moqui - INFO - Received keyboard interrupt, shutting down...
+2025-07-21 14:38:29,839 - moqui - INFO - Shutting down MOQUI automation system
+2025-07-21 14:38:34,626 - moqui - INFO - Shutting down MOQUI automation system
+2025-07-21 14:38:35,684 - moqui - INFO - MOQUI automation system shutdown complete
+2025-07-21 14:42:19,692 - moqui - INFO - All components initialized successfully
+2025-07-21 14:42:19,693 - moqui - INFO - Starting MOQUI automation system
+2025-07-21 14:42:19,693 - moqui - INFO - Performing startup recovery checks
+2025-07-21 14:42:19,693 - moqui - INFO - No stale cases found during startup
+2025-07-21 14:42:19,768 - moqui - INFO - No zombie GPU processes found
+2025-07-21 14:42:19,768 - moqui - INFO - Background workers started successfully
+2025-07-21 14:42:19,768 - moqui - INFO - Performing initial system health check and display update.
+2025-07-21 14:42:21,063 - moqui - INFO - Performing initial scan for new cases.
+2025-07-21 14:42:21,063 - moqui - INFO - Starting case scan
+2025-07-21 14:42:21,113 - moqui - INFO - Added new case to queue: 1.2.840.113854.19.1.19271.1
+2025-07-21 14:42:21,113 - moqui - INFO - Case scan completed. Found 1 new cases
+2025-07-21 14:42:26,983 - moqui - INFO - Received keyboard interrupt, shutting down...
+2025-07-21 14:42:26,983 - moqui - INFO - Shutting down MOQUI automation system
+2025-07-21 14:42:31,990 - moqui - INFO - Shutting down MOQUI automation system
+2025-07-21 14:42:33,820 - moqui - INFO - MOQUI automation system shutdown complete
+2025-07-21 14:45:55,553 - moqui - INFO - All components initialized successfully
+2025-07-21 14:45:55,553 - moqui - INFO - Starting MOQUI automation system
+2025-07-21 14:45:55,563 - moqui - INFO - Performing startup recovery checks
+2025-07-21 14:45:55,563 - moqui - INFO - No stale cases found during startup
+2025-07-21 14:45:55,633 - moqui - INFO - No zombie GPU processes found
+2025-07-21 14:45:55,637 - moqui - INFO - Background workers started successfully
+2025-07-21 14:45:55,637 - moqui - INFO - Performing initial system health check and display update.
+2025-07-21 14:45:56,931 - moqui - INFO - Performing initial scan for new cases.
+2025-07-21 14:45:56,933 - moqui - INFO - Starting case scan
+2025-07-21 14:45:56,943 - moqui - INFO - Case scan completed. Found 0 new cases
+2025-07-21 14:45:58,411 - moqui - INFO - Received keyboard interrupt, shutting down...
+2025-07-21 14:45:58,411 - moqui - INFO - Shutting down MOQUI automation system
+2025-07-21 14:46:00,741 - moqui - INFO - Shutting down MOQUI automation system
+2025-07-21 14:46:03,679 - moqui - INFO - MOQUI automation system shutdown complete
+2025-07-21 14:46:20,292 - moqui - INFO - All components initialized successfully
+2025-07-21 14:46:20,293 - moqui - INFO - Starting MOQUI automation system
+2025-07-21 14:46:20,293 - moqui - INFO - Performing startup recovery checks
+2025-07-21 14:46:20,293 - moqui - INFO - No stale cases found during startup
+2025-07-21 14:46:20,363 - moqui - INFO - No zombie GPU processes found
+2025-07-21 14:46:20,363 - moqui - INFO - Background workers started successfully
+2025-07-21 14:46:20,363 - moqui - INFO - Performing initial system health check and display update.
+2025-07-21 14:46:21,665 - moqui - INFO - Performing initial scan for new cases.
+2025-07-21 14:46:21,668 - moqui - INFO - Starting case scan
+2025-07-21 14:46:21,683 - moqui - INFO - Added new case to queue: 1.2.840.113854.19.1.19271.1
+2025-07-21 14:46:21,683 - moqui - INFO - Case scan completed. Found 1 new cases
+2025-07-21 14:46:29,453 - moqui - INFO - Received keyboard interrupt, shutting down...
+2025-07-21 14:46:29,453 - moqui - INFO - Shutting down MOQUI automation system
+2025-07-21 14:46:34,459 - moqui - INFO - Shutting down MOQUI automation system
+2025-07-21 14:51:35,058 - moqui - INFO - All components initialized successfully
+2025-07-21 14:51:35,058 - moqui - INFO - Starting MOQUI automation system
+2025-07-21 14:51:35,058 - moqui - INFO - Performing startup recovery checks
+2025-07-21 14:51:35,058 - moqui - INFO - No stale cases found during startup
+2025-07-21 14:51:35,145 - moqui - INFO - No zombie GPU processes found
+2025-07-21 14:51:35,145 - moqui - INFO - Background workers started successfully
+2025-07-21 14:51:35,145 - moqui - INFO - Performing initial system health check and display update.
+2025-07-21 14:51:36,453 - moqui - INFO - Performing initial scan for new cases.
+2025-07-21 14:51:36,453 - moqui - INFO - Starting case scan
+2025-07-21 14:51:36,463 - moqui - INFO - Case scan completed. Found 0 new cases
+2025-07-21 14:51:38,751 - moqui - INFO - Received keyboard interrupt, shutting down...
+2025-07-21 14:51:38,751 - moqui - INFO - Shutting down MOQUI automation system
+2025-07-21 14:51:40,258 - moqui - INFO - Shutting down MOQUI automation system
+2025-07-21 14:51:43,171 - moqui - INFO - MOQUI automation system shutdown complete
+2025-07-21 14:51:50,296 - moqui - INFO - All components initialized successfully
+2025-07-21 14:51:50,296 - moqui - INFO - Starting MOQUI automation system
+2025-07-21 14:51:50,296 - moqui - INFO - Performing startup recovery checks
+2025-07-21 14:51:50,296 - moqui - INFO - No stale cases found during startup
+2025-07-21 14:51:50,383 - moqui - INFO - No zombie GPU processes found
+2025-07-21 14:51:50,383 - moqui - INFO - Background workers started successfully
+2025-07-21 14:51:50,383 - moqui - INFO - Performing initial system health check and display update.
+2025-07-21 14:51:51,675 - moqui - INFO - Performing initial scan for new cases.
+2025-07-21 14:51:51,675 - moqui - INFO - Starting case scan
+2025-07-21 14:51:51,683 - moqui - INFO - Added new case to queue: 1.2.840.113854.19.1.19271.1
+2025-07-21 14:51:51,683 - moqui - INFO - Case scan completed. Found 1 new cases
+2025-07-21 14:51:57,673 - moqui - INFO - Received keyboard interrupt, shutting down...
+2025-07-21 14:51:57,673 - moqui - INFO - Shutting down MOQUI automation system
+2025-07-21 14:52:02,680 - moqui - INFO - Shutting down MOQUI automation system
+2025-07-21 14:52:04,435 - moqui - INFO - MOQUI automation system shutdown complete
+2025-07-21 14:58:41,610 - moqui - INFO - All components initialized successfully
+2025-07-21 14:58:41,613 - moqui - INFO - Starting MOQUI automation system
+2025-07-21 14:58:41,613 - moqui - INFO - Performing startup recovery checks
+2025-07-21 14:58:41,613 - moqui - INFO - No stale cases found during startup
+2025-07-21 14:58:41,693 - moqui - INFO - No zombie GPU processes found
+2025-07-21 14:58:41,693 - moqui - INFO - Background workers started successfully
+2025-07-21 14:58:41,693 - moqui - INFO - Performing initial system health check and display update.
+2025-07-21 14:58:42,999 - moqui - INFO - Performing initial scan for new cases.
+2025-07-21 14:58:42,999 - moqui - INFO - Starting case scan
+2025-07-21 14:58:43,026 - moqui - INFO - Added new case to queue: 1.2.840.113854.19.1.19271.1
+2025-07-21 14:58:43,026 - moqui - INFO - Case scan completed. Found 1 new cases
+2025-07-21 14:58:48,353 - moqui - INFO - Received keyboard interrupt, shutting down...
+2025-07-21 14:58:48,353 - moqui - INFO - Shutting down MOQUI automation system
+2025-07-21 14:58:53,357 - moqui - INFO - Shutting down MOQUI automation system
+2025-07-21 14:58:55,753 - moqui - INFO - MOQUI automation system shutdown complete
+2025-07-21 15:04:15,793 - moqui - INFO - All components initialized successfully
+2025-07-21 15:04:15,793 - moqui - INFO - Starting MOQUI automation system
+2025-07-21 15:04:15,793 - moqui - INFO - Performing startup recovery checks
+2025-07-21 15:04:15,793 - moqui - INFO - No stale cases found during startup
+2025-07-21 15:04:15,873 - moqui - INFO - No zombie GPU processes found
+2025-07-21 15:04:15,873 - moqui - INFO - Background workers started successfully
+2025-07-21 15:04:15,873 - moqui - INFO - Performing initial system health check and display update.
+2025-07-21 15:04:17,173 - moqui - INFO - Performing initial scan for new cases.
+2025-07-21 15:04:17,173 - moqui - INFO - Starting case scan
+2025-07-21 15:04:17,204 - moqui - INFO - Added new case to queue: 1.2.840.113854.19.1.19271.1
+2025-07-21 15:04:17,204 - moqui - INFO - Case scan completed. Found 1 new cases
+2025-07-21 15:04:23,093 - moqui - INFO - Received keyboard interrupt, shutting down...
+2025-07-21 15:04:23,093 - moqui - INFO - Shutting down MOQUI automation system
+2025-07-21 15:04:28,111 - moqui - INFO - Shutting down MOQUI automation system
+2025-07-21 15:04:29,948 - moqui - INFO - MOQUI automation system shutdown complete
+2025-07-21 15:09:41,693 - moqui - INFO - All components initialized successfully
+2025-07-21 15:09:41,693 - moqui - INFO - Starting MOQUI automation system
+2025-07-21 15:09:41,693 - moqui - INFO - Performing startup recovery checks
+2025-07-21 15:09:41,693 - moqui - INFO - No stale cases found during startup
+2025-07-21 15:09:41,768 - moqui - INFO - No zombie GPU processes found
+2025-07-21 15:09:41,773 - moqui - INFO - Background workers started successfully
+2025-07-21 15:09:41,773 - moqui - INFO - Performing initial system health check and display update.
+2025-07-21 15:09:43,083 - moqui - INFO - Performing initial scan for new cases.
+2025-07-21 15:09:43,087 - moqui - INFO - Starting case scan
+2025-07-21 15:09:43,097 - moqui - INFO - Added new case to queue: 1.2.840.113854.19.1.19271.1
+2025-07-21 15:09:43,097 - moqui - INFO - Case scan completed. Found 1 new cases
+2025-07-21 15:09:49,523 - moqui - INFO - Received keyboard interrupt, shutting down...
+2025-07-21 15:09:49,523 - moqui - INFO - Shutting down MOQUI automation system
+2025-07-21 15:09:54,530 - moqui - INFO - Shutting down MOQUI automation system
+2025-07-21 15:09:55,820 - moqui - INFO - MOQUI automation system shutdown complete
+2025-07-21 15:13:47,795 - moqui - INFO - ==================================================
+2025-07-21 15:13:47,795 - moqui - INFO - Starting End-to-End Data Pipeline Test
+2025-07-21 15:13:47,795 - moqui - INFO - ==================================================
+2025-07-21 15:13:47,803 - moqui - INFO - Step 1: Loading configuration from 'config.json'...
+2025-07-21 15:13:47,803 - moqui - ERROR - Configuration is missing 'ssh' or 'paths' section.
+2025-07-21 15:14:24,523 - moqui - INFO - ==================================================
+2025-07-21 15:14:24,523 - moqui - INFO - Starting End-to-End Data Pipeline Test
+2025-07-21 15:14:24,523 - moqui - INFO - ==================================================
+2025-07-21 15:14:24,523 - moqui - INFO - Step 1: Loading configuration from 'config.json'...
+2025-07-21 15:14:24,523 - moqui - INFO - Reconstructing SSH configuration from existing 'servers' and 'credentials' keys.
+2025-07-21 15:14:24,523 - moqui - INFO - Local data source: C:\moqui\log_data
+2025-07-21 15:14:24,523 - moqui - INFO - Remote target directory: /tmp/log_data
+2025-07-21 15:14:24,523 - moqui - INFO - 
+Step 2: Scanning for log data in 'C:\moqui\log_data'...
+2025-07-21 15:14:24,523 - moqui - ERROR - ==================================================
+2025-07-21 15:14:24,523 - moqui - ERROR - An unhandled exception occurred during the pipeline test!
+2025-07-21 15:14:24,523 - moqui - ERROR - Error Type: AttributeError
+2025-07-21 15:14:24,523 - moqui - ERROR - Error Message: 'CaseScanner' object has no attribute 'scan_for_files'
+2025-07-21 15:14:24,523 - moqui - ERROR - Full Traceback:
+2025-07-21 15:14:24,533 - moqui - ERROR - Traceback (most recent call last):
+  File "C:\moqui\mqi_communicator\test_data_pipeline.py", line 65, in run_test_pipeline
+    files_to_transfer = scanner.scan_for_files() # scan_for_files 메소드가 있다고 가정
+                        ^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'CaseScanner' object has no attribute 'scan_for_files'
+
+2025-07-21 15:14:24,535 - moqui - ERROR - ==================================================
+2025-07-21 15:14:24,535 - moqui - ERROR - Test failed. Please review the logs to diagnose the issue.
+2025-07-21 15:15:39,670 - moqui - INFO - ==================================================
+2025-07-21 15:15:39,670 - moqui - INFO - Starting End-to-End Data Pipeline Test
+2025-07-21 15:15:39,670 - moqui - INFO - ==================================================
+2025-07-21 15:15:39,673 - moqui - INFO - Step 1: Loading configuration from 'config.json'...
+2025-07-21 15:15:39,673 - moqui - INFO - Reconstructing SSH configuration from existing 'servers' and 'credentials' keys.
+2025-07-21 15:15:39,673 - moqui - INFO - Local data source: C:\moqui\log_data
+2025-07-21 15:15:39,673 - moqui - INFO - Remote target directory: /tmp/log_data
+2025-07-21 15:15:39,673 - moqui - INFO - 
+Step 2: Scanning for new cases in 'C:\moqui\log_data'...
+2025-07-21 15:15:39,686 - moqui - INFO - Found 1 new cases to process: ['test_case_01']
+2025-07-21 15:15:39,686 - moqui - INFO - 
+Step 3: Transferring files for 1 cases to GPU server via SFTP...
+2025-07-21 15:15:39,686 - moqui - ERROR - ==================================================
+2025-07-21 15:15:39,686 - moqui - ERROR - An unhandled exception occurred during the pipeline test!
+2025-07-21 15:15:39,686 - moqui - ERROR - Error Type: TypeError
+2025-07-21 15:15:39,686 - moqui - ERROR - Error Message: SFTPManager.__init__() got an unexpected keyword argument 'hostname'
+2025-07-21 15:15:39,686 - moqui - ERROR - Full Traceback:
+2025-07-21 15:15:39,686 - moqui - ERROR - Traceback (most recent call last):
+  File "C:\moqui\mqi_communicator\test_data_pipeline.py", line 75, in run_test_pipeline
+    sftp_manager = SFTPManager(
+                   ^^^^^^^^^^^^
+TypeError: SFTPManager.__init__() got an unexpected keyword argument 'hostname'
+
+2025-07-21 15:15:39,686 - moqui - ERROR - ==================================================
+2025-07-21 15:15:39,686 - moqui - ERROR - Test failed. Please review the logs to diagnose the issue.
+2025-07-21 15:17:37,743 - moqui - INFO - ==================================================
+2025-07-21 15:17:37,743 - moqui - INFO - Starting End-to-End Data Pipeline Test
+2025-07-21 15:17:37,743 - moqui - INFO - ==================================================
+2025-07-21 15:17:37,743 - moqui - INFO - Step 1: Loading configuration from 'config.json'...
+2025-07-21 15:17:37,743 - moqui - INFO - Reconstructing SSH configuration from existing 'servers' and 'credentials' keys.
+2025-07-21 15:17:37,743 - moqui - INFO - Local data source: C:\moqui\log_data
+2025-07-21 15:17:37,743 - moqui - INFO - Remote target directory: /tmp/log_data
+2025-07-21 15:17:37,743 - moqui - INFO - 
+Step 2: Scanning for new cases in 'C:\moqui\log_data'...
+2025-07-21 15:17:37,753 - moqui - WARNING - No new cases found in the local data directory. Test will not proceed with transfer.
+2025-07-21 15:17:37,753 - moqui - INFO - Test finished.
+2025-07-21 15:18:02,603 - moqui - INFO - ==================================================
+2025-07-21 15:18:02,607 - moqui - INFO - Starting End-to-End Data Pipeline Test
+2025-07-21 15:18:02,607 - moqui - INFO - ==================================================
+2025-07-21 15:18:02,607 - moqui - INFO - Step 1: Loading configuration from 'config.json'...
+2025-07-21 15:18:02,607 - moqui - INFO - Reconstructing SSH configuration from existing 'servers' and 'credentials' keys.
+2025-07-21 15:18:02,607 - moqui - INFO - Local data source: C:\moqui\log_data
+2025-07-21 15:18:02,608 - moqui - INFO - Remote target directory: /tmp/log_data
+2025-07-21 15:18:02,608 - moqui - INFO - 
+Step 2: Scanning for new cases in 'C:\moqui\log_data'...
+2025-07-21 15:18:02,623 - moqui - INFO - Found 2 new cases to process: ['1.2.840.113854.19.1.19271.1', 'test_case_01']
+2025-07-21 15:18:02,623 - moqui - INFO - 
+Step 3: Transferring files for 2 cases to GPU server via SFTP...
+2025-07-21 15:18:03,469 - moqui - INFO - SFTP connection established to 25.2.190.194.
+2025-07-21 15:18:03,493 - moqui - INFO - Processing case '1.2.840.113854.19.1.19271.1': Uploading files from 'C:\moqui\log_data\1.2.840.113854.19.1.19271.1' to '/tmp/log_data/1.2.840.113854.19.1.19271.1'
+2025-07-21 15:18:18,831 - moqui - INFO - Processing case 'test_case_01': Uploading files from 'C:\moqui\log_data\test_case_01' to '/tmp/log_data/test_case_01'
+2025-07-21 15:18:18,915 - moqui - INFO - SFTP transfer complete. Total cases transferred: 2. Connection closed.
+2025-07-21 15:18:18,915 - moqui - INFO - 
+Step 4: Executing remote command via SSH to verify transfer...
+2025-07-21 15:18:56,973 - moqui - INFO - SSH connection established to 25.2.190.194.
+2025-07-21 15:18:56,974 - moqui - INFO - Executing remote command: 'ls -laR /tmp/log_data'
+2025-07-21 15:19:37,118 - moqui - INFO - --- Remote Command STDOUT ---
+2025-07-21 15:19:37,119 - moqui - INFO - (empty)
+2025-07-21 15:19:37,119 - moqui - INFO - -----------------------------
+2025-07-21 15:19:37,119 - moqui - WARNING - --- Remote Command STDERR ---
+2025-07-21 15:19:37,119 - moqui - WARNING - Connection failed
+2025-07-21 15:19:37,119 - moqui - WARNING - -----------------------------
+2025-07-21 15:19:37,120 - moqui - INFO - SSH connection closed.
+2025-07-21 15:19:37,120 - moqui - INFO - 
+==================================================
+2025-07-21 15:19:37,120 - moqui - INFO - End-to-End Data Pipeline Test Completed Successfully!
+2025-07-21 15:19:37,120 - moqui - INFO - ==================================================
+2025-07-21 15:25:54,345 - moqui - INFO - ==================================================
+2025-07-21 15:25:54,346 - moqui - INFO - Starting End-to-End Data Pipeline Test
+2025-07-21 15:25:54,346 - moqui - INFO - ==================================================
+2025-07-21 15:25:54,346 - moqui - INFO - Step 1: Loading configuration from 'config.json'...
+2025-07-21 15:25:54,346 - moqui - INFO - Reconstructing SSH configuration from existing 'servers' and 'credentials' keys.
+2025-07-21 15:25:54,346 - moqui - INFO - Local data source: C:\moqui\log_data
+2025-07-21 15:25:54,346 - moqui - INFO - Remote target directory: /tmp/log_data
+2025-07-21 15:25:54,346 - moqui - INFO - 
+Step 2: Scanning for new cases in 'C:\moqui\log_data'...
+2025-07-21 15:25:54,364 - moqui - WARNING - No new cases found in the local data directory. Test will not proceed with transfer.
+2025-07-21 15:25:54,364 - moqui - INFO - Test finished.
+2025-07-21 15:27:08,323 - moqui - INFO - ==================================================
+2025-07-21 15:27:08,323 - moqui - INFO - Starting End-to-End Data Pipeline Test
+2025-07-21 15:27:08,323 - moqui - INFO - ==================================================
+2025-07-21 15:27:08,326 - moqui - INFO - Step 1: Loading configuration from 'config.json'...
+2025-07-21 15:27:08,327 - moqui - INFO - Reconstructing SSH configuration from existing 'servers' and 'credentials' keys.
+2025-07-21 15:27:08,327 - moqui - INFO - Local data source: C:\moqui\log_data
+2025-07-21 15:27:08,327 - moqui - INFO - Remote target directory: /tmp/log_data
+2025-07-21 15:27:08,327 - moqui - INFO - 
+Step 2: Scanning for new cases in 'C:\moqui\log_data'...
+2025-07-21 15:27:08,345 - moqui - INFO - Found 2 new cases to process: ['1.2.840.113854.19.1.19271.1', 'test_case_01']
+2025-07-21 15:27:08,345 - moqui - INFO - 
+Step 3: Transferring files for 2 cases to GPU server via SFTP...
+2025-07-21 15:27:09,183 - moqui - INFO - SFTP connection established to 25.2.190.194.
+2025-07-21 15:27:09,193 - moqui - INFO - Processing case '1.2.840.113854.19.1.19271.1': Uploading files from 'C:\moqui\log_data\1.2.840.113854.19.1.19271.1' to '/tmp/log_data/1.2.840.113854.19.1.19271.1'
+2025-07-21 15:27:24,603 - moqui - INFO - Processing case 'test_case_01': Uploading files from 'C:\moqui\log_data\test_case_01' to '/tmp/log_data/test_case_01'
+2025-07-21 15:27:24,653 - moqui - INFO - SFTP transfer complete. Total cases transferred: 2. Connection closed.
+2025-07-21 15:27:24,653 - moqui - INFO - 
+Step 4: Executing remote command via SSH to verify transfer...
+2025-07-21 15:28:02,748 - moqui - INFO - SSH connection established to 25.2.190.194.
+2025-07-21 15:28:02,749 - moqui - INFO - Executing remote command: 'ls -laR /tmp/log_data'
+2025-07-21 15:28:42,883 - moqui - INFO - --- Remote Command STDOUT ---
+2025-07-21 15:28:42,883 - moqui - INFO - (empty)
+2025-07-21 15:28:42,884 - moqui - INFO - -----------------------------
+2025-07-21 15:28:42,884 - moqui - WARNING - --- Remote Command STDERR ---
+2025-07-21 15:28:42,884 - moqui - WARNING - Connection failed
+2025-07-21 15:28:42,885 - moqui - WARNING - -----------------------------
+2025-07-21 15:28:42,885 - moqui - INFO - SSH connection closed.
+2025-07-21 15:28:42,885 - moqui - INFO - 
+==================================================
+2025-07-21 15:28:42,885 - moqui - INFO - End-to-End Data Pipeline Test Completed Successfully!
+2025-07-21 15:28:42,886 - moqui - INFO - ==================================================
+2025-07-21 15:30:26,705 - moqui - INFO - ==================================================
+2025-07-21 15:30:26,705 - moqui - INFO - Starting End-to-End Data Pipeline Test
+2025-07-21 15:30:26,705 - moqui - INFO - ==================================================
+2025-07-21 15:30:26,705 - moqui - INFO - Step 1: Loading configuration from 'config.json'...
+2025-07-21 15:30:26,706 - moqui - INFO - Reconstructing SSH configuration from existing 'servers' and 'credentials' keys.
+2025-07-21 15:30:26,706 - moqui - INFO - Local data source: C:\moqui\log_data
+2025-07-21 15:30:26,706 - moqui - INFO - Remote target directory: /tmp/log_data
+2025-07-21 15:30:26,706 - moqui - INFO - 
+Step 2: Scanning for new cases in 'C:\moqui\log_data'...
+2025-07-21 15:30:26,722 - moqui - INFO - Found 2 new cases to process: ['1.2.840.113854.19.1.19271.1', 'test_case_01']
+2025-07-21 15:30:26,722 - moqui - INFO - 
+Step 3: Transferring files for 2 cases to GPU server via SFTP...
+2025-07-21 15:30:27,551 - moqui - INFO - SFTP connection established to 25.2.190.194.
+2025-07-21 15:30:27,563 - moqui - INFO - Processing case '1.2.840.113854.19.1.19271.1': Uploading files from 'C:\moqui\log_data\1.2.840.113854.19.1.19271.1' to '/tmp/log_data/1.2.840.113854.19.1.19271.1'
+2025-07-21 15:30:42,851 - moqui - INFO - Processing case 'test_case_01': Uploading files from 'C:\moqui\log_data\test_case_01' to '/tmp/log_data/test_case_01'
+2025-07-21 15:30:42,912 - moqui - INFO - SFTP transfer complete. Total cases transferred: 2. Connection closed.
+2025-07-21 15:30:42,912 - moqui - INFO - 
+Step 4: Executing remote command via SSH to verify transfer...
+2025-07-21 15:30:55,263 - moqui - INFO - SSH connection established to 25.2.190.194.
+2025-07-21 15:30:55,263 - moqui - INFO - Executing remote command: 'ls -laR /tmp/log_data'
+2025-07-21 15:35:15,184 - moqui - INFO - ==================================================
+2025-07-21 15:35:15,184 - moqui - INFO - Starting End-to-End Data Pipeline Test
+2025-07-21 15:35:15,184 - moqui - INFO - ==================================================
+2025-07-21 15:35:15,184 - moqui - INFO - Step 1: Loading configuration from 'config.json'...
+2025-07-21 15:35:15,187 - moqui - INFO - Reconstructing SSH configuration from existing 'servers' and 'credentials' keys.
+2025-07-21 15:35:15,187 - moqui - INFO - Local data source: C:\moqui\log_data
+2025-07-21 15:35:15,187 - moqui - INFO - Remote target directory: /tmp/log_data
+2025-07-21 15:35:15,187 - moqui - INFO - 
+Step 2: Scanning for new cases in 'C:\moqui\log_data'...
+2025-07-21 15:35:15,187 - moqui - INFO - Found 2 new cases to process: ['1.2.840.113854.19.1.19271.1', 'test_case_01']
+2025-07-21 15:35:15,187 - moqui - INFO - 
+Step 3: Transferring files for 2 cases to GPU server via SFTP...
+2025-07-21 15:35:16,049 - moqui - INFO - SFTP connection established to 25.2.190.194.
+2025-07-21 15:35:16,058 - moqui - INFO - Processing case '1.2.840.113854.19.1.19271.1': Uploading files from 'C:\moqui\log_data\1.2.840.113854.19.1.19271.1' to '/tmp/log_data/1.2.840.113854.19.1.19271.1'
+2025-07-21 15:35:31,386 - moqui - INFO - Processing case 'test_case_01': Uploading files from 'C:\moqui\log_data\test_case_01' to '/tmp/log_data/test_case_01'
+2025-07-21 15:35:31,452 - moqui - INFO - SFTP transfer complete. Total cases transferred: 2. Connection closed.
+2025-07-21 15:35:31,452 - moqui - INFO - 
+Step 4: Executing remote command via SSH to verify transfer...
+2025-07-21 15:35:43,807 - moqui - INFO - SSH connection established to 25.2.190.194.
+2025-07-21 15:35:43,823 - moqui - INFO - Executing remote command: 'ls -laR /tmp/log_data'
+2025-07-21 15:48:32,663 - moqui - INFO - ==================================================
+2025-07-21 15:48:32,663 - moqui - INFO - Starting End-to-End Data Pipeline Test (60s timeout where supported)
+2025-07-21 15:48:32,663 - moqui - INFO - ==================================================
+2025-07-21 15:48:32,663 - moqui - INFO - Step 1: Loading configuration from 'config.json'...
+2025-07-21 15:48:32,679 - moqui - INFO - Local data source: C:\moqui\log_data
+2025-07-21 15:48:32,679 - moqui - INFO - Remote target directory: /tmp/log_data
+2025-07-21 15:48:32,679 - moqui - INFO - 
+Step 2: Scanning for new cases in 'C:\moqui\log_data'...
+2025-07-21 15:48:32,694 - moqui - INFO - Found 2 new cases: ['1.2.840.113854.19.1.19271.1', 'test_case_01']
+2025-07-21 15:48:32,694 - moqui - INFO - 
+Step 3: Transferring files for 2 cases via SFTP...
+2025-07-21 15:48:33,510 - moqui - INFO - SFTP connection established to 25.2.190.194.
+2025-07-21 15:48:33,532 - moqui - INFO - Processing case '1.2.840.113854.19.1.19271.1': Uploading from 'C:\moqui\log_data\1.2.840.113854.19.1.19271.1' to '/tmp/log_data/1.2.840.113854.19.1.19271.1'
+2025-07-21 15:53:17,803 - moqui - INFO - ==================================================
+2025-07-21 15:53:17,803 - moqui - INFO - Starting End-to-End Data Pipeline Test (60s timeout where supported)
+2025-07-21 15:53:17,803 - moqui - INFO - ==================================================
+2025-07-21 15:53:17,803 - moqui - INFO - Step 1: Loading configuration from 'config.json'...
+2025-07-21 15:53:17,804 - moqui - INFO - Local data source: C:\moqui\log_data
+2025-07-21 15:53:17,804 - moqui - INFO - Remote target directory: /tmp/log_data
+2025-07-21 15:53:17,804 - moqui - INFO - 
+Step 2: Scanning for new cases in 'C:\moqui\log_data'...
+2025-07-21 15:53:17,820 - moqui - INFO - Found 2 new cases: ['1.2.840.113854.19.1.19271.1', 'test_case_01']
+2025-07-21 15:53:17,821 - moqui - INFO - 
+Step 3: Transferring files for 2 cases via SFTP...
+2025-07-21 15:53:18,692 - moqui - INFO - SFTP connection established to 25.2.190.194.
+2025-07-21 15:53:18,714 - moqui - INFO - Processing case '1.2.840.113854.19.1.19271.1': Uploading from 'C:\moqui\log_data\1.2.840.113854.19.1.19271.1' to '/tmp/log_data/1.2.840.113854.19.1.19271.1'
+2025-07-21 15:53:39,325 - moqui - INFO - Processing case 'test_case_01': Uploading from 'C:\moqui\log_data\test_case_01' to '/tmp/log_data/test_case_01'
+2025-07-21 15:53:39,395 - moqui - INFO - SFTP transfer complete. Connection closed.
+2025-07-21 15:53:39,396 - moqui - INFO - 
+Step 4: Executing remote command via SSH to verify transfer...
+2025-07-21 15:53:51,757 - moqui - INFO - SSH connection established to 25.2.190.194.
+2025-07-21 15:53:51,758 - moqui - INFO - Executing remote command: 'ls -laR /tmp/log_data'
+2025-07-21 15:59:18,258 - moqui - INFO - ==================================================
+2025-07-21 15:59:18,259 - moqui - INFO - Starting End-to-End Data Pipeline Test (60s timeout where supported)
+2025-07-21 15:59:18,259 - moqui - INFO - ==================================================
+2025-07-21 15:59:18,259 - moqui - INFO - Step 1: Loading configuration from 'config.json'...
+2025-07-21 15:59:18,259 - moqui - INFO - Local data source: C:\moqui\log_data
+2025-07-21 15:59:18,259 - moqui - INFO - Remote target directory: /tmp/log_data
+2025-07-21 15:59:18,259 - moqui - INFO - 
+Step 2: Scanning for new cases in 'C:\moqui\log_data'...
+2025-07-21 15:59:18,275 - moqui - INFO - Found 2 new cases: ['1.2.840.113854.19.1.19271.1', 'test_case_01']
+2025-07-21 15:59:18,275 - moqui - INFO - 
+Step 3: Transferring files for 2 cases via SFTP...
+2025-07-21 15:59:19,100 - moqui - INFO - SFTP connection established to 25.2.190.194.
+2025-07-21 15:59:19,114 - moqui - INFO - Processing case '1.2.840.113854.19.1.19271.1': Uploading from 'C:\moqui\log_data\1.2.840.113854.19.1.19271.1' to '/tmp/log_data/1.2.840.113854.19.1.19271.1'
+2025-07-21 15:59:39,556 - moqui - INFO - Processing case 'test_case_01': Uploading from 'C:\moqui\log_data\test_case_01' to '/tmp/log_data/test_case_01'
+2025-07-21 15:59:39,615 - moqui - INFO - SFTP transfer complete. Connection closed.
+2025-07-21 15:59:39,615 - moqui - INFO - 
+Step 4: Executing remote command via SSH to verify transfer...
+2025-07-21 15:59:39,812 - moqui - INFO - SSH connection established to 25.2.190.194.
+2025-07-21 15:59:39,813 - moqui - INFO - Executing remote command: 'ls -laR /tmp/log_data'
+2025-07-21 15:59:40,087 - moqui - INFO - --- Remote Command STDOUT ---
+2025-07-21 15:59:40,087 - moqui - INFO - /tmp/log_data:
+total 24
+drwxrwxr-x  4 gpuadmin gpuadmin  4096 Jul 21 06:18 .
+drwxrwxrwt 27 root     root     12288 Jul 21 06:18 ..
+drwxrwxr-x  2 gpuadmin gpuadmin  4096 Jul 21 06:18 1.2.840.113854.19.1.19271.1
+drwxrwxr-x  2 gpuadmin gpuadmin  4096 Jul 21 06:18 test_case_01
+
+/tmp/log_data/1.2.840.113854.19.1.19271.1:
+total 716
+drwxrwxr-x 2 gpuadmin gpuadmin   4096 Jul 21 06:18 .
+drwxrwxr-x 4 gpuadmin gpuadmin   4096 Jul 21 06:18 ..
+-rw-rw-r-- 1 gpuadmin gpuadmin 724106 Jul 21 06:59 RP.1.2.840.113854.241506614174277151614979936366782948539.1.dcm
+
+/tmp/log_data/test_case_01:
+total 12
+drwxrwxr-x 2 gpuadmin gpuadmin 4096 Jul 21 06:18 .
+drwxrwxr-x 4 gpuadmin gpuadmin 4096 Jul 21 06:18 ..
+-rw-rw-r-- 1 gpuadmin gpuadmin   38 Jul 21 06:59 sample_log_1.txt
+
+2025-07-21 15:59:40,088 - moqui - INFO - -----------------------------
+2025-07-21 15:59:40,089 - moqui - INFO - SSH connection closed.
+2025-07-21 15:59:40,089 - moqui - INFO - 
+==================================================
+2025-07-21 15:59:40,090 - moqui - INFO - End-to-End Data Pipeline Test Completed Successfully!
+2025-07-21 15:59:40,090 - moqui - INFO - ==================================================
+2025-07-21 16:00:29,935 - moqui - INFO - All components initialized successfully
+2025-07-21 16:00:29,936 - moqui - INFO - Starting MOQUI automation system
+2025-07-21 16:00:29,937 - moqui - INFO - Performing startup recovery checks
+2025-07-21 16:00:29,937 - moqui - INFO - No stale cases found during startup
+2025-07-21 16:00:30,025 - moqui - INFO - No zombie GPU processes found
+2025-07-21 16:00:30,026 - moqui - INFO - Background workers started successfully
+2025-07-21 16:00:30,026 - moqui - INFO - Performing initial system health check and display update.
+2025-07-21 16:00:31,324 - moqui - INFO - Performing initial scan for new cases.
+2025-07-21 16:00:31,324 - moqui - INFO - Starting case scan
+2025-07-21 16:00:31,335 - moqui - INFO - Case scan completed. Found 0 new cases
+2025-07-21 16:01:31,351 - moqui - INFO - Performing daily check for old cases to archive.
+2025-07-21 16:05:22,120 - moqui - INFO - ==================================================
+2025-07-21 16:05:22,120 - moqui - INFO - Starting End-to-End Data Pipeline Test (60s timeout where supported)
+2025-07-21 16:05:22,120 - moqui - INFO - ==================================================
+2025-07-21 16:05:22,120 - moqui - INFO - Step 1: Loading configuration from 'config.json'...
+2025-07-21 16:05:22,125 - moqui - INFO - Local data source: C:\moqui\log_data
+2025-07-21 16:05:22,125 - moqui - INFO - Remote target directory: /tmp/log_data
+2025-07-21 16:05:22,126 - moqui - INFO - 
+Step 2: Scanning for new cases in 'C:\moqui\log_data'...
+2025-07-21 16:05:22,141 - moqui - INFO - Found 2 new cases: ['1.2.840.113854.19.1.19271.1', 'test_case_01']
+2025-07-21 16:05:22,142 - moqui - INFO - 
+Step 3: Transferring files for 2 cases via SFTP...
+2025-07-21 16:05:23,004 - moqui - INFO - SFTP connection established to 25.2.190.194.
+2025-07-21 16:05:23,025 - moqui - INFO - Processing case '1.2.840.113854.19.1.19271.1': Uploading from 'C:\moqui\log_data\1.2.840.113854.19.1.19271.1' to '/tmp/log_data/1.2.840.113854.19.1.19271.1'
+2025-07-21 16:05:43,495 - moqui - INFO - Processing case 'test_case_01': Uploading from 'C:\moqui\log_data\test_case_01' to '/tmp/log_data/test_case_01'
+2025-07-21 16:05:43,572 - moqui - INFO - SFTP transfer complete. Connection closed.
+2025-07-21 16:05:43,572 - moqui - INFO - 
+Step 4: Executing remote command via SSH to verify transfer...
+2025-07-21 16:05:43,776 - moqui - INFO - SSH connection established to 25.2.190.194.
+2025-07-21 16:05:43,776 - moqui - INFO - Executing remote command: 'ls -laR /tmp/log_data'
+2025-07-21 16:05:44,051 - moqui - INFO - --- Remote Command STDOUT ---
+2025-07-21 16:05:44,052 - moqui - INFO - /tmp/log_data:
+total 24
+drwxrwxr-x  4 gpuadmin gpuadmin  4096 Jul 21 06:18 .
+drwxrwxrwt 27 root     root     12288 Jul 21 06:18 ..
+drwxrwxr-x  2 gpuadmin gpuadmin  4096 Jul 21 06:18 1.2.840.113854.19.1.19271.1
+drwxrwxr-x  2 gpuadmin gpuadmin  4096 Jul 21 06:18 test_case_01
+
+/tmp/log_data/1.2.840.113854.19.1.19271.1:
+total 716
+drwxrwxr-x 2 gpuadmin gpuadmin   4096 Jul 21 06:18 .
+drwxrwxr-x 4 gpuadmin gpuadmin   4096 Jul 21 06:18 ..
+-rw-rw-r-- 1 gpuadmin gpuadmin 724106 Jul 21 07:05 RP.1.2.840.113854.241506614174277151614979936366782948539.1.dcm
+
+/tmp/log_data/test_case_01:
+total 12
+drwxrwxr-x 2 gpuadmin gpuadmin 4096 Jul 21 06:18 .
+drwxrwxr-x 4 gpuadmin gpuadmin 4096 Jul 21 06:18 ..
+-rw-rw-r-- 1 gpuadmin gpuadmin   38 Jul 21 07:05 sample_log_1.txt
+
+2025-07-21 16:05:44,052 - moqui - INFO - -----------------------------
+2025-07-21 16:05:44,052 - moqui - INFO - SSH connection closed.
+2025-07-21 16:05:44,053 - moqui - INFO - 
+==================================================
+2025-07-21 16:05:44,053 - moqui - INFO - End-to-End Data Pipeline Test Completed Successfully!
+2025-07-21 16:05:44,053 - moqui - INFO - ==================================================
+2025-07-21 16:08:30,335 - moqui - INFO - ==================================================
+2025-07-21 16:08:30,335 - moqui - INFO - Starting End-to-End Data Pipeline Test (60s timeout where supported)
+2025-07-21 16:08:30,335 - moqui - INFO - ==================================================
+2025-07-21 16:08:30,335 - moqui - INFO - Step 1: Loading configuration from 'config.json'...
+2025-07-21 16:08:30,336 - moqui - INFO - Local data source: C:\moqui\log_data
+2025-07-21 16:08:30,336 - moqui - INFO - Remote target directory: /tmp/log_data
+2025-07-21 16:08:30,336 - moqui - INFO - 
+Step 2: Scanning for new cases in 'C:\moqui\log_data'...
+2025-07-21 16:08:30,353 - moqui - INFO - Found 2 new cases: ['1.2.840.113854.19.1.19271.1', 'test_case_01']
+2025-07-21 16:08:30,353 - moqui - INFO - 
+Step 3: Transferring files for 2 cases via SFTP...
+2025-07-21 16:08:31,174 - moqui - INFO - SFTP connection established to 25.2.190.194.
+2025-07-21 16:08:31,199 - moqui - INFO - Processing case '1.2.840.113854.19.1.19271.1': Uploading from 'C:\moqui\log_data\1.2.840.113854.19.1.19271.1' to '/tmp/log_data/1.2.840.113854.19.1.19271.1'
+2025-07-21 16:08:51,772 - moqui - ERROR - Failed to upload directory for case '1.2.840.113854.19.1.19271.1'.
+2025-07-21 16:08:51,772 - moqui - INFO - Processing case 'test_case_01': Uploading from 'C:\moqui\log_data\test_case_01' to '/tmp/log_data/test_case_01'
+2025-07-21 16:08:51,839 - moqui - INFO - SFTP transfer process finished. Connection closed.
+2025-07-21 16:08:51,839 - moqui - ERROR - ==================================================
+2025-07-21 16:08:51,839 - moqui - ERROR - An unhandled exception occurred during the pipeline test!
+2025-07-21 16:08:51,840 - moqui - ERROR - Error Type: Exception
+2025-07-21 16:08:51,840 - moqui - ERROR - Error Message: One or more SFTP uploads failed. Aborting test.
+2025-07-21 16:08:51,840 - moqui - ERROR - Full Traceback:
+2025-07-21 16:08:51,840 - moqui - ERROR - Traceback (most recent call last):
+  File "C:\moqui\mqi_communicator\test_data_pipeline.py", line 117, in run_test_pipeline
+    raise Exception("One or more SFTP uploads failed. Aborting test.")
+Exception: One or more SFTP uploads failed. Aborting test.
+
+2025-07-21 16:08:51,841 - moqui - ERROR - ==================================================
+2025-07-21 16:08:51,841 - moqui - ERROR - Test failed. Please review the logs to diagnose the issue.
+2025-07-21 16:11:00,907 - moqui - INFO - ==================================================
+2025-07-21 16:11:00,907 - moqui - INFO - Starting End-to-End Data Pipeline Test (60s timeout where supported)
+2025-07-21 16:11:00,907 - moqui - INFO - ==================================================
+2025-07-21 16:11:00,907 - moqui - INFO - Step 1: Loading configuration from 'config.json'...
+2025-07-21 16:11:00,908 - moqui - INFO - Local data source: C:\moqui\log_data
+2025-07-21 16:11:00,908 - moqui - INFO - Remote target directory: /tmp/log_data
+2025-07-21 16:11:00,908 - moqui - INFO - 
+Step 2: Scanning for new cases in 'C:\moqui\log_data'...
+2025-07-21 16:11:00,933 - moqui - INFO - Found 2 new cases: ['1.2.840.113854.19.1.19271.1', 'test_case_01']
+2025-07-21 16:11:00,934 - moqui - INFO - 
+Step 3: Transferring files for 2 cases via SFTP...
+2025-07-21 16:11:01,760 - moqui - INFO - SFTP connection established to 25.2.190.194.
+2025-07-21 16:11:01,782 - moqui - INFO - Processing case '1.2.840.113854.19.1.19271.1': Uploading from 'C:\moqui\log_data\1.2.840.113854.19.1.19271.1' to '/tmp/log_data/1.2.840.113854.19.1.19271.1'
+2025-07-21 16:11:22,245 - moqui - ERROR - Failed to upload directory for case '1.2.840.113854.19.1.19271.1'.
+2025-07-21 16:11:22,245 - moqui - INFO - Processing case 'test_case_01': Uploading from 'C:\moqui\log_data\test_case_01' to '/tmp/log_data/test_case_01'
+2025-07-21 16:11:22,311 - moqui - INFO - SFTP transfer process finished. Connection closed.
+2025-07-21 16:11:22,311 - moqui - ERROR - ==================================================
+2025-07-21 16:11:22,312 - moqui - ERROR - An unhandled exception occurred during the pipeline test!
+2025-07-21 16:11:22,312 - moqui - ERROR - Error Type: Exception
+2025-07-21 16:11:22,312 - moqui - ERROR - Error Message: One or more SFTP uploads failed. Aborting test.
+2025-07-21 16:11:22,312 - moqui - ERROR - Full Traceback:
+2025-07-21 16:11:22,313 - moqui - ERROR - Traceback (most recent call last):
+  File "C:\moqui\mqi_communicator\test_data_pipeline.py", line 117, in run_test_pipeline
+    raise Exception("One or more SFTP uploads failed. Aborting test.")
+Exception: One or more SFTP uploads failed. Aborting test.
+
+2025-07-21 16:11:22,313 - moqui - ERROR - ==================================================
+2025-07-21 16:11:22,313 - moqui - ERROR - Test failed. Please review the logs to diagnose the issue.
+2025-07-21 16:14:23,015 - moqui - INFO - ==================================================
+2025-07-21 16:14:23,015 - moqui - INFO - Starting End-to-End Data Pipeline Test (60s timeout where supported)
+2025-07-21 16:14:23,015 - moqui - INFO - ==================================================
+2025-07-21 16:14:23,015 - moqui - INFO - Step 1: Loading configuration from 'config.json'...
+2025-07-21 16:14:23,015 - moqui - INFO - Local data source: C:\moqui\log_data
+2025-07-21 16:14:23,015 - moqui - INFO - Remote target directory: /tmp/log_data
+2025-07-21 16:14:23,016 - moqui - INFO - 
+Step 2: Scanning for new cases in 'C:\moqui\log_data'...
+2025-07-21 16:14:23,041 - moqui - INFO - Found 2 new cases: ['1.2.840.113854.19.1.19271.1', 'test_case_01']
+2025-07-21 16:14:23,041 - moqui - INFO - 
+Step 3: Transferring files for 2 cases via SFTP...
+2025-07-21 16:14:23,938 - moqui - INFO - SFTP connection established to 25.2.190.194.
+2025-07-21 16:14:23,966 - moqui - INFO - Processing case '1.2.840.113854.19.1.19271.1': Uploading from 'C:\moqui\log_data\1.2.840.113854.19.1.19271.1' to '/tmp/log_data/1.2.840.113854.19.1.19271.1'
+2025-07-21 16:14:44,507 - moqui - ERROR - Failed to upload directory for case '1.2.840.113854.19.1.19271.1'.
+2025-07-21 16:14:44,507 - moqui - INFO - Processing case 'test_case_01': Uploading from 'C:\moqui\log_data\test_case_01' to '/tmp/log_data/test_case_01'
+2025-07-21 16:14:44,575 - moqui - INFO - SFTP transfer process finished. Connection closed.
+2025-07-21 16:14:44,576 - moqui - ERROR - ==================================================
+2025-07-21 16:14:44,576 - moqui - ERROR - An unhandled exception occurred during the pipeline test!
+2025-07-21 16:14:44,576 - moqui - ERROR - Error Type: Exception
+2025-07-21 16:14:44,576 - moqui - ERROR - Error Message: One or more SFTP uploads failed. Aborting test.
+2025-07-21 16:14:44,577 - moqui - ERROR - Full Traceback:
+2025-07-21 16:14:44,577 - moqui - ERROR - Traceback (most recent call last):
+  File "C:\moqui\mqi_communicator\test_data_pipeline.py", line 117, in run_test_pipeline
+    raise Exception("One or more SFTP uploads failed. Aborting test.")
+Exception: One or more SFTP uploads failed. Aborting test.
+
+2025-07-21 16:14:44,577 - moqui - ERROR - ==================================================
+2025-07-21 16:14:44,578 - moqui - ERROR - Test failed. Please review the logs to diagnose the issue.
+2025-07-21 16:17:09,512 - moqui - INFO - ==================================================
+2025-07-21 16:17:09,512 - moqui - INFO - Starting End-to-End Data Pipeline Test (60s timeout where supported)
+2025-07-21 16:17:09,512 - moqui - INFO - ==================================================
+2025-07-21 16:17:09,512 - moqui - INFO - Step 1: Loading configuration from 'config.json'...
+2025-07-21 16:17:09,512 - moqui - INFO - Local data source: C:\moqui\log_data
+2025-07-21 16:17:09,512 - moqui - INFO - Remote target directory: /tmp/log_data
+2025-07-21 16:17:09,512 - moqui - INFO - 
+Step 2: Scanning for new cases in 'C:\moqui\log_data'...
+2025-07-21 16:17:09,538 - moqui - INFO - Found 2 new cases: ['1.2.840.113854.19.1.19271.1', 'test_case_01']
+2025-07-21 16:17:09,539 - moqui - INFO - 
+Step 3: Transferring files for 2 cases via SFTP...
+2025-07-21 16:17:10,379 - moqui - INFO - SFTP connection established to 25.2.190.194.
+2025-07-21 16:17:10,394 - moqui - INFO - Processing case '1.2.840.113854.19.1.19271.1': Uploading from 'C:\moqui\log_data\1.2.840.113854.19.1.19271.1' to '/tmp/log_data/1.2.840.113854.19.1.19271.1'
+2025-07-21 16:17:10,686 - moqui - ERROR - Failed to upload directory for case '1.2.840.113854.19.1.19271.1'.
+2025-07-21 16:17:10,687 - moqui - INFO - Processing case 'test_case_01': Uploading from 'C:\moqui\log_data\test_case_01' to '/tmp/log_data/test_case_01'
+2025-07-21 16:17:10,755 - moqui - INFO - SFTP transfer process finished. Connection closed.
+2025-07-21 16:17:10,756 - moqui - ERROR - ==================================================
+2025-07-21 16:17:10,757 - moqui - ERROR - An unhandled exception occurred during the pipeline test!
+2025-07-21 16:17:10,757 - moqui - ERROR - Error Type: Exception
+2025-07-21 16:17:10,757 - moqui - ERROR - Error Message: One or more SFTP uploads failed. Aborting test.
+2025-07-21 16:17:10,757 - moqui - ERROR - Full Traceback:
+2025-07-21 16:17:10,759 - moqui - ERROR - Traceback (most recent call last):
+  File "C:\moqui\mqi_communicator\test_data_pipeline.py", line 117, in run_test_pipeline
+    raise Exception("One or more SFTP uploads failed. Aborting test.")
+Exception: One or more SFTP uploads failed. Aborting test.
+
+2025-07-21 16:17:10,759 - moqui - ERROR - ==================================================
+2025-07-21 16:17:10,759 - moqui - ERROR - Test failed. Please review the logs to diagnose the issue.
+2025-07-21 16:17:51,545 - moqui - INFO - ==================================================
+2025-07-21 16:17:51,545 - moqui - INFO - Starting End-to-End Data Pipeline Test (60s timeout where supported)
+2025-07-21 16:17:51,545 - moqui - INFO - ==================================================
+2025-07-21 16:17:51,545 - moqui - INFO - Step 1: Loading configuration from 'config.json'...
+2025-07-21 16:17:51,545 - moqui - INFO - Local data source: C:\moqui\log_data
+2025-07-21 16:17:51,547 - moqui - INFO - Remote target directory: /tmp/log_data
+2025-07-21 16:17:51,547 - moqui - INFO - 
+Step 2: Scanning for new cases in 'C:\moqui\log_data'...
+2025-07-21 16:17:51,572 - moqui - INFO - Found 2 new cases: ['1.2.840.113854.19.1.19271.1', 'test_case_01']
+2025-07-21 16:17:51,573 - moqui - INFO - 
+Step 3: Transferring files for 2 cases via SFTP...
+2025-07-21 16:17:51,966 - moqui - INFO - SFTP connection established to 25.2.190.194.
+2025-07-21 16:17:51,978 - moqui - INFO - Processing case '1.2.840.113854.19.1.19271.1': Uploading from 'C:\moqui\log_data\1.2.840.113854.19.1.19271.1' to '/tmp/log_data/1.2.840.113854.19.1.19271.1'
+2025-07-21 16:17:52,280 - moqui - ERROR - Failed to upload directory for case '1.2.840.113854.19.1.19271.1'.
+2025-07-21 16:17:52,281 - moqui - INFO - Processing case 'test_case_01': Uploading from 'C:\moqui\log_data\test_case_01' to '/tmp/log_data/test_case_01'
+2025-07-21 16:17:52,402 - moqui - INFO - SFTP transfer process finished. Connection closed.
+2025-07-21 16:17:52,402 - moqui - ERROR - ==================================================
+2025-07-21 16:17:52,403 - moqui - ERROR - An unhandled exception occurred during the pipeline test!
+2025-07-21 16:17:52,403 - moqui - ERROR - Error Type: Exception
+2025-07-21 16:17:52,403 - moqui - ERROR - Error Message: One or more SFTP uploads failed. Aborting test.
+2025-07-21 16:17:52,403 - moqui - ERROR - Full Traceback:
+2025-07-21 16:17:52,403 - moqui - ERROR - Traceback (most recent call last):
+  File "C:\moqui\mqi_communicator\test_data_pipeline.py", line 117, in run_test_pipeline
+    raise Exception("One or more SFTP uploads failed. Aborting test.")
+Exception: One or more SFTP uploads failed. Aborting test.
+
+2025-07-21 16:17:52,403 - moqui - ERROR - ==================================================
+2025-07-21 16:17:52,404 - moqui - ERROR - Test failed. Please review the logs to diagnose the issue.
+2025-07-21 16:18:32,390 - moqui - INFO - ==================================================
+2025-07-21 16:18:32,391 - moqui - INFO - Starting End-to-End Data Pipeline Test (60s timeout where supported)
+2025-07-21 16:18:32,391 - moqui - INFO - ==================================================
+2025-07-21 16:18:32,391 - moqui - INFO - Step 1: Loading configuration from 'config.json'...
+2025-07-21 16:18:32,391 - moqui - INFO - Local data source: C:\moqui\log_data
+2025-07-21 16:18:32,391 - moqui - INFO - Remote target directory: /tmp/log_data
+2025-07-21 16:18:32,391 - moqui - INFO - 
+Step 2: Scanning for new cases in 'C:\moqui\log_data'...
+2025-07-21 16:18:32,416 - moqui - INFO - Found 2 new cases: ['1.2.840.113854.19.1.19271.1', 'test_case_01']
+2025-07-21 16:18:32,416 - moqui - INFO - 
+Step 3: Transferring files for 2 cases via SFTP...
+2025-07-21 16:18:33,264 - moqui - INFO - SFTP connection established to 25.2.190.194.
+2025-07-21 16:18:33,276 - moqui - INFO - Processing case '1.2.840.113854.19.1.19271.1': Uploading from 'C:\moqui\log_data\1.2.840.113854.19.1.19271.1' to '/tmp/log_data/1.2.840.113854.19.1.19271.1'
+2025-07-21 16:18:33,563 - moqui - ERROR - Failed to upload directory for case '1.2.840.113854.19.1.19271.1'.
+2025-07-21 16:18:33,563 - moqui - INFO - Processing case 'test_case_01': Uploading from 'C:\moqui\log_data\test_case_01' to '/tmp/log_data/test_case_01'
+2025-07-21 16:18:33,631 - moqui - INFO - SFTP transfer process finished. Connection closed.
+2025-07-21 16:18:33,645 - moqui - ERROR - ==================================================
+2025-07-21 16:18:33,645 - moqui - ERROR - An unhandled exception occurred during the pipeline test!
+2025-07-21 16:18:33,645 - moqui - ERROR - Error Type: Exception
+2025-07-21 16:18:33,645 - moqui - ERROR - Error Message: One or more SFTP uploads failed. Aborting test.
+2025-07-21 16:18:33,645 - moqui - ERROR - Full Traceback:
+2025-07-21 16:18:33,645 - moqui - ERROR - Traceback (most recent call last):
+  File "C:\moqui\mqi_communicator\test_data_pipeline.py", line 117, in run_test_pipeline
+    raise Exception("One or more SFTP uploads failed. Aborting test.")
+Exception: One or more SFTP uploads failed. Aborting test.
+
+2025-07-21 16:18:33,645 - moqui - ERROR - ==================================================
+2025-07-21 16:18:33,645 - moqui - ERROR - Test failed. Please review the logs to diagnose the issue.
+2025-07-21 16:19:09,158 - moqui - INFO - ==================================================
+2025-07-21 16:19:09,159 - moqui - INFO - Starting End-to-End Data Pipeline Test (60s timeout where supported)
+2025-07-21 16:19:09,159 - moqui - INFO - ==================================================
+2025-07-21 16:19:09,159 - moqui - INFO - Step 1: Loading configuration from 'config.json'...
+2025-07-21 16:19:09,159 - moqui - INFO - Local data source: C:\moqui\log_data
+2025-07-21 16:19:09,159 - moqui - INFO - Remote target directory: /tmp/log_data
+2025-07-21 16:19:09,159 - moqui - INFO - 
+Step 2: Scanning for new cases in 'C:\moqui\log_data'...
+2025-07-21 16:19:09,186 - moqui - INFO - Found 2 new cases: ['1.2.840.113854.19.1.19271.1', 'test_case_01']
+2025-07-21 16:19:09,186 - moqui - INFO - 
+Step 3: Transferring files for 2 cases via SFTP...
+2025-07-21 16:19:09,597 - moqui - INFO - SFTP connection established to 25.2.190.194.
+2025-07-21 16:19:09,601 - moqui - INFO - Processing case '1.2.840.113854.19.1.19271.1': Uploading from 'C:\moqui\log_data\1.2.840.113854.19.1.19271.1' to '/tmp/log_data/1.2.840.113854.19.1.19271.1'
+2025-07-21 16:19:09,601 - moqui - INFO - Verifying local case path before upload: 'C:\moqui\log_data\1.2.840.113854.19.1.19271.1' (Exists: True)
+2025-07-21 16:19:09,925 - moqui - ERROR - Failed to upload directory for case '1.2.840.113854.19.1.19271.1'.
+2025-07-21 16:19:09,926 - moqui - INFO - Processing case 'test_case_01': Uploading from 'C:\moqui\log_data\test_case_01' to '/tmp/log_data/test_case_01'
+2025-07-21 16:19:09,926 - moqui - INFO - Verifying local case path before upload: 'C:\moqui\log_data\test_case_01' (Exists: True)
+2025-07-21 16:19:09,986 - moqui - INFO - SFTP transfer process finished. Connection closed.
+2025-07-21 16:19:09,986 - moqui - ERROR - ==================================================
+2025-07-21 16:19:09,986 - moqui - ERROR - An unhandled exception occurred during the pipeline test!
+2025-07-21 16:19:09,987 - moqui - ERROR - Error Type: Exception
+2025-07-21 16:19:09,987 - moqui - ERROR - Error Message: One or more SFTP uploads failed. Aborting test.
+2025-07-21 16:19:09,987 - moqui - ERROR - Full Traceback:
+2025-07-21 16:19:09,987 - moqui - ERROR - Traceback (most recent call last):
+  File "C:\moqui\mqi_communicator\test_data_pipeline.py", line 121, in run_test_pipeline
+    raise Exception("One or more SFTP uploads failed. Aborting test.")
+Exception: One or more SFTP uploads failed. Aborting test.
+
+2025-07-21 16:19:09,988 - moqui - ERROR - ==================================================
+2025-07-21 16:19:09,988 - moqui - ERROR - Test failed. Please review the logs to diagnose the issue.
+2025-07-21 16:24:48,697 - moqui - INFO - ==================================================
+2025-07-21 16:24:48,697 - moqui - INFO - Starting End-to-End Data Pipeline Test (60s timeout where supported)
+2025-07-21 16:24:48,697 - moqui - INFO - ==================================================
+2025-07-21 16:24:48,697 - moqui - INFO - Step 1: Loading configuration from 'config.json'...
+2025-07-21 16:24:48,698 - moqui - INFO - Local data source: C:\moqui\log_data
+2025-07-21 16:24:48,698 - moqui - INFO - Remote target directory: /tmp/log_data
+2025-07-21 16:24:48,698 - moqui - INFO - 
+Step 2: Scanning for new cases in 'C:\moqui\log_data'...
+2025-07-21 16:24:48,723 - moqui - INFO - Found 2 new cases: ['1.2.840.113854.19.1.19271.1', 'test_case_01']
+2025-07-21 16:24:48,723 - moqui - INFO - 
+Step 3: Transferring files for 2 cases via SFTP...
+2025-07-21 16:24:49,542 - moqui - INFO - SFTP connection established to 25.2.190.194.
+2025-07-21 16:24:49,559 - moqui - INFO - Processing case '1.2.840.113854.19.1.19271.1': Uploading from 'C:\moqui\log_data\1.2.840.113854.19.1.19271.1' to '/tmp/log_data/1.2.840.113854.19.1.19271.1'
+2025-07-21 16:24:49,559 - moqui - INFO - Verifying local case path before upload: 'C:\moqui\log_data\1.2.840.113854.19.1.19271.1' (Exists: True)
+2025-07-21 16:24:49,820 - moqui - ERROR - Failed to upload directory for case '1.2.840.113854.19.1.19271.1'.
+2025-07-21 16:24:49,820 - moqui - INFO - Processing case 'test_case_01': Uploading from 'C:\moqui\log_data\test_case_01' to '/tmp/log_data/test_case_01'
+2025-07-21 16:24:49,820 - moqui - INFO - Verifying local case path before upload: 'C:\moqui\log_data\test_case_01' (Exists: True)
+2025-07-21 16:24:49,901 - moqui - INFO - SFTP transfer process finished. Connection closed.
+2025-07-21 16:24:49,902 - moqui - ERROR - ==================================================
+2025-07-21 16:24:49,902 - moqui - ERROR - An unhandled exception occurred during the pipeline test!
+2025-07-21 16:24:49,903 - moqui - ERROR - Error Type: Exception
+2025-07-21 16:24:49,904 - moqui - ERROR - Error Message: One or more SFTP uploads failed. Aborting test.
+2025-07-21 16:24:49,904 - moqui - ERROR - Full Traceback:
+2025-07-21 16:24:49,904 - moqui - ERROR - Traceback (most recent call last):
+  File "C:\moqui\mqi_communicator\test_data_pipeline.py", line 130, in run_test_pipeline
+    raise Exception("One or more SFTP uploads failed. Aborting test.")
+Exception: One or more SFTP uploads failed. Aborting test.
+
+2025-07-21 16:24:49,905 - moqui - ERROR - ==================================================
+2025-07-21 16:24:49,905 - moqui - ERROR - Test failed. Please review the logs to diagnose the issue.
+2025-07-21 16:28:04,276 - moqui - INFO - ==================================================
+2025-07-21 16:28:04,276 - moqui - INFO - Starting End-to-End Data Pipeline Test (60s timeout where supported)
+2025-07-21 16:28:04,276 - moqui - INFO - ==================================================
+2025-07-21 16:28:04,276 - moqui - INFO - Step 1: Loading configuration from 'config.json'...
+2025-07-21 16:28:04,276 - moqui - INFO - Local data source: C:\moqui\log_data
+2025-07-21 16:28:04,277 - moqui - INFO - Remote target directory: /tmp/log_data
+2025-07-21 16:28:04,277 - moqui - INFO - 
+Step 2: Scanning for new cases in 'C:\moqui\log_data'...
+2025-07-21 16:28:04,302 - moqui - INFO - Found 2 new cases: ['1.2.840.113854.19.1.19271.1', 'test_case_01']
+2025-07-21 16:28:04,302 - moqui - INFO - 
+Step 3: Transferring files for 2 cases via SFTP...
+2025-07-21 16:28:05,180 - moqui - INFO - SFTP connection established to 25.2.190.194.
+2025-07-21 16:28:05,195 - moqui - INFO - Processing case '1.2.840.113854.19.1.19271.1': Uploading from 'C:\moqui\log_data\1.2.840.113854.19.1.19271.1' to '/tmp/log_data/1.2.840.113854.19.1.19271.1'
+2025-07-21 16:28:05,195 - moqui - INFO - Verifying local case path before upload: 'C:\moqui\log_data\1.2.840.113854.19.1.19271.1' (Exists: True)
+2025-07-21 16:28:27,743 - moqui - INFO - Processing case 'test_case_01': Uploading from 'C:\moqui\log_data\test_case_01' to '/tmp/log_data/test_case_01'
+2025-07-21 16:28:27,743 - moqui - INFO - Verifying local case path before upload: 'C:\moqui\log_data\test_case_01' (Exists: True)
+2025-07-21 16:28:27,805 - moqui - INFO - SFTP transfer process finished. Connection closed.
+2025-07-21 16:28:27,806 - moqui - INFO - 
+Step 4: Executing remote command via SSH to verify transfer...
+2025-07-21 16:28:28,025 - moqui - INFO - SSH connection established to 25.2.190.194.
+2025-07-21 16:28:28,025 - moqui - INFO - Executing remote command: 'ls -laR /tmp/log_data'
+2025-07-21 16:28:28,340 - moqui - INFO - --- Remote Command STDOUT ---
+2025-07-21 16:28:28,341 - moqui - INFO - /tmp/log_data:
+total 24
+drwxrwxr-x  4 gpuadmin gpuadmin  4096 Jul 21 06:18 .
+drwxrwxrwt 28 root     root     12288 Jul 21 07:18 ..
+drwxrwxr-x  5 gpuadmin gpuadmin  4096 Jul 21 07:28 1.2.840.113854.19.1.19271.1
+drwxrwxr-x  2 gpuadmin gpuadmin  4096 Jul 21 06:18 test_case_01
+
+/tmp/log_data/1.2.840.113854.19.1.19271.1:
+total 728
+drwxrwxr-x 5 gpuadmin gpuadmin   4096 Jul 21 07:28 .
+drwxrwxr-x 4 gpuadmin gpuadmin   4096 Jul 21 06:18 ..
+drwxrwxr-x 2 gpuadmin gpuadmin   4096 Jul 21 07:28 2025042401440800
+drwxrwxr-x 2 gpuadmin gpuadmin   4096 Jul 21 07:28 2025042401501400
+drwxrwxr-x 2 gpuadmin gpuadmin   4096 Jul 21 07:28 2025042401552900
+-rw-rw-r-- 1 gpuadmin gpuadmin 724106 Jul 21 07:28 RP.1.2.840.113854.241506614174277151614979936366782948539.1.dcm
+
+/tmp/log_data/1.2.840.113854.19.1.19271.1/2025042401440800:
+total 9700
+drwxrwxr-x 2 gpuadmin gpuadmin   4096 Jul 21 07:28 .
+drwxrwxr-x 5 gpuadmin gpuadmin   4096 Jul 21 07:28 ..
+-rw-rw-r-- 1 gpuadmin gpuadmin  60272 Jul 21 07:28 02_0014046_001_002_001.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 219632 Jul 21 07:28 02_0014046_001_002_002.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 353056 Jul 21 07:28 02_0014046_001_002_003.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 333424 Jul 21 07:28 02_0014046_001_002_004.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 275904 Jul 21 07:28 02_0014046_001_002_005.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 303728 Jul 21 07:28 02_0014046_001_002_006.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 333440 Jul 21 07:28 02_0014046_001_002_007.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 351488 Jul 21 07:28 02_0014046_001_002_008.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 312528 Jul 21 07:28 02_0014046_001_002_009.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 211008 Jul 21 07:28 02_0014046_001_002_010.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 221648 Jul 21 07:28 02_0014046_001_002_011.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 276480 Jul 21 07:28 02_0014046_001_002_012.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 258928 Jul 21 07:28 02_0014046_001_002_013.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 311840 Jul 21 07:28 02_0014046_001_002_014.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 331248 Jul 21 07:28 02_0014046_001_002_015.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 274752 Jul 21 07:28 02_0014046_001_002_016.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 287920 Jul 21 07:28 02_0014046_001_002_017.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 379520 Jul 21 07:28 02_0014046_001_002_018.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 427056 Jul 21 07:28 02_0014046_001_002_019.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 471280 Jul 21 07:28 02_0014046_001_002_020.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 484560 Jul 21 07:28 02_0014046_001_002_021.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 497920 Jul 21 07:28 02_0014046_001_002_022.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 405200 Jul 21 07:28 02_0014046_001_002_023.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 344640 Jul 21 07:28 02_0014046_001_002_024.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 255024 Jul 21 07:28 02_0014046_001_002_025.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 202096 Jul 21 07:28 02_0014046_001_002_026.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 200672 Jul 21 07:28 02_0014046_001_002_027.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 189248 Jul 21 07:28 02_0014046_001_002_028.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 169376 Jul 21 07:28 02_0014046_001_002_029.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 208640 Jul 21 07:28 02_0014046_001_002_030.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 208864 Jul 21 07:28 02_0014046_001_002_031.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin  56976 Jul 21 07:28 02_0014046_001_002_032.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin  91680 Jul 21 07:28 02_0014046_001_002_033.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 322272 Jul 21 07:28 02_0014046_001_002_034.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin    812 Jul 21 07:28 02_55061194_001_002_001.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin    910 Jul 21 07:28 02_55061194_001_002_002.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   1288 Jul 21 07:28 02_55061194_001_002_003.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   1344 Jul 21 07:28 02_55061194_001_002_004.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   1456 Jul 21 07:28 02_55061194_001_002_005.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   1512 Jul 21 07:28 02_55061194_001_002_006.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   1778 Jul 21 07:28 02_55061194_001_002_007.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   2086 Jul 21 07:28 02_55061194_001_002_008.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   2240 Jul 21 07:28 02_55061194_001_002_009.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   2450 Jul 21 07:28 02_55061194_001_002_010.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   2772 Jul 21 07:28 02_55061194_001_002_011.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   2926 Jul 21 07:28 02_55061194_001_002_012.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   3472 Jul 21 07:28 02_55061194_001_002_013.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   3878 Jul 21 07:28 02_55061194_001_002_014.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   4242 Jul 21 07:28 02_55061194_001_002_015.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   4452 Jul 21 07:28 02_55061194_001_002_016.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   5012 Jul 21 07:28 02_55061194_001_002_017.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   5362 Jul 21 07:28 02_55061194_001_002_018.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   5614 Jul 21 07:28 02_55061194_001_002_019.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   5908 Jul 21 07:28 02_55061194_001_002_020.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   6034 Jul 21 07:28 02_55061194_001_002_021.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   6034 Jul 21 07:28 02_55061194_001_002_022.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   5978 Jul 21 07:28 02_55061194_001_002_023.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   5852 Jul 21 07:28 02_55061194_001_002_024.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   5852 Jul 21 07:28 02_55061194_001_002_025.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   5334 Jul 21 07:28 02_55061194_001_002_026.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   5180 Jul 21 07:28 02_55061194_001_002_027.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   4928 Jul 21 07:28 02_55061194_001_002_028.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   4830 Jul 21 07:28 02_55061194_001_002_029.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   4760 Jul 21 07:28 02_55061194_001_002_030.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   4620 Jul 21 07:28 02_55061194_001_002_031.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   2772 Jul 21 07:28 02_55061194_001_002_032.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   2688 Jul 21 07:28 02_55061194_001_002_033.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   2688 Jul 21 07:28 02_55061194_001_002_034.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin    356 Jul 21 07:28 PlanInfo.txt
+-rw-rw-r-- 1 gpuadmin gpuadmin   3551 Jul 21 07:28 PlanRange.txt
+
+/tmp/log_data/1.2.840.113854.19.1.19271.1/2025042401501400:
+total 17540
+drwxrwxr-x 2 gpuadmin gpuadmin    4096 Jul 21 07:28 .
+drwxrwxr-x 5 gpuadmin gpuadmin    4096 Jul 21 07:28 ..
+-rw-rw-r-- 1 gpuadmin gpuadmin   56432 Jul 21 07:28 02_0014623_001_003_001.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin  188976 Jul 21 07:28 02_0014623_001_003_002.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin  396192 Jul 21 07:28 02_0014623_001_003_003.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin  453760 Jul 21 07:28 02_0014623_001_003_004.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin  406784 Jul 21 07:28 02_0014623_001_003_005.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin  421824 Jul 21 07:28 02_0014623_001_003_006.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin  503616 Jul 21 07:28 02_0014623_001_003_007.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin  713888 Jul 21 07:28 02_0014623_001_003_008.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin  768512 Jul 21 07:28 02_0014623_001_003_009.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 1004592 Jul 21 07:28 02_0014623_001_003_010.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 1192688 Jul 21 07:28 02_0014623_001_003_011.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 1294256 Jul 21 07:28 02_0014623_001_003_012.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 1108560 Jul 21 07:28 02_0014623_001_003_013.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 1015808 Jul 21 07:28 02_0014623_001_003_014.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin  844080 Jul 21 07:28 02_0014623_001_003_015.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin  738960 Jul 21 07:28 02_0014623_001_003_016.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin  740672 Jul 21 07:28 02_0014623_001_003_017.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin  692144 Jul 21 07:28 02_0014623_001_003_018.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin  685824 Jul 21 07:28 02_0014623_001_003_019.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin  612864 Jul 21 07:28 02_0014623_001_003_020.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin  575728 Jul 21 07:28 02_0014623_001_003_021.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin  469056 Jul 21 07:28 02_0014623_001_003_022.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin  456112 Jul 21 07:28 02_0014623_001_003_023.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin  446928 Jul 21 07:28 02_0014623_001_003_024.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin  352480 Jul 21 07:28 02_0014623_001_003_025.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin  307888 Jul 21 07:28 02_0014623_001_003_026.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin  259200 Jul 21 07:28 02_0014623_001_003_027.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin  256592 Jul 21 07:28 02_0014623_001_003_028.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin  228400 Jul 21 07:28 02_0014623_001_003_029.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin  102208 Jul 21 07:28 02_0014623_001_003_030.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin  104240 Jul 21 07:28 02_0014623_001_003_031.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin  269472 Jul 21 07:28 02_0014623_001_003_032.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin    1302 Jul 21 07:28 02_55061194_001_003_001.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin    1554 Jul 21 07:28 02_55061194_001_003_002.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin    1680 Jul 21 07:28 02_55061194_001_003_003.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin    1750 Jul 21 07:28 02_55061194_001_003_004.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin    1848 Jul 21 07:28 02_55061194_001_003_005.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin    2240 Jul 21 07:28 02_55061194_001_003_006.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin    3360 Jul 21 07:28 02_55061194_001_003_007.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin    4046 Jul 21 07:28 02_55061194_001_003_008.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin    4592 Jul 21 07:28 02_55061194_001_003_009.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin    4914 Jul 21 07:28 02_55061194_001_003_010.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin    5320 Jul 21 07:28 02_55061194_001_003_011.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin    5642 Jul 21 07:28 02_55061194_001_003_012.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin    5824 Jul 21 07:28 02_55061194_001_003_013.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin    5796 Jul 21 07:28 02_55061194_001_003_014.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin    5642 Jul 21 07:28 02_55061194_001_003_015.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin    5614 Jul 21 07:28 02_55061194_001_003_016.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin    5488 Jul 21 07:28 02_55061194_001_003_017.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin    5404 Jul 21 07:28 02_55061194_001_003_018.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin    5236 Jul 21 07:28 02_55061194_001_003_019.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin    5166 Jul 21 07:28 02_55061194_001_003_020.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin    4984 Jul 21 07:28 02_55061194_001_003_021.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin    4956 Jul 21 07:28 02_55061194_001_003_022.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin    4984 Jul 21 07:28 02_55061194_001_003_023.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin    4970 Jul 21 07:28 02_55061194_001_003_024.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin    5012 Jul 21 07:28 02_55061194_001_003_025.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin    4998 Jul 21 07:28 02_55061194_001_003_026.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin    5068 Jul 21 07:28 02_55061194_001_003_027.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin    5040 Jul 21 07:28 02_55061194_001_003_028.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin    5040 Jul 21 07:28 02_55061194_001_003_029.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin    2870 Jul 21 07:28 02_55061194_001_003_030.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin    2870 Jul 21 07:28 02_55061194_001_003_031.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin    2828 Jul 21 07:28 02_55061194_001_003_032.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin     356 Jul 21 07:28 PlanInfo.txt
+-rw-rw-r-- 1 gpuadmin gpuadmin    3349 Jul 21 07:28 PlanRange.txt
+
+/tmp/log_data/1.2.840.113854.19.1.19271.1/2025042401552900:
+total 16684
+drwxrwxr-x 2 gpuadmin gpuadmin   4096 Jul 21 07:28 .
+drwxrwxr-x 5 gpuadmin gpuadmin   4096 Jul 21 07:28 ..
+-rw-rw-r-- 1 gpuadmin gpuadmin  77488 Jul 21 07:28 02_0015119_001_004_001.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 268192 Jul 21 07:28 02_0015119_001_004_002.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 274912 Jul 21 07:28 02_0015119_001_004_003.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 227536 Jul 21 07:28 02_0015119_001_004_004.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 224720 Jul 21 07:28 02_0015119_001_004_005.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 275440 Jul 21 07:28 02_0015119_001_004_006.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 278320 Jul 21 07:28 02_0015119_001_004_007.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 250048 Jul 21 07:28 02_0015119_001_004_008.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 213216 Jul 21 07:28 02_0015119_001_004_009.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 245072 Jul 21 07:28 02_0015119_001_004_010.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 375040 Jul 21 07:28 02_0015119_001_004_011.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 614672 Jul 21 07:28 02_0015119_001_004_012.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 585456 Jul 21 07:28 02_0015119_001_004_013.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 650448 Jul 21 07:28 02_0015119_001_004_014.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 873344 Jul 21 07:28 02_0015119_001_004_015.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 873328 Jul 21 07:28 02_0015119_001_004_016.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 893888 Jul 21 07:28 02_0015119_001_004_017.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 862592 Jul 21 07:28 02_0015119_001_004_018.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 778896 Jul 21 07:28 02_0015119_001_004_019.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 704032 Jul 21 07:28 02_0015119_001_004_020.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 668816 Jul 21 07:28 02_0015119_001_004_021.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 662192 Jul 21 07:28 02_0015119_001_004_022.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 559536 Jul 21 07:28 02_0015119_001_004_023.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 500544 Jul 21 07:28 02_0015119_001_004_024.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 440384 Jul 21 07:28 02_0015119_001_004_025.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 339728 Jul 21 07:28 02_0015119_001_004_026.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 368448 Jul 21 07:28 02_0015119_001_004_027.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 349504 Jul 21 07:28 02_0015119_001_004_028.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 288640 Jul 21 07:28 02_0015119_001_004_029.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 333136 Jul 21 07:28 02_0015119_001_004_030.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 315920 Jul 21 07:28 02_0015119_001_004_031.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 264432 Jul 21 07:28 02_0015119_001_004_032.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 264256 Jul 21 07:28 02_0015119_001_004_033.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 259264 Jul 21 07:28 02_0015119_001_004_034.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 252720 Jul 21 07:28 02_0015119_001_004_035.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 241424 Jul 21 07:28 02_0015119_001_004_036.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 266528 Jul 21 07:28 02_0015119_001_004_037.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 261040 Jul 21 07:28 02_0015119_001_004_038.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 171472 Jul 21 07:28 02_0015119_001_004_039.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 136496 Jul 21 07:28 02_0015119_001_004_040.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin 226432 Jul 21 07:28 02_0015119_001_004_041.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin  29088 Jul 21 07:28 02_0015119_001_004_042.ptn
+-rw-rw-r-- 1 gpuadmin gpuadmin    784 Jul 21 07:28 02_55061194_001_004_001.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin    980 Jul 21 07:28 02_55061194_001_004_002.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   1190 Jul 21 07:28 02_55061194_001_004_003.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   1274 Jul 21 07:28 02_55061194_001_004_004.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   1442 Jul 21 07:28 02_55061194_001_004_005.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   1610 Jul 21 07:28 02_55061194_001_004_006.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   1680 Jul 21 07:28 02_55061194_001_004_007.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   1848 Jul 21 07:28 02_55061194_001_004_008.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   2114 Jul 21 07:28 02_55061194_001_004_009.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   2506 Jul 21 07:28 02_55061194_001_004_010.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   3192 Jul 21 07:28 02_55061194_001_004_011.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   3514 Jul 21 07:28 02_55061194_001_004_012.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   3878 Jul 21 07:28 02_55061194_001_004_013.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   4382 Jul 21 07:28 02_55061194_001_004_014.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   4480 Jul 21 07:28 02_55061194_001_004_015.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   4018 Jul 21 07:28 02_55061194_001_004_016.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   4284 Jul 21 07:28 02_55061194_001_004_017.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   4648 Jul 21 07:28 02_55061194_001_004_018.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   4466 Jul 21 07:28 02_55061194_001_004_019.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   4522 Jul 21 07:28 02_55061194_001_004_020.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   4620 Jul 21 07:28 02_55061194_001_004_021.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   4662 Jul 21 07:28 02_55061194_001_004_022.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   4634 Jul 21 07:28 02_55061194_001_004_023.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   4536 Jul 21 07:28 02_55061194_001_004_024.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   4424 Jul 21 07:28 02_55061194_001_004_025.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   4396 Jul 21 07:28 02_55061194_001_004_026.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   4186 Jul 21 07:28 02_55061194_001_004_027.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   4102 Jul 21 07:28 02_55061194_001_004_028.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   4032 Jul 21 07:28 02_55061194_001_004_029.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   3808 Jul 21 07:28 02_55061194_001_004_030.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   3766 Jul 21 07:28 02_55061194_001_004_031.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   3500 Jul 21 07:28 02_55061194_001_004_032.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   3416 Jul 21 07:28 02_55061194_001_004_033.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   3430 Jul 21 07:28 02_55061194_001_004_034.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   3192 Jul 21 07:28 02_55061194_001_004_035.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   3052 Jul 21 07:28 02_55061194_001_004_036.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   3052 Jul 21 07:28 02_55061194_001_004_037.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   3010 Jul 21 07:28 02_55061194_001_004_038.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   3010 Jul 21 07:28 02_55061194_001_004_039.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   2800 Jul 21 07:28 02_55061194_001_004_040.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   2772 Jul 21 07:28 02_55061194_001_004_041.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin   1610 Jul 21 07:28 02_55061194_001_004_042.mgn
+-rw-rw-r-- 1 gpuadmin gpuadmin    356 Jul 21 07:28 PlanInfo.txt
+-rw-rw-r-- 1 gpuadmin gpuadmin   4360 Jul 21 07:28 PlanRange.txt
+
+/tmp/log_data/test_case_01:
+total 12
+drwxrwxr-x 2 gpuadmin gpuadmin 4096 Jul 21 06:18 .
+drwxrwxr-x 4 gpuadmin gpuadmin 4096 Jul 21 06:18 ..
+-rw-rw-r-- 1 gpuadmin gpuadmin   38 Jul 21 07:28 sample_log_1.txt
+
+2025-07-21 16:28:28,341 - moqui - INFO - -----------------------------
+2025-07-21 16:28:28,341 - moqui - INFO - SSH connection closed.
+2025-07-21 16:28:28,342 - moqui - INFO - 
+==================================================
+2025-07-21 16:28:28,342 - moqui - INFO - End-to-End Data Pipeline Test Completed Successfully!
+2025-07-21 16:28:28,342 - moqui - INFO - ==================================================
+2025-07-21 16:32:31,372 - moqui - INFO - All components initialized successfully
+2025-07-21 16:32:31,378 - moqui - INFO - Starting MOQUI automation system
+2025-07-21 16:32:31,379 - moqui - INFO - Performing startup recovery checks
+2025-07-21 16:32:31,379 - moqui - INFO - No stale cases found during startup
+2025-07-21 16:32:31,477 - moqui - INFO - No zombie GPU processes found
+2025-07-21 16:32:31,478 - moqui - INFO - Background workers started successfully
+2025-07-21 16:32:31,478 - moqui - INFO - Performing initial system health check and display update.
+2025-07-21 16:32:32,838 - moqui - INFO - Performing initial scan for new cases.
+2025-07-21 16:32:32,838 - moqui - INFO - Starting case scan
+2025-07-21 16:32:32,863 - moqui - INFO - Added new case to queue: 1.2.840.113854.19.1.19271.1
+2025-07-21 16:32:32,864 - moqui - INFO - Case scan completed. Found 1 new cases
+2025-07-21 16:32:37,535 - moqui - INFO - Scheduled case for processing: 1.2.840.113854.19.1.19271.1
+2025-07-21 16:33:02,780 - moqui - INFO - Received keyboard interrupt, shutting down...
+2025-07-21 16:33:02,781 - moqui - INFO - Shutting down MOQUI automation system
+2025-07-21 16:33:04,728 - moqui - INFO - Shutting down MOQUI automation system
+2025-07-21 16:33:05,546 - moqui - INFO - MOQUI automation system shutdown complete

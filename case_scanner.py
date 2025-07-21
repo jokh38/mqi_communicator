@@ -8,9 +8,10 @@ from typing import Dict, List, Optional, Any
 
 
 class CaseScanner:
-    def __init__(self, base_path: str, status_file: str = "case_status.json"):
+    def __init__(self, base_path: str, status_file: str = "case_status.json", stability_period_seconds: int = 10):
         self.base_path = Path(base_path)
         self.status_file = Path(status_file)
+        self.stability_period_seconds = stability_period_seconds
         self.case_status = self._load_case_status()
 
     def _load_case_status(self) -> Dict[str, Any]:
@@ -56,6 +57,22 @@ class CaseScanner:
             except OSError:
                 pass
             raise e
+
+    def _get_last_modified_time(self, folder_path: Path) -> Optional[float]:
+        """Get the last modification time of any file in the folder."""
+        if not folder_path.exists():
+            return None
+        
+        last_modified = 0.0
+        try:
+            for file_path in folder_path.rglob("*"):
+                if file_path.is_file():
+                    mod_time = file_path.stat().st_mtime
+                    if mod_time > last_modified:
+                        last_modified = mod_time
+            return last_modified if last_modified > 0.0 else None
+        except (OSError, IOError):
+            return None
 
     def _calculate_folder_hash(self, folder_path: Path) -> str:
         """Calculate hash of folder contents for change detection."""
@@ -116,6 +133,12 @@ class CaseScanner:
                     logging.warning(f"Case directory validation failed: {case_id}")
                     continue
                 
+                # Check for directory stability
+                last_mod_time = self._get_last_modified_time(case_dir)
+                if last_mod_time and (datetime.now().timestamp() - last_mod_time) < self.stability_period_seconds:
+                    logging.info(f"Case '{case_id}' is still being modified. Skipping for now.")
+                    continue
+
                 # Calculate current hash
                 current_hash = self._calculate_folder_hash(case_dir)
                 
@@ -125,7 +148,7 @@ class CaseScanner:
                     new_cases.append(case_id)
                     
                     # Update case status as NEW
-                    self.update_case_status(case_id, "NEW", hash=current_hash)
+                    self.update_case_status(case_id, "NEW", folder_hash=current_hash)
                 else:
                     logging.debug(f"Case already processed: {case_id}")
         

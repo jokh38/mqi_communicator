@@ -6,10 +6,10 @@ import shlex
 from typing import Dict, List, Optional, Any
 import threading
 import signal
-from base_ssh_connector import BaseSSHConnector
+from gentle_ssh_connector import GentleSSHConnector
 
 
-class RemoteExecutor(BaseSSHConnector):
+class RemoteExecutor(GentleSSHConnector):
     def __init__(self, host: str, username: str, password: str, port: int = 22, timeout: int = 30, config: Optional[Dict[str, Any]] = None):
         super().__init__(host, username, password, port, timeout)
         self.ssh: Optional[paramiko.SSHClient] = None
@@ -27,10 +27,8 @@ class RemoteExecutor(BaseSSHConnector):
         """Create SSH client after connection is established."""
         self.ssh = paramiko.SSHClient()
         self.ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        
-        # Connect SSH client using existing transport
-        self.ssh.connect(hostname=self.host, port=self.port, username=self.username, 
-                        password=self.password, sock=self.transport.sock)
+        # Use the existing transport to create the client
+        self.ssh._transport = self.transport
         
         # Reset failure counter on successful connection
         self._connection_failures = 0
