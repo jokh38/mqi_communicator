@@ -82,26 +82,26 @@ class MainController:
                     
                     # Check if process is still running
                     if psutil.pid_exists(pid):
-                        print(f"Another instance is already running (PID: {pid})")
+                        self.logger.warning(f"Another instance is already running (PID: {pid})")
                         return False
                     else:
                         # Process no longer exists, remove stale lock file
                         self.lock_file.unlink()
-                        print("Removed stale lock file")
+                        self.logger.info("Removed stale lock file")
                 except (ValueError, FileNotFoundError):
                     # Invalid lock file, remove it
                     self.lock_file.unlink()
-                    print("Removed invalid lock file")
+                    self.logger.info("Removed invalid lock file")
             
             # Create lock file with current PID
             with open(self.lock_file, 'w') as f:
                 f.write(str(os.getpid()))
             
-            print(f"Acquired application lock (PID: {os.getpid()})")
+            self.logger.info(f"Acquired application lock (PID: {os.getpid()})")
             return True
             
         except Exception as e:
-            print(f"Failed to acquire lock: {e}")
+            self.logger.error(f"Failed to acquire lock: {e}")
             return False
 
     def _cleanup_lock_file(self) -> None:
@@ -109,9 +109,9 @@ class MainController:
         try:
             if self.lock_file.exists():
                 self.lock_file.unlink()
-                print("Released application lock")
+                self.logger.info("Released application lock")
         except Exception as e:
-            print(f"Error cleaning up lock file: {e}")
+            self.logger.error(f"Error cleaning up lock file: {e}")
 
     def _recovery_startup_checks(self) -> None:
         """Perform recovery checks on startup."""
@@ -278,13 +278,15 @@ class MainController:
                 max_concurrent_jobs=self.max_concurrent_cases,
                 remote_executor=self.remote_executor,
                 config=self.config,
-                directory_manager=self.directory_manager
+                directory_manager=self.directory_manager,
+                status_display=self.status_display
             )
 
             # Initialize process monitor
             self.process_monitor = ProcessMonitor(
                 remote_executor=self.remote_executor,
-                monitoring_interval=self.monitoring_interval
+                monitoring_interval=self.monitoring_interval,
+                status_display=self.status_display
             )
 
             # Connect directory manager to other components
@@ -295,7 +297,7 @@ class MainController:
 
         except Exception as e:
             if hasattr(self, 'logger'):
-                self.logger.error(f"Failed to initialize components: {e}")
+                self.logger.critical(f"Failed to initialize components: {e}")
             else:
                 print(f"Failed to initialize components: {e}")
             raise
@@ -716,7 +718,7 @@ class MainController:
         try:
             # Acquire application lock to prevent multiple instances
             if not self._acquire_lock():
-                print("Failed to acquire application lock. Another instance may be running.")
+                logging.critical("Failed to acquire application lock. Another instance may be running.")
                 return
             
             self.logger.info("Starting MOQUI automation system")
@@ -885,10 +887,11 @@ class MainController:
 
 if __name__ == "__main__":
     # Example usage
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
     try:
         with MainController() as controller:
             controller.run()
     except KeyboardInterrupt:
-        print("Shutting down...")
+        logging.info("Shutting down...")
     except Exception as e:
-        print(f"Error: {e}")
+        logging.critical(f"Error: {e}", exc_info=True)

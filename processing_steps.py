@@ -85,7 +85,12 @@ class UploadDataStep(ProcessingStep):
         context.local_path = str(context.directory_manager.get_case_local_path(context.case_id))
         context.remote_path = context.directory_manager.get_case_remote_path(context.case_id)
         
-        if not context.sftp_manager.upload_directory(context.local_path, context.remote_path):
+        if not context.sftp_manager.upload_directory(
+            local_path=context.local_path, 
+            remote_path=context.remote_path,
+            status_display=context.status_display,
+            case_id=context.case_id
+        ):
             logging.error(f"Failed to upload data for case: {context.case_id}")
             return False
         
@@ -100,7 +105,7 @@ class RunInterpreterStep(ProcessingStep):
     
     def execute(self, context: ProcessingContext) -> bool:
         """Run Python interpreter."""
-        if not context.remote_executor.run_moqui_interpreter(context.case_id):
+        if not context.remote_executor.run_moqui_interpreter(context.case_id, status_display=context.status_display):
             logging.error(f"Failed to run interpreter for case: {context.case_id}")
             return False
         
@@ -153,7 +158,7 @@ class RunConverterStep(ProcessingStep):
     
     def execute(self, context: ProcessingContext) -> bool:
         """Run raw to DICOM converter."""
-        if not context.remote_executor.run_raw_to_dicom_converter(context.case_id):
+        if not context.remote_executor.run_raw_to_dicom_converter(context.case_id, status_display=context.status_display):
             logging.error(f"Failed to run converter for case: {context.case_id}")
             return False
         
@@ -205,7 +210,12 @@ class DownloadResultsStep(ProcessingStep):
         """Download results from remote server."""
         context.output_path = str(context.directory_manager.get_case_output_path(context.case_id))
         
-        if not context.sftp_manager.download_directory(context.remote_path, context.output_path):
+        if not context.sftp_manager.download_directory(
+            remote_path=context.remote_path, 
+            local_path=context.output_path,
+            status_display=context.status_display,
+            case_id=context.case_id
+        ):
             logging.error(f"Failed to download results for case: {context.case_id}")
             return False
         

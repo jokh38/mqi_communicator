@@ -22,9 +22,10 @@ class ProcessInfo:
 
 
 class ProcessMonitor:
-    def __init__(self, remote_executor, monitoring_interval: int = 10):
+    def __init__(self, remote_executor, monitoring_interval: int = 10, status_display=None):
         self.remote_executor = remote_executor
         self.monitoring_interval = monitoring_interval
+        self.status_display = status_display
         self.tracked_processes: List[Dict[str, Any]] = []
         self.monitoring_active = False
         self.monitor_thread: Optional[threading.Thread] = None
@@ -113,6 +114,15 @@ class ProcessMonitor:
                         })
                         
                         logging.info(f"Process completed: {process['case_id']}-{process['beam_id']}")
+                        
+                        # Update status display for process completion
+                        if self.status_display:
+                            self.status_display.update_case_status(
+                                case_id=process['case_id'],
+                                status="PROCESSING",
+                                stage="Process Complete",
+                                beam_info=f"Beam {process['beam_id']} processing completed"
+                            )
                 
                 return status_updates
                 
@@ -145,6 +155,16 @@ class ProcessMonitor:
                             })
                             
                             logging.warning(f"Process timed out: {process['case_id']}-{process['beam_id']}")
+                            
+                            # Update status display for timeout
+                            if self.status_display:
+                                self.status_display.update_case_status(
+                                    case_id=process['case_id'],
+                                    status="PROCESSING",
+                                    stage="Process Timeout",
+                                    error_message=f"Beam {process['beam_id']} processing timed out",
+                                    beam_info=""
+                                )
                 
                 return timed_out_processes
                 

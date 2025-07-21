@@ -282,7 +282,7 @@ class DirectoryManager:
             logging.error(f"Error getting directory info for {case_id}: {e}")
             return {"case_id": case_id, "exists": False, "size_bytes": 0}
 
-    def sync_directories(self, case_id: str, direction: str = "upload") -> bool:
+    def sync_directories(self, case_id: str, direction: str = "upload", status_display=None) -> bool:
         """Sync directories between local and remote."""
         try:
             if not self.sftp_manager:
@@ -297,7 +297,7 @@ class DirectoryManager:
                 local_path = str(self.get_case_local_path(case_id))
                 remote_path = self.get_case_remote_path(case_id)
                 
-                return self.sftp_manager.upload_directory(local_path, remote_path)
+                return self.sftp_manager.upload_directory(local_path, remote_path, status_display, case_id)
                 
             elif direction == "download":
                 # Download from remote to output
@@ -307,7 +307,7 @@ class DirectoryManager:
                 remote_path = self.get_case_remote_path(case_id)
                 local_path = str(self.get_case_output_path(case_id))
                 
-                return self.sftp_manager.download_directory(remote_path, local_path)
+                return self.sftp_manager.download_directory(remote_path, local_path, status_display, case_id)
                 
             else:
                 logging.error(f"Invalid sync direction: {direction}")

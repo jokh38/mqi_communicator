@@ -25,13 +25,14 @@ class Job:
 
 
 class JobScheduler:
-    def __init__(self, gpu_manager, case_scanner, max_concurrent_jobs: int = 2, remote_executor=None, config: Optional[Dict[str, Any]] = None, directory_manager=None):
+    def __init__(self, gpu_manager, case_scanner, max_concurrent_jobs: int = 2, remote_executor=None, config: Optional[Dict[str, Any]] = None, directory_manager=None, status_display=None):
         self.gpu_manager = gpu_manager
         self.case_scanner = case_scanner
         self.remote_executor = remote_executor
         self.max_concurrent_jobs = max_concurrent_jobs
         self.config = config or {}
         self.directory_manager = directory_manager
+        self.status_display = status_display
         
         self.job_queue: List[Dict[str, Any]] = []
         self.active_jobs: Dict[str, Dict[str, Any]] = {}
@@ -365,6 +366,17 @@ class JobScheduler:
                         self.active_jobs[job["case_id"]] = job
                         
                         logging.info(f"Started job for case {job['case_id']} with GPUs {gpu_allocation}")
+                        
+                        # Update status display
+                        if self.status_display:
+                            self.status_display.update_case_status(
+                                case_id=job['case_id'],
+                                status="PROCESSING",
+                                stage="Starting GPU Processing",
+                                gpu_allocation=gpu_allocation,
+                                beam_info=f"Allocated GPUs: {gpu_allocation}"
+                            )
+                        
                         return job
                 
                 return None
@@ -390,10 +402,29 @@ class JobScheduler:
                 if success:
                     job["status"] = "COMPLETED"
                     logging.info(f"Job for case {case_id} completed successfully")
+                    
+                    # Update status display for success
+                    if self.status_display:
+                        self.status_display.update_case_status(
+                            case_id=case_id,
+                            status="PROCESSING",
+                            stage="GPU Processing Complete",
+                            beam_info="All beams calculated successfully"
+                        )
                 else:
                     job["status"] = "FAILED"
                     job["error_message"] = error_message
                     logging.error(f"Job for case {case_id} failed: {error_message}")
+                    
+                    # Update status display for failure
+                    if self.status_display:
+                        self.status_display.update_case_status(
+                            case_id=case_id,
+                            status="PROCESSING",
+                            stage="GPU Processing Failed",
+                            error_message=f"GPU processing failed: {error_message}",
+                            beam_info=""
+                        )
                 
                 # Release GPUs
                 if job["gpu_allocation"]:

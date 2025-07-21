@@ -109,50 +109,122 @@ class RemoteExecutor(BaseSSHConnector):
             logging.error(f"Python script failed: {script_path}, Error: {result['stderr']}")
             return False
 
-    def run_moqui_interpreter(self, case_id: str, workspace_path: str = None) -> bool:
+    def run_moqui_interpreter(self, case_id: str, workspace_path: str = None, status_display=None) -> bool:
         """Run moqui interpreter for case parsing."""
         workspace_path = workspace_path or self.remote_workspace
         case_path = f"{workspace_path}/{case_id}"
         command = f"cd {shlex.quote(case_path)} && python3 {shlex.quote(self.mqi_interpreter_path)} --rtplan RTPLAN.dcm --logdir logs --outputdir moqui_inputs"
         
+        # Update status display - starting interpreter
+        if status_display:
+            status_display.update_case_status(
+                case_id=case_id,
+                status="PROCESSING",
+                stage="Running Interpreter",
+                transfer_info="Parsing RTPLAN and preparing inputs..."
+            )
+        
         result = self.execute_command(command)
         
         if result["exit_code"] == 0:
             logging.info(f"MOQUI interpreter completed for case: {case_id}")
+            if status_display:
+                status_display.update_case_status(
+                    case_id=case_id,
+                    status="PROCESSING",
+                    stage="Interpreter Complete",
+                    transfer_info="RTPLAN parsed successfully"
+                )
             return True
         else:
             logging.error(f"MOQUI interpreter failed for case: {case_id}, Error: {result['stderr']}")
+            if status_display:
+                status_display.update_case_status(
+                    case_id=case_id,
+                    status="PROCESSING",
+                    stage="Interpreter Failed",
+                    error_message=f"Interpreter failed: {result['stderr'][:100]}...",
+                    transfer_info=""
+                )
             return False
 
     def run_moqui_beam(self, case_id: str, beam_id: int, gpu_id: int, 
-                      workspace_path: str = None) -> bool:
+                      workspace_path: str = None, status_display=None) -> bool:
         """Run moqui beam calculation on specific GPU."""
         workspace_path = workspace_path or self.remote_workspace
         case_path = f"{workspace_path}/{case_id}"
         command = f"cd {shlex.quote(case_path)} && CUDA_VISIBLE_DEVICES={gpu_id} {shlex.quote(self.moqui_binary_path)} --input_dir moqui_inputs --output_dir moqui_output"
         
+        # Update status display - starting beam calculation
+        if status_display:
+            status_display.update_case_status(
+                case_id=case_id,
+                status="PROCESSING",
+                stage="Calculating Beam",
+                transfer_info=f"Processing beam {beam_id} on GPU {gpu_id}..."
+            )
+        
         result = self.execute_command(command, timeout=3600)  # 1 hour timeout
         
         if result["exit_code"] == 0:
             logging.info(f"MOQUI beam {beam_id} completed for case: {case_id} on GPU {gpu_id}")
+            if status_display:
+                status_display.update_case_status(
+                    case_id=case_id,
+                    status="PROCESSING",
+                    stage="Beam Complete",
+                    transfer_info=f"Beam {beam_id} calculated successfully on GPU {gpu_id}"
+                )
             return True
         else:
             logging.error(f"MOQUI beam {beam_id} failed for case: {case_id}, Error: {result['stderr']}")
+            if status_display:
+                status_display.update_case_status(
+                    case_id=case_id,
+                    status="PROCESSING",
+                    stage="Beam Failed",
+                    error_message=f"Beam {beam_id} failed on GPU {gpu_id}: {result['stderr'][:100]}...",
+                    transfer_info=""
+                )
             return False
 
-    def run_raw_to_dicom_converter(self, case_id: str, workspace_path: str = None) -> bool:
+    def run_raw_to_dicom_converter(self, case_id: str, workspace_path: str = None, status_display=None) -> bool:
         """Run raw to DICOM converter."""
         workspace_path = workspace_path or self.remote_workspace
         case_path = f"{workspace_path}/{case_id}"
         command = f"cd {shlex.quote(case_path)} && python3 {shlex.quote(self.raw_to_dcm_path)} --input moqui_output/dose.raw --output moqui_output/RTDOSE.dcm"
         
+        # Update status display - starting conversion
+        if status_display:
+            status_display.update_case_status(
+                case_id=case_id,
+                status="PROCESSING",
+                stage="Converting to DICOM",
+                transfer_info="Converting raw data to DICOM format..."
+            )
+        
         result = self.execute_command(command)
         
         if result["exit_code"] == 0:
             logging.info(f"Raw to DICOM conversion completed for case: {case_id}")
+            if status_display:
+                status_display.update_case_status(
+                    case_id=case_id,
+                    status="PROCESSING",
+                    stage="Conversion Complete",
+                    transfer_info="DICOM conversion completed successfully"
+                )
             return True
         else:
             logging.error(f"Raw to DICOM conversion failed for case: {case_id}, Error: {result['stderr']}")
+            if status_display:
+                status_display.update_case_status(
+                    case_id=case_id,
+                    status="PROCESSING",
+                    stage="Conversion Failed",
+                    error_message=f"DICOM conversion failed: {result['stderr'][:100]}...",
+                    transfer_info=""
+                )
             return False
 
     def check_process_status(self, process_name: str) -> List[Dict[str, str]]:
