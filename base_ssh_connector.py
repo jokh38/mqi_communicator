@@ -66,45 +66,61 @@ class BaseSSHConnector(ABC):
     
     def connect(self) -> bool:
         """Establish SSH connection with improved timeout and retry logic."""
-        try:
-            # Clean up any existing transport
-            if self.transport:
-                try:
-                    self.transport.close()
-                except:
-                    pass
-                self.transport = None
-            
-            # Create transport with more conservative timeouts
-            self.transport = paramiko.Transport((self.host, self.port))
-            self.transport.banner_timeout = 60  # Increased banner timeout
-            self.transport.auth_timeout = 60    # Increased auth timeout
-            
-            # Set keepalive to maintain connection
-            self.transport.set_keepalive(30)
-            
-            # Connect with authentication
-            self.transport.connect(username=self.username, password=self.password)
-            
-            self.connected = True
-            logging.info(f"Successfully connected to {self.host}:{self.port}")
-            self._post_connect_setup()
-            
-            return True
-            
-        except paramiko.SSHException as e:
-            if "Invalid packet blocking" in str(e) or "Error reading SSH protocol banner" in str(e):
-                logging.error(f"SSH protocol error - check if {self.host}:{self.port} is actually an SSH server: {e}")
-                # Add a small delay before allowing retry
-                time.sleep(2)
-            else:
-                logging.error(f"SSH connection failed: {e}")
-            self.connected = False
-            return False
-        except Exception as e:
-            logging.error(f"SSH connection failed: {e}")
-            self.connected = False
-            return False
+        max_attempts = 3
+        
+        for attempt in range(max_attempts):
+            try:
+                # Clean up any existing transport
+                if self.transport:
+                    try:
+                        self.transport.close()
+                    except:
+                        pass
+                    self.transport = None
+                
+                # Add a small delay between attempts to avoid overwhelming the server
+                if attempt > 0:
+                    delay = 2 ** attempt  # Exponential backoff: 2, 4 seconds
+                    logging.info(f"Retrying SSH connection in {delay} seconds (attempt {attempt + 1}/{max_attempts})")
+                    time.sleep(delay)
+                
+                # Create transport with more conservative timeouts
+                self.transport = paramiko.Transport((self.host, self.port))
+                self.transport.banner_timeout = 30  # Reduced from 60 to avoid hanging
+                self.transport.auth_timeout = 30    # Reduced from 60 to avoid hanging
+                
+                # Set keepalive to maintain connection
+                self.transport.set_keepalive(30)
+                
+                # Connect with authentication
+                self.transport.connect(username=self.username, password=self.password)
+                
+                self.connected = True
+                logging.info(f"Successfully connected to {self.host}:{self.port} on attempt {attempt + 1}")
+                self._post_connect_setup()
+                
+                return True
+                
+            except paramiko.SSHException as e:
+                error_msg = str(e)
+                if any(keyword in error_msg for keyword in ["Invalid packet blocking", "Error reading SSH protocol banner", "utf-8", "UnicodeDecodeError"]):
+                    logging.warning(f"SSH protocol/encoding error on attempt {attempt + 1}/{max_attempts}: {error_msg}")
+                    if attempt < max_attempts - 1:
+                        continue  # Retry on encoding or protocol errors
+                    else:
+                        logging.error(f"SSH connection failed after {max_attempts} attempts due to protocol/encoding errors")
+                else:
+                    logging.error(f"SSH connection failed: {error_msg}")
+                    break  # Don't retry on other SSH errors
+                
+            except Exception as e:
+                logging.error(f"SSH connection failed on attempt {attempt + 1}/{max_attempts}: {e}")
+                if attempt < max_attempts - 1:
+                    continue  # Retry on general errors
+        
+        # All attempts failed
+        self.connected = False
+        return False
     
     @abstractmethod
     def _post_connect_setup(self) -> None:

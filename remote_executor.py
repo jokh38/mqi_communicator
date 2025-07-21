@@ -41,6 +41,18 @@ class RemoteExecutor(BaseSSHConnector):
 
     def _ensure_ssh_connected(self) -> bool:
         """Ensure SSH client is available, reconnect if necessary."""
+        # First check if we have a valid connection
+        if self.connected and self.ssh is not None:
+            # Test if the connection is still alive with a simple command
+            try:
+                self.ssh.exec_command("echo test", timeout=5)
+                return True
+            except Exception as e:
+                logging.warning(f"SSH connection test failed, reconnecting: {e}")
+                self.connected = False
+                self.ssh = None
+        
+        # If no valid connection, try to establish one
         return self._ensure_connected() and self.ssh is not None
 
     def execute_command(self, command: str, timeout: Optional[int] = None) -> Dict[str, Any]:
