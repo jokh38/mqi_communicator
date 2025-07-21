@@ -2,6 +2,7 @@ import paramiko
 import time
 import logging
 import socket
+import shlex
 from typing import Dict, List, Optional, Any
 import threading
 import signal
@@ -108,7 +109,8 @@ class RemoteExecutor(BaseSSHConnector):
     def run_moqui_interpreter(self, case_id: str, workspace_path: str = None) -> bool:
         """Run moqui interpreter for case parsing."""
         workspace_path = workspace_path or self.remote_workspace
-        command = f"cd {workspace_path}/{case_id} && python3 {self.mqi_interpreter_path} --rtplan RTPLAN.dcm --logdir logs --outputdir moqui_inputs"
+        case_path = f"{workspace_path}/{case_id}"
+        command = f"cd {shlex.quote(case_path)} && python3 {shlex.quote(self.mqi_interpreter_path)} --rtplan RTPLAN.dcm --logdir logs --outputdir moqui_inputs"
         
         result = self.execute_command(command)
         
@@ -123,7 +125,8 @@ class RemoteExecutor(BaseSSHConnector):
                       workspace_path: str = None) -> bool:
         """Run moqui beam calculation on specific GPU."""
         workspace_path = workspace_path or self.remote_workspace
-        command = f"cd {workspace_path}/{case_id} && CUDA_VISIBLE_DEVICES={gpu_id} {self.moqui_binary_path} --input_dir moqui_inputs --output_dir moqui_output"
+        case_path = f"{workspace_path}/{case_id}"
+        command = f"cd {shlex.quote(case_path)} && CUDA_VISIBLE_DEVICES={gpu_id} {shlex.quote(self.moqui_binary_path)} --input_dir moqui_inputs --output_dir moqui_output"
         
         result = self.execute_command(command, timeout=3600)  # 1 hour timeout
         
@@ -137,7 +140,8 @@ class RemoteExecutor(BaseSSHConnector):
     def run_raw_to_dicom_converter(self, case_id: str, workspace_path: str = None) -> bool:
         """Run raw to DICOM converter."""
         workspace_path = workspace_path or self.remote_workspace
-        command = f"cd {workspace_path}/{case_id} && python3 {self.raw_to_dcm_path} --input moqui_output/dose.raw --output moqui_output/RTDOSE.dcm"
+        case_path = f"{workspace_path}/{case_id}"
+        command = f"cd {shlex.quote(case_path)} && python3 {shlex.quote(self.raw_to_dcm_path)} --input moqui_output/dose.raw --output moqui_output/RTDOSE.dcm"
         
         result = self.execute_command(command)
         

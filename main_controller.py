@@ -6,6 +6,7 @@ import psutil
 import os
 import atexit
 import shutil
+import shlex
 import zipfile
 from pathlib import Path
 from datetime import datetime, timedelta
@@ -440,7 +441,7 @@ class MainController:
             # Clean up remote workspace on non-retryable failure
             try:
                 remote_path = self.directory_manager.get_case_remote_path(case_id)
-                self.remote_executor.execute_command(f"rm -rf {remote_path}")
+                self.remote_executor.execute_command(f"rm -rf {shlex.quote(remote_path)}")
                 self.logger.info(f"Cleaned up remote workspace for failed case: {case_id}")
             except Exception as cleanup_error:
                 self.logger.warning(f"Failed to clean up remote workspace for case {case_id}: {cleanup_error}")
