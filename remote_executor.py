@@ -14,6 +14,7 @@ class RemoteExecutor(BaseSSHConnector):
         super().__init__(host, username, password, port, timeout)
         self.ssh: Optional[paramiko.SSHClient] = None
         self.config = config or {}
+        self._connection_failures = 0  # Track consecutive connection failures
         
         # Extract paths from config
         self.paths = self.config.get("paths", {})
@@ -30,6 +31,9 @@ class RemoteExecutor(BaseSSHConnector):
         # Connect SSH client using existing transport
         self.ssh.connect(hostname=self.host, port=self.port, username=self.username, 
                         password=self.password, sock=self.transport.sock)
+        
+        # Reset failure counter on successful connection
+        self._connection_failures = 0
     
     def _pre_disconnect_cleanup(self) -> None:
         """Close SSH client before disconnection."""
@@ -59,6 +63,7 @@ class RemoteExecutor(BaseSSHConnector):
     def execute_command(self, command: str, timeout: Optional[int] = None) -> Dict[str, Any]:
         """Execute remote command and return result."""
         if not self._ensure_ssh_connected():
+            self._connection_failures += 1
             return {
                 "stdout": "",
                 "stderr": "Connection failed",

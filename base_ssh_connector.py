@@ -84,13 +84,27 @@ class BaseSSHConnector(ABC):
                     logging.info(f"Retrying SSH connection in {delay} seconds (attempt {attempt + 1}/{max_attempts})")
                     time.sleep(delay)
                 
+                # Test socket connectivity first
+                import socket
+                test_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                test_socket.settimeout(10)
+                try:
+                    test_socket.connect((self.host, self.port))
+                    test_socket.close()
+                except Exception as e:
+                    logging.warning(f"Socket connectivity test failed on attempt {attempt + 1}: {e}")
+                    if attempt < max_attempts - 1:
+                        continue
+                    else:
+                        raise
+                
                 # Create transport with more conservative timeouts
                 self.transport = paramiko.Transport((self.host, self.port))
-                self.transport.banner_timeout = 30  # Reduced from 60 to avoid hanging
-                self.transport.auth_timeout = 30    # Reduced from 60 to avoid hanging
+                self.transport.banner_timeout = 15  # Further reduced to avoid corrupted data
+                self.transport.auth_timeout = 30    
                 
-                # Set keepalive to maintain connection
-                self.transport.set_keepalive(30)
+                # Set more frequent keepalive to detect issues sooner
+                self.transport.set_keepalive(15)
                 
                 # Connect with authentication
                 self.transport.connect(username=self.username, password=self.password)
