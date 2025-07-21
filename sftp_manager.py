@@ -52,8 +52,8 @@ class SFTPManager(BaseSSHConnector):
             logging.error(f"Failed to create remote directory {remote_path}: {e}")
             return False
 
-    def upload_file(self, local_path: str, remote_path: str, 
-                   progress_callback: Optional[Callable] = None) -> bool:
+    def upload_file(self, local_path: str, remote_path: str, case_id: str = "", 
+                    status_display=None, current_file: int = 0, total_files: int = 0) -> bool:
         """Upload single file with pre-flight checks, post-flight verification, and network retry."""
         def _upload_file_internal():
             if not self._ensure_connected():
@@ -67,20 +67,32 @@ class SFTPManager(BaseSSHConnector):
                 raise FileNotFoundError(f"Local file does not exist or is not a file: {local_path}")
             
             local_size = local_file.stat().st_size
-            logging.info(f"[SFTP] Starting upload of '{local_path}' ({local_size} bytes) to '{remote_path}'")
+            
+            # Update rich display with current file transfer info
+            if status_display and case_id:
+                file_name = os.path.basename(local_path)
+                if total_files > 0:
+                    transfer_info = f"Uploading {file_name} ({current_file}/{total_files})"
+                else:
+                    transfer_info = f"Uploading {file_name}"
+                
+                status_display.update_case_status(
+                    case_id=case_id,
+                    transfer_info=transfer_info
+                )
 
             # The remote directory structure is assumed to be pre-created by `upload_directory`.
             # This function is now only responsible for the atomic upload operation.
             
             # 3. Upload file
-            self.sftp.put(str(local_file), remote_path, callback=progress_callback)
-            logging.info(f"[SFTP] Upload command for '{local_path}' completed.")
+            self.sftp.put(str(local_file), remote_path)
+            # Upload completion logging removed - using rich display instead
 
             # 4. Post-flight verification: Check existence and size
             try:
                 remote_stat = self.sftp.stat(remote_path)
                 if remote_stat.st_size == local_size:
-                    logging.info(f"[SFTP] Post-flight verification successful for '{remote_path}'. Size matches ({local_size} bytes).")
+                    # Post-flight verification logging removed - using rich display instead
                     return True
                 else:
                     logging.error(f"[SFTP] Post-flight verification failed for '{remote_path}'. Size mismatch: local={local_size}, remote={remote_stat.st_size}")
@@ -99,8 +111,9 @@ class SFTPManager(BaseSSHConnector):
             return False
 
     def upload_directory(self, local_path: str, remote_path: str, 
-                        progress_callback: Optional[Callable] = None) -> bool:
-        """Upload entire directory recursively by first creating the full directory structure."""
+                        status_display: Optional[Any] = None, 
+                        case_id: Optional[str] = None) -> bool:
+        """Upload entire directory recursively with progress reporting."""
         if not self._ensure_connected():
             return False
         
@@ -112,7 +125,7 @@ class SFTPManager(BaseSSHConnector):
         try:
             # Step 1: Create all directories on the remote first.
             logging.info(f"[SFTP] Creating remote directory structure for {remote_path}")
-            self.create_remote_directory(remote_path) # Create the root directory
+            self.create_remote_directory(remote_path)
             for local_subdir in local_dir.rglob("*"):
                 if local_subdir.is_dir():
                     relative_dir = local_subdir.relative_to(local_dir)
@@ -122,26 +135,40 @@ class SFTPManager(BaseSSHConnector):
             # Step 2: Upload all files now that directories are guaranteed to exist.
             logging.info(f"[SFTP] Starting file uploads for {local_dir}")
             all_files = [p for p in local_dir.rglob("*") if p.is_file()]
-            logging.info(f"[SFTP] Found {len(all_files)} file(s) to upload.")
+            total_files = len(all_files)
+            logging.info(f"[SFTP] Found {total_files} file(s) to upload.")
 
-            for file_path in all_files:
+            for i, file_path in enumerate(all_files):
                 relative_path = file_path.relative_to(local_dir)
                 remote_file_path = f"{remote_path.rstrip('/')}/{str(relative_path).replace(chr(92), '/')}"
                 
-                if not self.upload_file(str(file_path), remote_file_path, progress_callback):
+                if not self.upload_file(str(file_path), remote_file_path, case_id, status_display, i+1, total_files):
                     logging.error(f"Stopping upload due to failure on file: {file_path}")
                     return False
+                
+                # Update progress
+                if status_display and case_id:
+                    progress = (i + 1) / total_files
+                    transfer_info = f"Uploading: {i+1}/{total_files}"
+                    status_display.update_case_status(
+                        case_id=case_id,
+                        status="PROCESSING",
+                        stage="Uploading Data",
+                        progress=progress,
+                        transfer_info=transfer_info
+                    )
             
             logging.info(f"Successfully uploaded all files from {local_dir}")
+            if status_display and case_id:
+                status_display.update_case_status(case_id=case_id, transfer_info="")
             return True
             
         except Exception as e:
             logging.error(f"Failed to upload directory {local_path}: {e}")
             return False
 
-    def download_file(self, remote_path: str, local_path: str, 
-                     progress_callback: Optional[Callable] = None) -> bool:
-        """Download single file with optional progress callback and network retry."""
+    def download_file(self, remote_path: str, local_path: str) -> bool:
+        """Download single file with network retry."""
         def _download_file_internal():
             if not self._ensure_connected():
                 raise ConnectionError("Failed to establish SFTP connection")
@@ -151,7 +178,7 @@ class SFTPManager(BaseSSHConnector):
             local_file.parent.mkdir(parents=True, exist_ok=True)
             
             # Download file
-            self.sftp.get(remote_path, str(local_file), callback=progress_callback)
+            self.sftp.get(remote_path, str(local_file))
             return True
         
         try:
@@ -161,30 +188,57 @@ class SFTPManager(BaseSSHConnector):
             return False
 
     def download_directory(self, remote_path: str, local_path: str, 
-                          progress_callback: Optional[Callable] = None) -> bool:
-        """Download entire directory recursively."""
+                          status_display: Optional[Any] = None, 
+                          case_id: Optional[str] = None) -> bool:
+        """Download entire directory recursively with progress reporting."""
         if not self._ensure_connected():
             return False
         
         try:
-            # Create local directory
-            local_dir = Path(local_path)
-            local_dir.mkdir(parents=True, exist_ok=True)
+            # Step 1: List all files to be downloaded to get a total count
+            all_files = []
+            items_to_scan = [remote_path]
+            while items_to_scan:
+                current_path = items_to_scan.pop()
+                for item in self.sftp.listdir_attr(current_path):
+                    item_full_path = f"{current_path.rstrip('/')}/{item.filename}"
+                    if stat.S_ISDIR(item.st_mode):
+                        items_to_scan.append(item_full_path)
+                    else:
+                        all_files.append(item_full_path)
             
-            # List remote directory
-            for item in self.sftp.listdir_attr(remote_path):
-                remote_item_path = f"{remote_path.rstrip('/')}/{item.filename}"
-                local_item_path = local_dir / item.filename
+            total_files = len(all_files)
+            logging.info(f"[SFTP] Found {total_files} file(s) to download from {remote_path}.")
+            
+            # Step 2: Download files and update progress
+            downloaded_count = 0
+            for remote_file_path in all_files:
+                # Construct local path
+                relative_path = remote_file_path.replace(f"{remote_path.rstrip('/')}/", "", 1)
+                local_file_path = Path(local_path) / relative_path
+
+                # Ensure local directory exists
+                local_file_path.parent.mkdir(parents=True, exist_ok=True)
+
+                if not self.download_file(remote_file_path, str(local_file_path)):
+                    logging.error(f"Stopping download due to failure on file: {remote_file_path}")
+                    return False
                 
-                if stat.S_ISDIR(item.st_mode):
-                    # Recursively download subdirectory
-                    if not self.download_directory(remote_item_path, str(local_item_path), progress_callback):
-                        return False
-                else:
-                    # Download file
-                    if not self.download_file(remote_item_path, str(local_item_path), progress_callback):
-                        return False
+                downloaded_count += 1
+                if status_display and case_id:
+                    progress = downloaded_count / total_files
+                    transfer_info = f"Downloading: {downloaded_count}/{total_files}"
+                    status_display.update_case_status(
+                        case_id=case_id,
+                        status="PROCESSING",
+                        stage="Downloading Results",
+                        progress=progress,
+                        transfer_info=transfer_info
+                    )
             
+            logging.info(f"Successfully downloaded all files to {local_path}")
+            if status_display and case_id:
+                status_display.update_case_status(case_id=case_id, transfer_info="")
             return True
             
         except Exception as e:
