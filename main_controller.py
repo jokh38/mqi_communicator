@@ -47,7 +47,8 @@ class MainController:
             'system_health': {},
             'active_cases': set(),
             'last_scan_time': None,
-            'waiting_cases': {}  # {case_id: {'retry_count': int, 'next_retry_time': datetime}}
+            'waiting_cases': {},  # {case_id: {'retry_count': int, 'next_retry_time': datetime}}
+            'last_archive_check_date': None
         }
         
         # Thread control
@@ -751,8 +752,15 @@ class MainController:
                             self._monitor_system_health()
                             self._update_status_display()
                             
-                        # Check for monthly backup (once per day at 02:00)
+                        # Check for daily archive (once per day after 07:00)
                         current_time = datetime.now()
+                        if current_time.hour >= 7:
+                            if self.shared_state['last_archive_check_date'] != current_time.date():
+                                self.logger.info("Performing daily check for old cases to archive.")
+                                self.case_scanner.archive_old_cases()
+                                self.shared_state['last_archive_check_date'] = current_time.date()
+
+                        # Check for monthly backup (once per day at 02:00)
                         if current_time.hour == 2 and current_time.minute == 0:
                             self._check_and_perform_monthly_backup()
                     

@@ -3,7 +3,7 @@ import hashlib
 import os
 import tempfile
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
 
 
@@ -203,6 +203,60 @@ class CaseScanner:
         
         if cases_to_remove:
             self._save_case_status()
+
+    def archive_old_cases(self, days: int = 30) -> None:
+        """Archive old completed or failed cases to a separate file."""
+        import logging
+        if not self.case_status:
+            return
+
+        cutoff_date = datetime.now()
+        cutoff_timestamp = (cutoff_date - timedelta(days=days)).timestamp()
+        
+        cases_to_archive = {}
+        
+        for case_id, info in list(self.case_status.items()):
+            status = info.get("status", "")
+            end_time_str = info.get("end_time", "")
+            
+            if status in ["COMPLETED", "FAILED"] and end_time_str:
+                try:
+                    end_time = datetime.strptime(end_time_str, "%Y-%m-%d %H:%M:%S")
+                    if end_time.timestamp() < cutoff_timestamp:
+                        cases_to_archive[case_id] = info
+                except (ValueError, TypeError):
+                    continue
+        
+        if not cases_to_archive:
+            return
+            
+        archive_filename = f"case_closed_{cutoff_date.strftime('%Y%m')}.json"
+        archive_filepath = self.status_file.parent / archive_filename
+        
+        archived_data = {}
+        if archive_filepath.exists():
+            try:
+                with open(archive_filepath, 'r', encoding='utf-8') as f:
+                    archived_data = json.load(f)
+            except (json.JSONDecodeError, FileNotFoundError):
+                logging.warning(f"Could not read existing archive file: {archive_filepath}")
+
+        archived_data.update(cases_to_archive)
+        
+        try:
+            with open(archive_filepath, 'w', encoding='utf-8') as f:
+                json.dump(archived_data, f, indent=2, ensure_ascii=False)
+            logging.info(f"Archived {len(cases_to_archive)} cases to {archive_filepath}")
+        except IOError as e:
+            logging.error(f"Failed to write to archive file: {e}")
+            return
+
+        for case_id in cases_to_archive:
+            if case_id in self.case_status:
+                del self.case_status[case_id]
+        
+        self._save_case_status()
+        logging.info("Cleaned up archived cases from status file.")
 
     def reset_case_status(self, case_id: str) -> bool:
         """Reset case status to allow reprocessing."""
