@@ -65,12 +65,23 @@ class BaseSSHConnector(ABC):
         raise last_exception
     
     def connect(self) -> bool:
-        """Establish SSH connection."""
+        """Establish SSH connection with improved timeout and retry logic."""
         try:
-            # Create transport with timeout
+            # Clean up any existing transport
+            if self.transport:
+                try:
+                    self.transport.close()
+                except:
+                    pass
+                self.transport = None
+            
+            # Create transport with more conservative timeouts
             self.transport = paramiko.Transport((self.host, self.port))
-            self.transport.banner_timeout = 30  # Set banner timeout
-            self.transport.auth_timeout = 30    # Set auth timeout
+            self.transport.banner_timeout = 60  # Increased banner timeout
+            self.transport.auth_timeout = 60    # Increased auth timeout
+            
+            # Set keepalive to maintain connection
+            self.transport.set_keepalive(30)
             
             # Connect with authentication
             self.transport.connect(username=self.username, password=self.password)
@@ -84,6 +95,8 @@ class BaseSSHConnector(ABC):
         except paramiko.SSHException as e:
             if "Invalid packet blocking" in str(e) or "Error reading SSH protocol banner" in str(e):
                 logging.error(f"SSH protocol error - check if {self.host}:{self.port} is actually an SSH server: {e}")
+                # Add a small delay before allowing retry
+                time.sleep(2)
             else:
                 logging.error(f"SSH connection failed: {e}")
             self.connected = False

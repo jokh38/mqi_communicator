@@ -1,5 +1,6 @@
 import logging
 import shutil
+import time
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Any
@@ -80,58 +81,84 @@ class JobScheduler:
             }
 
     def check_remote_disk_space(self, required_gb: float = None) -> Dict[str, Any]:
-        """Check remote server disk space availability."""
-        try:
-            if not self.remote_executor:
-                return {
-                    "total_gb": 0,
-                    "used_gb": 0,
-                    "free_gb": 0,
-                    "required_gb": required_gb or self.min_remote_space_gb,
-                    "sufficient": False,
-                    "usage_percent": 100,
-                    "error": "No remote executor available"
-                }
-            
-            # Use df command to check disk space
-            result = self.remote_executor.execute_command("df -BG . | tail -1")
-            
-            if result["exit_code"] != 0:
-                raise Exception(f"df command failed: {result['stderr']}")
-            
-            # Parse df output: Filesystem 1G-blocks Used Available Use% Mounted on
-            fields = result["stdout"].split()
-            if len(fields) < 4:
-                raise Exception("Unexpected df output format")
-            
-            # Extract values (remove 'G' suffix)
-            total_gb = float(fields[1].rstrip('G'))
-            used_gb = float(fields[2].rstrip('G'))
-            available_gb = float(fields[3].rstrip('G'))
-            
-            required_gb = required_gb or self.min_remote_space_gb
-            has_sufficient_space = available_gb >= required_gb
-            
-            return {
-                "total_gb": total_gb,
-                "used_gb": used_gb,
-                "free_gb": available_gb,
-                "required_gb": required_gb,
-                "sufficient": has_sufficient_space,
-                "usage_percent": round((used_gb / total_gb) * 100, 2)
-            }
-            
-        except Exception as e:
-            logging.error(f"Failed to check remote disk space: {e}")
+        """Check remote server disk space availability with retry logic."""
+        required_gb = required_gb or self.min_remote_space_gb
+        
+        def _default_error_response(error_msg: str):
             return {
                 "total_gb": 0,
                 "used_gb": 0,
                 "free_gb": 0,
-                "required_gb": required_gb or self.min_remote_space_gb,
+                "required_gb": required_gb,
                 "sufficient": False,
                 "usage_percent": 100,
-                "error": str(e)
+                "error": error_msg
             }
+        
+        try:
+            if not self.remote_executor:
+                return _default_error_response("No remote executor available")
+            
+            # Try to execute df command with retry logic
+            max_retries = 3
+            last_error = None
+            
+            for attempt in range(max_retries):
+                try:
+                    # Use df command to check disk space
+                    result = self.remote_executor.execute_command("df -BG . | tail -1", timeout=10)
+                    
+                    if result["exit_code"] != 0:
+                        last_error = f"df command failed: {result['stderr']}"
+                        if attempt < max_retries - 1:
+                            logging.warning(f"Disk space check attempt {attempt + 1} failed, retrying: {last_error}")
+                            time.sleep(2)  # Brief delay before retry
+                            continue
+                        else:
+                            raise Exception(last_error)
+                    
+                    # Parse df output: Filesystem 1G-blocks Used Available Use% Mounted on
+                    fields = result["stdout"].split()
+                    if len(fields) < 4:
+                        last_error = "Unexpected df output format"
+                        if attempt < max_retries - 1:
+                            logging.warning(f"Disk space check attempt {attempt + 1} failed, retrying: {last_error}")
+                            time.sleep(2)
+                            continue
+                        else:
+                            raise Exception(last_error)
+                    
+                    # Extract values (remove 'G' suffix)
+                    total_gb = float(fields[1].rstrip('G'))
+                    used_gb = float(fields[2].rstrip('G'))
+                    available_gb = float(fields[3].rstrip('G'))
+                    
+                    has_sufficient_space = available_gb >= required_gb
+                    
+                    return {
+                        "total_gb": total_gb,
+                        "used_gb": used_gb,
+                        "free_gb": available_gb,
+                        "required_gb": required_gb,
+                        "sufficient": has_sufficient_space,
+                        "usage_percent": round((used_gb / total_gb) * 100, 2)
+                    }
+                    
+                except Exception as e:
+                    last_error = str(e)
+                    if attempt < max_retries - 1:
+                        logging.warning(f"Disk space check attempt {attempt + 1} failed, retrying: {last_error}")
+                        time.sleep(2)
+                    else:
+                        logging.error(f"Failed to check remote disk space after {max_retries} attempts: {last_error}")
+                        break
+            
+            # If we get here, all retries failed
+            return _default_error_response(last_error or "Unknown error")
+            
+        except Exception as e:
+            logging.error(f"Failed to check remote disk space: {e}")
+            return _default_error_response(str(e))
 
     def estimate_case_disk_usage(self, case_id: str) -> float:
         """Estimate disk space usage for a case in GB."""
