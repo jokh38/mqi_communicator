@@ -6,10 +6,10 @@ import shlex
 from typing import Dict, List, Optional, Any
 import threading
 import signal
-from gentle_ssh_connector import GentleSSHConnector
+from base_ssh_connector import BaseSSHConnector
 
 
-class RemoteExecutor(GentleSSHConnector):
+class RemoteExecutor(BaseSSHConnector):
     def __init__(self, host: str, username: str, password: str, port: int = 22, timeout: int = 30, config: Optional[Dict[str, Any]] = None):
         super().__init__(host, username, password, port, timeout)
         self.ssh: Optional[paramiko.SSHClient] = None
