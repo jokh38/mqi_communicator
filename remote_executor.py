@@ -157,7 +157,7 @@ class RemoteExecutor(BaseSSHConnector):
         
         # Log MOQUI interpreter execution start
         if self.logger:
-            self.logger.log_structured("moqui_interpreter_started", {
+            self.logger.log_structured("INFO", "MOQUI interpreter started", {
                 "case_id": case_id,
                 "command": command,
                 "log_dir": log_dir,

@@ -142,7 +142,7 @@ class ErrorHandler:
             if self.logger:
                 if error_record["is_critical"]:
                     self.logger.critical(message)
-                    self.logger.log_structured("critical_error_logged", {
+                    self.logger.log_structured("CRITICAL", "Critical error logged", {
                         "error_type": error_record["error_type"],
                         "error_message": str(error_record["error"]),
                         "context": error_record.get("context", {}),
@@ -164,7 +164,7 @@ class ErrorHandler:
         try:
             if self.logger:
                 self.logger.critical(f"Critical error detected: {error}")
-                self.logger.log_structured("critical_error_detected", {
+                self.logger.log_structured("CRITICAL", "Critical error detected", {
                     "error": str(error),
                     "cleanup_initiated": True
                 })
@@ -254,7 +254,7 @@ class ErrorHandler:
                 if attempt < max_attempts and self.should_retry(error, attempt):
                     delay = self.get_retry_delay(attempt)
                     if self.logger:
-                        self.logger.log_structured("operation_retry", {
+                        self.logger.log_structured("INFO", "Operation retry scheduled", {
                             "attempt": attempt + 1,
                             "max_attempts": max_attempts,
                             "delay_seconds": delay,

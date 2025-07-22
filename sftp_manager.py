@@ -178,7 +178,7 @@ class SFTPManager(BaseSSHConnector):
             
             # Log upload operation details
             if self.logger:
-                self.logger.log_structured("directory_upload_started", {
+                self.logger.log_structured("INFO", "Directory upload started", {
                     "local_path": str(local_path),
                     "remote_path": remote_path,
                     "total_files": total_files,
@@ -210,7 +210,7 @@ class SFTPManager(BaseSSHConnector):
             
             # Log successful directory upload completion
             if self.logger:
-                self.logger.log_structured("directory_upload_completed", {
+                self.logger.log_structured("INFO", "Directory upload completed", {
                     "local_path": str(local_path),
                     "remote_path": remote_path,
                     "files_uploaded": total_files,
