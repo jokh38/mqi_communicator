@@ -55,6 +55,7 @@ class MainController:
         # Thread control
         self.scan_lock = threading.Lock()
         self.processing_lock = threading.Lock()
+        self.shared_state_lock = threading.Lock()
         
         # Register cleanup function
         atexit.register(self._cleanup_lock_file)
@@ -119,7 +120,7 @@ class MainController:
             self.logger.info("Performing startup recovery checks")
             
             # Recover stale cases
-            recovery_result = self.case_scanner.check_and_recover_stale_cases(max_processing_hours=1)
+            recovery_result = self.case_scanner.check_and_recover_stale_cases(max_processing_hours=self.stale_case_recovery_hours)
             
             if recovery_result["recovered_count"] > 0:
                 self.logger.warning(f"Recovered {recovery_result['recovered_count']} stale cases: {recovery_result['recovered_cases']}")
@@ -169,47 +170,48 @@ class MainController:
 
     def _add_to_waiting_list(self, case_id: str) -> None:
         """Add case to waiting list with exponential backoff."""
-        current_time = datetime.now()
-        
-        if case_id in self.shared_state['waiting_cases']:
-            # Increment retry count
-            waiting_info = self.shared_state['waiting_cases'][case_id]
-            waiting_info['retry_count'] += 1
-        else:
-            # First time adding to waiting list
-            waiting_info = {'retry_count': 1}
-            self.shared_state['waiting_cases'][case_id] = waiting_info
-        
-        # Calculate next retry time
-        retry_delay = self._calculate_retry_delay(waiting_info['retry_count'])
-        waiting_info['next_retry_time'] = current_time + timedelta(seconds=retry_delay)
-        
-        self.logger.info(f"Added case {case_id} to waiting list (retry #{waiting_info['retry_count']}, "
-                        f"next retry in {retry_delay} seconds)")
+        with self.shared_state_lock:
+            current_time = datetime.now()
+            
+            if case_id in self.shared_state['waiting_cases']:
+                # Increment retry count
+                waiting_info = self.shared_state['waiting_cases'][case_id]
+                waiting_info['retry_count'] += 1
+            else:
+                # First time adding to waiting list
+                waiting_info = {'retry_count': 1}
+                self.shared_state['waiting_cases'][case_id] = waiting_info
+            
+            # Calculate next retry time
+            retry_delay = self._calculate_retry_delay(waiting_info['retry_count'])
+            waiting_info['next_retry_time'] = current_time + timedelta(seconds=retry_delay)
+            
+            self.logger.info(f"Added case {case_id} to waiting list (retry #{waiting_info['retry_count']}, "
+                            f"next retry in {retry_delay} seconds)")
 
     def _check_waiting_cases(self) -> List[str]:
         """Check waiting cases and return those ready for retry."""
-        current_time = datetime.now()
-        ready_cases = []
-        
-        cases_to_remove = []
-        for case_id, waiting_info in self.shared_state['waiting_cases'].items():
-            if current_time >= waiting_info['next_retry_time']:
-                ready_cases.append(case_id)
-                cases_to_remove.append(case_id)
-                self.logger.info(f"Case {case_id} is ready for retry after waiting")
-        
-        # Remove from waiting list
-        for case_id in cases_to_remove:
-            del self.shared_state['waiting_cases'][case_id]
-        
-        return ready_cases
+        with self.shared_state_lock:
+            current_time = datetime.now()
+            ready_cases = []
+            
+            # Iterate over a copy of items to allow modification
+            cases_to_check = list(self.shared_state['waiting_cases'].items())
+            
+            for case_id, waiting_info in cases_to_check:
+                if current_time >= waiting_info['next_retry_time']:
+                    ready_cases.append(case_id)
+                    del self.shared_state['waiting_cases'][case_id]
+                    self.logger.info(f"Case {case_id} is ready for retry after waiting")
+            
+            return ready_cases
 
     def _remove_from_waiting_list(self, case_id: str) -> None:
         """Remove case from waiting list (e.g., when successfully scheduled)."""
-        if case_id in self.shared_state['waiting_cases']:
-            del self.shared_state['waiting_cases'][case_id]
-            self.logger.debug(f"Removed case {case_id} from waiting list")
+        with self.shared_state_lock:
+            if case_id in self.shared_state['waiting_cases']:
+                del self.shared_state['waiting_cases'][case_id]
+                self.logger.debug(f"Removed case {case_id} from waiting list")
     
     def _initialize_components(self) -> None:
         """Initialize all system components."""
@@ -219,9 +221,20 @@ class MainController:
             self.config = self.config_manager.get_config()
 
             # Extract configuration values
-            self.scan_interval = self.config.get("scanning", {}).get("interval_minutes", 30)
-            self.max_concurrent_cases = self.config.get("scanning", {}).get("max_concurrent_cases", 2)
-            self.monitoring_interval = self.config.get("gpu_management", {}).get("monitoring_interval_sec", 5)
+            scanning_config = self.config.get("scanning", {})
+            gpu_config = self.config.get("gpu_management", {})
+            error_config = self.config.get("error_handling", {})
+            backup_config = self.config.get("backup", {})
+
+            self.scan_interval = scanning_config.get("interval_minutes", 30)
+            self.max_concurrent_cases = scanning_config.get("max_concurrent_cases", 2)
+            self.stale_case_recovery_hours = scanning_config.get("stale_case_recovery_hours", 1)
+            
+            self.monitoring_interval = gpu_config.get("monitoring_interval_sec", 5)
+            
+            self.max_network_retries = error_config.get("max_network_retries", 3)
+            
+            self.backup_months_to_keep = backup_config.get("months_to_keep", 12)
 
             # Initialize logger first
             self.logger = Logger(log_directory="logs", config=self.config.get("logging", {}), log_queue=self.log_queue)
@@ -251,12 +264,7 @@ class MainController:
             )
 
             # Initialize remote executor
-            self.remote_executor = RemoteExecutor(
-                host=self.config["servers"]["linux_gpu"],
-                username=self.config["credentials"]["username"],
-                password=self.config["credentials"]["password"],
-                config=self.config
-            )
+            self.remote_executor = RemoteExecutor(config=self.config)
 
             # Initialize GPU manager with remote executor
             self.gpu_manager = GPUManager(
@@ -332,14 +340,16 @@ class MainController:
                 # Scan for new cases
                 new_cases = self.case_scanner.scan_for_new_cases()
                 
-                # Add new cases to queue
-                for case_id in new_cases:
-                    if case_id not in self.shared_state['active_cases']:
-                        self.scan_queue.put(case_id)
-                        self.shared_state['active_cases'].add(case_id)
-                        self.logger.info(f"Added new case to queue: {case_id}")
+                # Add new cases to queue under lock
+                with self.shared_state_lock:
+                    for case_id in new_cases:
+                        if case_id not in self.shared_state['active_cases']:
+                            self.scan_queue.put(case_id)
+                            self.shared_state['active_cases'].add(case_id)
+                            self.logger.info(f"Added new case to queue: {case_id}")
+                    
+                    self.shared_state['last_scan_time'] = datetime.now()
                 
-                self.shared_state['last_scan_time'] = datetime.now()
                 self.logger.info(f"Case scan completed. Found {len(new_cases)} new cases")
                 
         except Exception as e:
@@ -349,8 +359,11 @@ class MainController:
         """Process cases from the queue with exponential backoff for failures."""
         try:
             with self.processing_lock:
-                # Check if we have reached max concurrent cases
-                if len(self.shared_state['active_cases']) >= self.max_concurrent_cases:
+                # Check if we have reached max concurrent cases under lock
+                with self.shared_state_lock:
+                    active_case_count = len(self.shared_state['active_cases'])
+                
+                if active_case_count >= self.max_concurrent_cases:
                     return
                 
                 # First, check if any waiting cases are ready for retry
@@ -380,11 +393,11 @@ class MainController:
                 for case_id in cases_to_process:
                     if self.job_scheduler.schedule_case(case_id):
                         self.processing_queue.put(case_id)
-                        self._remove_from_waiting_list(case_id)  # Remove from waiting list if scheduled
+                        self._remove_from_waiting_list(case_id)  # This is now thread-safe
                         self.logger.info(f"Scheduled case for processing: {case_id}")
                     else:
                         # Add to waiting list with exponential backoff instead of immediate retry
-                        self._add_to_waiting_list(case_id)
+                        self._add_to_waiting_list(case_id) # This is now thread-safe
                         self.logger.warning(f"Failed to schedule case {case_id} - added to waiting list")
                 
         except Exception as e:
@@ -427,7 +440,8 @@ class MainController:
             self.case_scanner.update_case_status(case_id, "FAILED")
             self.logger.log_case_progress(case_id, "FAILED", 0.0, {"stage": "error", "error": str(e)})
             self.status_display.update_case_status(case_id, "FAILED", 0.0, "Failed", error_message=str(e))
-            self.shared_state['active_cases'].discard(case_id)
+            with self.shared_state_lock:
+                self.shared_state['active_cases'].discard(case_id)
 
             # Check if this is a network error that should be retried
             if self._is_network_error(e):
@@ -435,8 +449,8 @@ class MainController:
                 case_info = self.case_scanner.get_case_status(case_id)
                 current_retry_count = case_info.get("retry_count", 0) if case_info else 0
                 
-                if current_retry_count < 3:  # Max 3 retries for network errors
-                    self.logger.warning(f"Network error processing case {case_id} (retry {current_retry_count + 1}/3): {e}")
+                if current_retry_count < self.max_network_retries:  # Max retries for network errors
+                    self.logger.warning(f"Network error processing case {case_id} (retry {current_retry_count + 1}/{self.max_network_retries}): {e}")
                     # Update case status with incremented retry count and reset to NEW for reprocessing
                     self.case_scanner.update_case_status(case_id, "NEW", retry_count=current_retry_count + 1)
                     return False # Indicate failure, but allow for retry
@@ -458,7 +472,6 @@ class MainController:
         try:
             # Get GPU status
             gpu_status = self.gpu_manager.get_gpu_status_summary()
-            self.shared_state['gpu_status'] = gpu_status
             
             # Get system resources
             cpu_percent = psutil.cpu_percent(interval=1)
@@ -476,7 +489,10 @@ class MainController:
                 "total_gpus": gpu_status.get("total_gpus", 0)
             }
             
-            self.shared_state['system_health'] = system_resources
+            with self.shared_state_lock:
+                self.shared_state['gpu_status'] = gpu_status
+                self.shared_state['system_health'] = system_resources
+            
             # self.logger.log_system_resources(system_resources)  # Disabled to reduce log noise
             
             # Check for critical conditions
@@ -493,18 +509,25 @@ class MainController:
     def _update_status_display(self) -> None:
         """Update the status display with current system and case information."""
         try:
+            # Create a consistent snapshot of shared state under lock
+            with self.shared_state_lock:
+                gpu_status = self.shared_state.get('gpu_status', {})
+                active_cases_count = len(self.shared_state.get('active_cases', set()))
+                waiting_cases_count = len(self.shared_state.get('waiting_cases', {}))
+                active_cases_list = list(self.shared_state.get('active_cases', set()))
+
             # Update system information
             system_info = {
-                'gpu_status': self.shared_state.get('gpu_status', {}),
+                'gpu_status': gpu_status,
                 'cpu_percent': psutil.cpu_percent(),
                 'memory_percent': psutil.virtual_memory().percent,
-                'active_cases_count': len(self.shared_state.get('active_cases', set())),
-                'waiting_cases_count': len(self.shared_state.get('waiting_cases', {}))
+                'active_cases_count': active_cases_count,
+                'waiting_cases_count': waiting_cases_count
             }
             self.status_display.update_system_info(system_info)
             
             # Update case information
-            for case_id in list(self.shared_state.get('active_cases', set())):
+            for case_id in active_cases_list:
                 case_status = self.case_scanner.get_case_status(case_id)
                 if case_status:
                     job_status = self.job_scheduler.get_job_status(case_id)
@@ -609,9 +632,9 @@ class MainController:
                 self.logger.error(f"Failed to backup configuration files: {e}")
                 # Don't fail the entire backup for config files
             
-            # Clean up old backups (keep last 12 months)
+            # Clean up old backups (keep last configured months)
             try:
-                self._cleanup_old_backups(backup_dir, months_to_keep=12)
+                self._cleanup_old_backups(backup_dir, months_to_keep=self.backup_months_to_keep)
             except Exception as e:
                 self.logger.warning(f"Failed to cleanup old backups: {e}")
             
@@ -761,10 +784,14 @@ class MainController:
                         # Check for daily archive (once per day after 07:00)
                         current_time = datetime.now()
                         if current_time.hour >= 7:
-                            if self.shared_state['last_archive_check_date'] != current_time.date():
+                            with self.shared_state_lock:
+                                last_check_date = self.shared_state.get('last_archive_check_date')
+                            
+                            if last_check_date != current_time.date():
                                 self.logger.info("Performing daily check for old cases to archive.")
                                 self.case_scanner.archive_old_cases()
-                                self.shared_state['last_archive_check_date'] = current_time.date()
+                                with self.shared_state_lock:
+                                    self.shared_state['last_archive_check_date'] = current_time.date()
 
                         # Check for monthly backup (once per day at 02:00)
                         if current_time.hour == 2 and current_time.minute == 0:
@@ -849,15 +876,24 @@ class MainController:
     def get_system_status(self) -> Dict[str, Any]:
         """Get current system status."""
         try:
+            with self.shared_state_lock:
+                # Create a snapshot of the state to avoid holding the lock for too long
+                shared_state_snapshot = {
+                    "gpu_status": self.shared_state.get('gpu_status', {}),
+                    "last_scan_time": self.shared_state.get('last_scan_time'),
+                    "active_cases_count": len(self.shared_state.get('active_cases', set())),
+                    "system_health": self.shared_state.get('system_health', {})
+                }
+
             return {
                 "running": self.running,
-                "gpu_status": self.shared_state.get('gpu_status', {}),
+                "gpu_status": shared_state_snapshot["gpu_status"],
                 "scan_status": {
-                    "last_scan_time": self.shared_state.get('last_scan_time'),
+                    "last_scan_time": shared_state_snapshot["last_scan_time"],
                     "scan_interval_minutes": self.scan_interval
                 },
                 "job_status": {
-                    "active_cases": len(self.shared_state.get('active_cases', set())),
+                    "active_cases": shared_state_snapshot["active_cases_count"],
                     "max_concurrent_cases": self.max_concurrent_cases
                 },
                 "process_status": {
@@ -869,7 +905,7 @@ class MainController:
                     "processing_queue_size": self.processing_queue.qsize(),
                     "completed_queue_size": self.completed_queue.qsize()
                 },
-                "system_health": self.shared_state.get('system_health', {})
+                "system_health": shared_state_snapshot["system_health"]
             }
         except Exception as e:
             self.error_handler.handle_error(e, {"operation": "get_system_status"})

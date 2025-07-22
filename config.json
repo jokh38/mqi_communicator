@@ -18,12 +18,19 @@
   },
   "scanning": {
     "interval_minutes": 1,
-    "max_concurrent_cases": 2
+    "max_concurrent_cases": 2,
+    "stale_case_recovery_hours": 1
   },
   "gpu_management": {
     "total_gpus": 8,
     "reserved_gpus": [7],
     "memory_threshold_mb": 1024,
     "monitoring_interval_sec": 5
+  },
+  "error_handling": {
+    "max_network_retries": 3
+  },
+  "backup": {
+    "months_to_keep": 12
   }
 }

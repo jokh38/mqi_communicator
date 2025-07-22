@@ -11,15 +11,30 @@ from config_manager import ConfigManager
 
 
 class RemoteExecutor(BaseSSHConnector):
-    def __init__(self, host: str, username: str, password: str, port: int = 22, timeout: int = 30):
+    def __init__(self, config: Dict[str, Any], **kwargs):
+        """
+        Initialize RemoteExecutor.
+        
+        Args:
+            config (Dict[str, Any]): Configuration dictionary.
+            **kwargs: Additional keyword arguments (e.g., status_display).
+        """
+        # Extract connection details from config
+        host = config.get("servers", {}).get("linux_gpu")
+        username = config.get("credentials", {}).get("username")
+        password = config.get("credentials", {}).get("password")
+        port = config.get("servers", {}).get("ssh_port", 22)
+        timeout = config.get("servers", {}).get("ssh_timeout", 30)
+
+        if not all([host, username, password]):
+            raise ValueError("Host, username, or password not found in configuration.")
+
+        # Initialize parent class with connection details
         super().__init__(host, username, password, port, timeout)
+        
         self.ssh: Optional[paramiko.SSHClient] = None
-        
-        # Load configuration
-        config_manager = ConfigManager()
-        self.config = config_manager.get_config()
-        
-        self._connection_failures = 0  # Track consecutive connection failures
+        self.config = config
+        self._connection_failures = 0
         
         # Extract paths from config
         self.paths = self.config.get("paths", {})
@@ -391,9 +406,7 @@ class RemoteExecutor(BaseSSHConnector):
         """Context manager exit."""
         self.disconnect()
 
-    def __del__(self):
-        """Destructor - ensure connection is closed."""
-        self.disconnect()
+    
 
 # Example usage
 if __name__ == '__main__':
