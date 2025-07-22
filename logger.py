@@ -76,13 +76,12 @@ class Logger:
             if self.separate_error_log:
                 self._setup_error_handler(formatter)
             
-            # Set up console handler if requested
-            if self.console_output:
-                self._setup_console_handler(formatter)
-
-            # Set up queue handler if a queue is provided
+            # Set up queue handler if a queue is provided for UI display
             if self.log_queue:
                 self._setup_queue_handler(formatter)
+            # Otherwise, set up console handler if requested
+            elif self.console_output:
+                self._setup_console_handler(formatter)
                 
         except Exception as e:
             print(f"Error setting up logger: {e}")

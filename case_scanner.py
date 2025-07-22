@@ -2,6 +2,7 @@ import json
 import hashlib
 import os
 import tempfile
+import logging
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
@@ -107,7 +108,6 @@ class CaseScanner:
 
     def scan_for_new_cases(self) -> List[str]:
         """Scan base directory for new or modified cases."""
-        import logging
         new_cases = []
         
         logging.info(f"Scanning directory: {self.base_path}")
@@ -323,10 +323,10 @@ class CaseScanner:
                     self.case_status[case_id]["retry_count"] = info.get("retry_count", 0) + 1
                     
                     recovered_cases.append(case_id)
-                    print(f"Recovered stale case {case_id} (processing for {max_processing_hours}+ hours)")
+                    logging.warning(f"Recovered stale case {case_id} (processing for {max_processing_hours}+ hours)")
             
             except (ValueError, TypeError) as e:
-                print(f"Error parsing start_time for case {case_id}: {e}")
+                logging.error(f"Error parsing start_time for case {case_id}: {e}")
                 continue
         
         if recovered_cases:

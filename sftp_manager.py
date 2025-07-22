@@ -1,3 +1,4 @@
+import os
 import paramiko
 import stat
 import time
@@ -78,6 +79,7 @@ class SFTPManager(BaseSSHConnector):
                 
                 status_display.update_case_status(
                     case_id=case_id,
+                    status="PROCESSING",
                     transfer_info=transfer_info
                 )
 
@@ -124,7 +126,7 @@ class SFTPManager(BaseSSHConnector):
 
         try:
             # Step 1: Create all directories on the remote first.
-            logging.info(f"[SFTP] Creating remote directory structure for {remote_path}")
+            # Directory structure creation - logging removed for rich display
             self.create_remote_directory(remote_path)
             for local_subdir in local_dir.rglob("*"):
                 if local_subdir.is_dir():
@@ -133,10 +135,10 @@ class SFTPManager(BaseSSHConnector):
                     self.create_remote_directory(remote_subdir_path)
 
             # Step 2: Upload all files now that directories are guaranteed to exist.
-            logging.info(f"[SFTP] Starting file uploads for {local_dir}")
+            # File upload start logging removed for rich display
             all_files = [p for p in local_dir.rglob("*") if p.is_file()]
             total_files = len(all_files)
-            logging.info(f"[SFTP] Found {total_files} file(s) to upload.")
+            # File count logging removed for rich display
 
             for i, file_path in enumerate(all_files):
                 relative_path = file_path.relative_to(local_dir)
@@ -160,11 +162,24 @@ class SFTPManager(BaseSSHConnector):
             
             logging.info(f"Successfully uploaded all files from {local_dir}")
             if status_display and case_id:
-                status_display.update_case_status(case_id=case_id, transfer_info="")
+                status_display.update_case_status(
+                    case_id=case_id, 
+                    status="PROCESSING", 
+                    stage="Upload Complete",
+                    transfer_info="All files uploaded successfully"
+                )
             return True
             
         except Exception as e:
             logging.error(f"Failed to upload directory {local_path}: {e}")
+            if status_display and case_id:
+                status_display.update_case_status(
+                    case_id=case_id,
+                    status="PROCESSING",
+                    stage="Upload Failed",
+                    error_message=f"Upload failed: {str(e)}",
+                    transfer_info=""
+                )
             return False
 
     def download_file(self, remote_path: str, local_path: str) -> bool:
@@ -238,11 +253,24 @@ class SFTPManager(BaseSSHConnector):
             
             logging.info(f"Successfully downloaded all files to {local_path}")
             if status_display and case_id:
-                status_display.update_case_status(case_id=case_id, transfer_info="")
+                status_display.update_case_status(
+                    case_id=case_id, 
+                    status="PROCESSING", 
+                    stage="Download Complete",
+                    transfer_info="All files downloaded successfully"
+                )
             return True
             
         except Exception as e:
             logging.error(f"Failed to download directory {remote_path}: {e}")
+            if status_display and case_id:
+                status_display.update_case_status(
+                    case_id=case_id,
+                    status="PROCESSING",
+                    stage="Download Failed",
+                    error_message=f"Download failed: {str(e)}",
+                    transfer_info=""
+                )
             return False
 
     def file_exists(self, remote_path: str) -> bool:

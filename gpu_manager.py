@@ -1,5 +1,6 @@
 import subprocess
 import re
+import logging
 from typing import List, Dict, Optional, Any, TYPE_CHECKING
 from dataclasses import dataclass
 
@@ -223,12 +224,12 @@ class GPUManager:
                     try:
                         kill_result = self.remote_executor.execute_command(f"kill -9 {pid}")
                         if kill_result.success:
-                            print(f"Successfully killed zombie process {pid} on remote server")
+                            logging.info(f"Successfully killed zombie process {pid} on remote server")
                     except Exception as e:
-                        print(f"Failed to kill zombie process {pid}: {e}")
+                        logging.error(f"Failed to kill zombie process {pid}: {e}")
             
             except Exception as e:
-                print(f"Error checking process {process['pid']}: {e}")
+                logging.error(f"Error checking process {process['pid']}: {e}")
                 continue
         
         return zombie_processes

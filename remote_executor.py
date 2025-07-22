@@ -7,21 +7,29 @@ from typing import Dict, List, Optional, Any
 import threading
 import signal
 from base_ssh_connector import BaseSSHConnector
+from config_manager import ConfigManager
 
 
 class RemoteExecutor(BaseSSHConnector):
-    def __init__(self, host: str, username: str, password: str, port: int = 22, timeout: int = 30, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, host: str, username: str, password: str, port: int = 22, timeout: int = 30):
         super().__init__(host, username, password, port, timeout)
         self.ssh: Optional[paramiko.SSHClient] = None
-        self.config = config or {}
+        
+        # Load configuration
+        config_manager = ConfigManager()
+        self.config = config_manager.get_config()
+        
         self._connection_failures = 0  # Track consecutive connection failures
         
         # Extract paths from config
         self.paths = self.config.get("paths", {})
-        self.remote_workspace = self.paths.get("remote_workspace", "MOQUI_SMC/tps")
-        self.mqi_interpreter_path = self.paths.get("linux_mqi_interpreter", "/home/gpuadmin/MOQUI_SMC/mqi_interpreter/main_cli.py")
-        self.moqui_binary_path = self.paths.get("linux_moqui_binary", "/home/gpuadmin/MOQUI_SMC/moqui/main")
-        self.raw_to_dcm_path = self.paths.get("linux_raw_to_dcm", "/home/gpuadmin/MOQUI_SMC/RawToDCM/moqui_raw2dicom.py")
+        self.remote_workspace = self.paths.get("remote_workspace")
+        self.mqi_interpreter_path = self.paths.get("linux_mqi_interpreter")
+        self.moqui_binary_path = self.paths.get("linux_moqui_binary")
+        self.raw_to_dcm_path = self.paths.get("linux_raw_to_dcm")
+
+        if not all([self.remote_workspace, self.mqi_interpreter_path, self.moqui_binary_path, self.raw_to_dcm_path]):
+            raise ValueError("One or more required paths are missing in the configuration file.")
 
     def _post_connect_setup(self) -> None:
         """Create SSH client after connection is established."""
@@ -98,15 +106,15 @@ class RemoteExecutor(BaseSSHConnector):
     def run_python_script(self, script_path: str, args: List[str] = None) -> bool:
         """Execute Python script remotely."""
         args = args or []
-        command = f"python {script_path} {' '.join(args)}"
+        command = f"python3 {script_path} {' '.join(args)}"
         
         result = self.execute_command(command)
         
         if result["exit_code"] == 0:
-            logging.info(f"Python script executed successfully: {script_path}")
+            logging.info(f"Python3 script executed successfully: {script_path}")
             return True
         else:
-            logging.error(f"Python script failed: {script_path}, Error: {result['stderr']}")
+            logging.error(f"Python3 script failed: {script_path}, Error: {result['stderr']}")
             return False
 
 
@@ -114,7 +122,7 @@ class RemoteExecutor(BaseSSHConnector):
         """Run moqui interpreter for case parsing."""
         workspace_path = workspace_path or self.remote_workspace
         case_path = f"{workspace_path}/{case_id}"
-        command = f"cd {shlex.quote(case_path)} && python {shlex.quote(self.mqi_interpreter_path)} --logdir logs --outputdir moqui_inputs"
+        command = f"cd {shlex.quote(case_path)} && python3 {shlex.quote(self.mqi_interpreter_path)} --logdir logs --outputdir moqui_inputs"
         
         # Update status display - starting interpreter
         if status_display:
@@ -193,7 +201,7 @@ class RemoteExecutor(BaseSSHConnector):
         """Run raw to DICOM converter."""
         workspace_path = workspace_path or self.remote_workspace
         case_path = f"{workspace_path}/{case_id}"
-        command = f"cd {shlex.quote(case_path)} && python {shlex.quote(self.raw_to_dcm_path)} --input moqui_output/dose.raw --output moqui_output/RTDOSE.dcm"
+        command = f"cd {shlex.quote(case_path)} && python3 {shlex.quote(self.raw_to_dcm_path)} --input moqui_output/dose.raw --output moqui_output/RTDOSE.dcm"
         
         # Update status display - starting conversion
         if status_display:
@@ -378,3 +386,68 @@ class RemoteExecutor(BaseSSHConnector):
     def __del__(self):
         """Destructor - ensure connection is closed."""
         self.disconnect()
+
+# Example usage
+if __name__ == '__main__':
+    import os
+    from dotenv import load_dotenv
+
+    # Load environment variables
+    load_dotenv()
+
+    # ConfigManager is now used inside RemoteExecutor, but we still need credentials and host
+    config_manager = ConfigManager(config_path='config.json')
+    config = config_manager.get_config()
+
+    # Get credentials from environment variables or config
+    username = os.getenv("LINUX_USERNAME", config.get("credentials", {}).get("username"))
+    password = os.getenv("LINUX_PASSWORD", config.get("credentials", {}).get("password"))
+    host = config.get("servers", {}).get("linux_gpu")
+
+    if not all([host, username, password]):
+        print("Error: Missing host, username, or password in config or environment variables.")
+        exit(1)
+
+    try:
+        # RemoteExecutor now loads its own config.
+        with RemoteExecutor(host, username, password) as executor:
+            print(f"Successfully connected to {host}")
+
+            # Example 1: Execute a simple command
+            print("\n--- Testing simple command ---")
+            result = executor.execute_command("ls -l")
+            if result["exit_code"] == 0:
+                print("ls -l successful:\n", result["stdout"])
+            else:
+                print("ls -l failed:\n", result["stderr"])
+
+            # Example 2: Run a Python script (assuming a test script exists)
+            print("\n--- Testing Python script execution ---")
+            # Create a dummy script for testing
+            executor.execute_command("echo 'print(\"Hello from remote Python!\")' > test_script.py")
+            if executor.run_python_script("test_script.py"):
+                print("Python script ran successfully.")
+            else:
+                print("Python script execution failed.")
+            executor.execute_command("rm test_script.py")
+
+            # Example 3: Check for a process
+            print("\n--- Testing process check ---")
+            processes = executor.check_process_status("sshd")
+            if processes:
+                print(f"Found {len(processes)} sshd processes.")
+                for p in processes:
+                    print(f"  PID: {p['pid']}, Command: {p['command']}")
+            else:
+                print("No sshd processes found.")
+
+            # Example 4: Get system info
+            print("\n--- Testing system info ---")
+            info = executor.get_system_info()
+            for key, value in info.items():
+                print(f"{key.capitalize()}: {value}")
+
+    except (ConnectionError, ValueError) as e:
+        print(f"An error occurred: {e}")
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
