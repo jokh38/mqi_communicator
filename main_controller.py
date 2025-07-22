@@ -62,16 +62,19 @@ class MainController:
         
         # Initialize log queue for UI
         self.log_queue = queue.Queue()
-
-        # Initialize status display with configurable refresh interval
-        display_refresh_interval = self.config.get("display", {}).get("refresh_interval_seconds", 2)
-        self.status_display = StatusDisplay(update_interval=display_refresh_interval, log_queue=self.log_queue)
         
         # Initialize workflow engine
         self.workflow_engine = WorkflowEngine()
         
+        # Initialize status display with default settings (will be updated after config is loaded)
+        self.status_display = StatusDisplay(update_interval=2, log_queue=self.log_queue)
+        
         # Initialize all components
         self._initialize_components()
+
+        # Update status display with configurable refresh interval (after config is loaded)
+        display_refresh_interval = self.config.get("display", {}).get("refresh_interval_seconds", 2)
+        self.status_display.update_interval = display_refresh_interval
 
     def _acquire_lock(self) -> bool:
         """Acquire application lock to prevent multiple instances."""
