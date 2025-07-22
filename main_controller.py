@@ -63,8 +63,9 @@ class MainController:
         # Initialize log queue for UI
         self.log_queue = queue.Queue()
 
-        # Initialize status display
-        self.status_display = StatusDisplay(update_interval=2, log_queue=self.log_queue)
+        # Initialize status display with configurable refresh interval
+        display_refresh_interval = self.config.get("display", {}).get("refresh_interval_seconds", 2)
+        self.status_display = StatusDisplay(update_interval=display_refresh_interval, log_queue=self.log_queue)
         
         # Initialize workflow engine
         self.workflow_engine = WorkflowEngine()
