@@ -150,10 +150,11 @@ class RemoteExecutor(BaseSSHConnector):
         # Ensure the output directory exists
         self.create_directory(self.moqui_outputs_path)
         
+        # Enhanced command to capture all error output including Python tracebacks
         command = (f"cd {shlex.quote(case_path)} && "
-                   f"python3 {shlex.quote(self.mqi_interpreter_path)} "
+                   f"python3 -u {shlex.quote(self.mqi_interpreter_path)} "
                    f"--logdir {shlex.quote(log_dir)} "
-                   f"--outputdir {shlex.quote(self.moqui_outputs_path)}")
+                   f"--outputdir {shlex.quote(self.moqui_outputs_path)} 2>&1")
         
         # Log MOQUI interpreter execution start
         if self.logger:
@@ -175,24 +176,41 @@ class RemoteExecutor(BaseSSHConnector):
                 transfer_info="Parsing RTPLAN and preparing inputs..."
             )
         
-        result = self.execute_command(command)
+        result = self.execute_command(command, timeout=1800)  # 30 minute timeout for interpreter
         
-        # Detailed logging for diagnostics
+        # Enhanced error capture - since we used 2>&1, all output is in stdout
+        stdout_output = result['stdout'].strip()
+        stderr_output = result['stderr'].strip()
+        
+        # Detailed logging for diagnostics with comprehensive error capture
         log_message = (
             f"MOQUI interpreter execution for case {case_id} finished with exit code {result['exit_code']}.\n"
-            f"  - STDOUT: {result['stdout'].strip()}\n"
-            f"  - STDERR: {result['stderr'].strip()}"
+            f"  - COMBINED OUTPUT: {stdout_output}\n"
+            f"  - STDERR (if any): {stderr_output}"
         )
+        
+        # Extract error information for better visibility
+        has_python_error = any(keyword in stdout_output.lower() for keyword in 
+                              ['traceback', 'error:', 'exception:', 'failed', 'errno'])
+        has_stderr = len(stderr_output) > 0
 
-        if result["exit_code"] == 0:
+        if result["exit_code"] == 0 and not has_python_error:
             if self.logger:
                 self.logger.log_case_progress(case_id, "INTERPRETER_SUCCESS", 1.0, {
                     "stage": "moqui_interpreter",
-                    "stdout": result['stdout'].strip(),
+                    "stdout": stdout_output,
                     "execution_time_s": "measured_in_caller" # Could be enhanced
                 })
             else:
                 logging.info(log_message)
+        elif result["exit_code"] == 0 and has_python_error:
+            # Exit code 0 but Python errors detected - treat as warning
+            if self.logger:
+                self.logger.warning(f"MOQUI interpreter completed with warnings for case {case_id}")
+                self.logger.warning(f"Python warnings/errors detected: {stdout_output}")
+            else:
+                logging.warning(f"MOQUI interpreter completed with warnings for case {case_id}")
+                logging.warning(f"Output contains errors: {log_message}")
             if status_display:
                 status_display.update_case_status(
                     case_id=case_id,
@@ -202,20 +220,34 @@ class RemoteExecutor(BaseSSHConnector):
                 )
             return True
         else:
+            # Failure case - ensure ALL error information is captured and displayed
+            full_error_output = stdout_output if stdout_output else stderr_output
+            
             if self.logger:
+                self.logger.error(f"MOQUI interpreter FAILED for case {case_id}")
+                self.logger.error(f"Exit code: {result['exit_code']}")
+                self.logger.error(f"Full error output from GPU server:")
+                self.logger.error(f"{full_error_output}")
+                
                 self.logger.log_case_progress(case_id, "INTERPRETER_FAILED", 0.0, {
                     "stage": "moqui_interpreter",
-                    "error": result['stderr'].strip(),
-                    "exit_code": result["exit_code"]
+                    "error": full_error_output,
+                    "stderr": stderr_output,
+                    "exit_code": result["exit_code"],
+                    "command": command
                 })
             else:
+                logging.error(f"MOQUI interpreter FAILED for case {case_id}")
                 logging.error(log_message)
+                
             if status_display:
+                # Show more error details in status display
+                error_preview = full_error_output[:200] + "..." if len(full_error_output) > 200 else full_error_output
                 status_display.update_case_status(
                     case_id=case_id,
                     status="PROCESSING",
                     stage="Interpreter Failed",
-                    error_message=f"Interpreter failed: {result['stderr'][:100]}...",
+                    error_message=f"Exit code {result['exit_code']}: {error_preview}",
                     transfer_info=""
                 )
             return False

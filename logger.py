@@ -24,7 +24,6 @@ class Logger:
         self.backup_count = self.config.get("backup_count", 5)
         self.rotation_type = self.config.get("rotation_type", "size")
         self.console_output = self.config.get("console_output", False)
-        self.separate_error_log = self.config.get("separate_error_log", False)
         self.filter_sensitive = self.config.get("filter_sensitive", False)
         self.quiet_file_transfers = self.config.get("quiet_file_transfers", False)
         
@@ -73,10 +72,6 @@ class Logger:
             # Set up file handler
             self._setup_file_handler(formatter)
             
-            # Set up error log handler if requested
-            if self.separate_error_log:
-                self._setup_error_handler(formatter)
-            
             # Set up queue handler if a queue is provided for UI display
             if self.log_queue:
                 self._setup_queue_handler(formatter)
@@ -117,25 +112,6 @@ class Logger:
             
         except Exception as e:
             print(f"Error setting up file handler: {e}")
-    
-    def _setup_error_handler(self, formatter: logging.Formatter) -> None:
-        """Set up separate error log handler."""
-        try:
-            error_log_file = self.log_directory / "moqui_errors.log"
-            
-            handler = logging.handlers.RotatingFileHandler(
-                filename=str(error_log_file),
-                maxBytes=self.max_file_size,
-                backupCount=self.backup_count,
-                encoding='utf-8'
-            )
-            
-            handler.setFormatter(formatter)
-            handler.setLevel(logging.ERROR)
-            self.logger.addHandler(handler)
-            
-        except Exception as e:
-            print(f"Error setting up error handler: {e}")
     
     def _setup_console_handler(self, formatter: logging.Formatter) -> None:
         """Set up console handler for logging."""
@@ -224,6 +200,14 @@ class Logger:
             self.logger.debug(filtered_message)
         except Exception as e:
             print(f"Error logging debug message: {e}")
+    
+    def warning(self, message: str) -> None:
+        """Log warning message."""
+        try:
+            filtered_message = self._filter_sensitive_data(message)
+            self.logger.warning(filtered_message)
+        except Exception as e:
+            print(f"Error logging warning message: {e}")
     
     def critical(self, message: str) -> None:
         """Log critical message."""
