@@ -98,7 +98,7 @@ class RemoteExecutor(BaseSSHConnector):
     def run_python_script(self, script_path: str, args: List[str] = None) -> bool:
         """Execute Python script remotely."""
         args = args or []
-        command = f"python3 {script_path} {' '.join(args)}"
+        command = f"python {script_path} {' '.join(args)}"
         
         result = self.execute_command(command)
         
@@ -109,11 +109,12 @@ class RemoteExecutor(BaseSSHConnector):
             logging.error(f"Python script failed: {script_path}, Error: {result['stderr']}")
             return False
 
+
     def run_moqui_interpreter(self, case_id: str, workspace_path: str = None, status_display=None) -> bool:
         """Run moqui interpreter for case parsing."""
         workspace_path = workspace_path or self.remote_workspace
         case_path = f"{workspace_path}/{case_id}"
-        command = f"cd {shlex.quote(case_path)} && python3 {shlex.quote(self.mqi_interpreter_path)} --rtplan RTPLAN.dcm --logdir logs --outputdir moqui_inputs"
+        command = f"cd {shlex.quote(case_path)} && python {shlex.quote(self.mqi_interpreter_path)} --logdir logs --outputdir moqui_inputs"
         
         # Update status display - starting interpreter
         if status_display:
@@ -192,7 +193,7 @@ class RemoteExecutor(BaseSSHConnector):
         """Run raw to DICOM converter."""
         workspace_path = workspace_path or self.remote_workspace
         case_path = f"{workspace_path}/{case_id}"
-        command = f"cd {shlex.quote(case_path)} && python3 {shlex.quote(self.raw_to_dcm_path)} --input moqui_output/dose.raw --output moqui_output/RTDOSE.dcm"
+        command = f"cd {shlex.quote(case_path)} && python {shlex.quote(self.raw_to_dcm_path)} --input moqui_output/dose.raw --output moqui_output/RTDOSE.dcm"
         
         # Update status display - starting conversion
         if status_display:
