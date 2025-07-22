@@ -71,11 +71,10 @@ class SFTPManager(BaseSSHConnector):
             
             # Update rich display with current file transfer info
             if status_display and case_id:
-                file_name = os.path.basename(local_path)
                 if total_files > 0:
-                    transfer_info = f"Uploading {file_name} ({current_file}/{total_files})"
+                    transfer_info = f"Uploading ({current_file}/{total_files})"
                 else:
-                    transfer_info = f"Uploading {file_name}"
+                    transfer_info = "Uploading file..."
                 
                 status_display.update_case_status(
                     case_id=case_id,

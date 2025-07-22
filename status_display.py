@@ -40,6 +40,9 @@ class StatusDisplay:
         
         # Display configuration
         self.use_rich = self._check_rich_available()
+        if self.use_rich:
+            from rich.live import Live
+            self.live: Optional[Live] = None
         self.terminal_width = self._get_terminal_width()
         
     def _check_rich_available(self) -> bool:
@@ -129,61 +132,59 @@ class StatusDisplay:
 
     def _display_loop(self) -> None:
         """Main display loop."""
-        while self.running:
-            try:
-                self._update_logs()
-                if self.use_rich:
-                    self._display_rich()
-                else:
-                    self._display_basic()
-                time.sleep(self.update_interval)
-            except KeyboardInterrupt:
-                break
-            except Exception as e:
-                import logging
-                logging.error(f"Display error: {e}")
-                time.sleep(self.update_interval)
-    
-    def _display_rich(self) -> None:
-        """Display using rich library for enhanced formatting."""
-        try:
-            from rich.console import Console
-            from rich.table import Table
-            from rich.layout import Layout
-            from rich.panel import Panel
-            from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn
+        if self.use_rich:
             from rich.live import Live
-            
+            from rich.console import Console
             console = Console()
-            
-            # Create main layout
-            layout = Layout()
-            layout.split_column(
-                Layout(name="header", size=3),
-                Layout(name="main"),
-                Layout(name="logs", ratio=1),
-                Layout(name="footer", size=5)
-            )
-            
-            # Header with system info
-            layout["header"].update(self._create_header_panel())
-            
-            # Main content with case table
-            layout["main"].update(self._create_cases_table())
+            with Live(console=console, screen=True, auto_refresh=False) as live:
+                self.live = live
+                while self.running:
+                    try:
+                        self._update_logs()
+                        renderable = self._create_rich_layout()
+                        self.live.update(renderable, refresh=True)
+                        time.sleep(self.update_interval)
+                    except KeyboardInterrupt:
+                        break
+                    except Exception as e:
+                        import logging
+                        logging.error(f"Display error: {e}")
+                        time.sleep(self.update_interval)
+        else:
+            # Basic display loop
+            while self.running:
+                try:
+                    self._update_logs()
+                    self._display_basic()
+                    time.sleep(self.update_interval)
+                except KeyboardInterrupt:
+                    break
 
-            # Logs panel
-            layout["logs"].update(self._create_logs_panel())
-            
-            # Footer with system stats
-            layout["footer"].update(self._create_footer_panel())
-            
-            # Clear screen and display
-            console.clear()
-            console.print(layout)
-            
-        except ImportError:
-            # Fallback to basic display
-            self._display_basic()
+    def _create_rich_layout(self):
+        """Creates the entire rich layout object to be rendered."""
+        from rich.layout import Layout
+        
+        layout = Layout()
+        layout.split_column(
+            Layout(name="header", size=3),
+            Layout(name="main"),
+            Layout(name="logs", ratio=1),
+            Layout(name="footer", size=5)
+        )
+        
+        layout["header"].update(self._create_header_panel())
+        layout["main"].update(self._create_cases_table())
+        layout["logs"].update(self._create_logs_panel())
+        layout["footer"].update(self._create_footer_panel())
+        
+        return layout
+
+    def _display_rich(self) -> None:
+        """This method is now a legacy placeholder; logic is in _display_loop."""
+        # The main logic has been moved to _display_loop with the Live object.
+        # This method can be kept for compatibility or removed.
+        # For now, we'll just pass.
+        pass
     
     def _display_basic(self) -> None:
         """Basic console display without rich library."""
@@ -281,7 +282,7 @@ class StatusDisplay:
             table.add_column("Case ID", style="cyan", width=12)
             table.add_column("Status", style="green", width=12)
             table.add_column("Progress", style="yellow", width=12)
-            table.add_column("Stage", style="blue", width=20)
+            table.add_column("Details", style="blue", no_wrap=True, width=40)
             table.add_column("GPUs", style="red", width=8)
             table.add_column("Runtime", style="white", width=10)
             
@@ -297,6 +298,15 @@ class StatusDisplay:
                 gpu_str = ",".join(map(str, case_info.gpu_allocation)) if case_info.gpu_allocation else "None"
                 progress_str = f"{case_info.progress*100:.1f}%" if case_info.progress > 0 else "-"
                 
+                # Determine the most relevant detail to show
+                details = case_info.stage
+                if case_info.transfer_info:
+                    details = case_info.transfer_info
+                elif case_info.beam_info:
+                    details = case_info.beam_info
+                elif case_info.error_message:
+                    details = f"[bold red]Error: {case_info.error_message}[/bold red]"
+
                 # Status styling
                 status_style = "green" if case_info.status == "COMPLETED" else \
                               "red" if case_info.status == "FAILED" else \
@@ -306,7 +316,7 @@ class StatusDisplay:
                     case_info.case_id,
                     Text(case_info.status, style=status_style),
                     progress_str,
-                    case_info.stage,
+                    details,
                     gpu_str,
                     runtime
                 )
@@ -337,9 +347,9 @@ class StatusDisplay:
             stats = []
             if self.system_info:
                 gpu_info = self.system_info.get('gpu_status', {})
-                stats.append(f"📊 GPUs: {gpu_info.get('available_gpus', 0)}/{gpu_info.get('total_gpus', 0)}")
-                stats.append(f"💾 CPU: {self.system_info.get('cpu_percent', 0):.1f}%")
-                stats.append(f"🔢 Memory: {self.system_info.get('memory_percent', 0):.1f}%")
+                stats.append(f"GPUs: {gpu_info.get('available_gpus', 0)}/{gpu_info.get('total_gpus', 0)}")
+                stats.append(f"CPU: {self.system_info.get('cpu_percent', 0):.1f}%")
+                stats.append(f"Memory: {self.system_info.get('memory_percent', 0):.1f}%")
             
             stats_text = " | ".join(stats) if stats else "System information not available"
             footer_text = Text(f"{stats_text} | Last updated: {self.last_update.strftime('%H:%M:%S')}")
