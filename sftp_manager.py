@@ -109,7 +109,7 @@ class SFTPManager(BaseSSHConnector):
                 if remote_stat.st_size == local_size:
                     # File transfer verification logged to file only (no console output)
                     if self.logger:
-                        self.logger.info(f"File transfer verified: {remote_path} (size: {remote_stat.st_size} bytes)")
+                        self.logger.info(f"File transfer verified: {remote_path} (size: {remote_stat.st_size} bytes)", quiet_if_file_transfer=True)
                         # No console output for verification - reduces log spam
                     return True
                 else:
@@ -158,7 +158,7 @@ class SFTPManager(BaseSSHConnector):
             # Step 1: Create all directories on the remote first.
             # Directory upload start logged to file only (no console output)
             if self.logger:
-                self.logger.info(f"Starting directory upload: {local_path} -> {remote_path}")
+                self.logger.info(f"Starting directory upload: {local_path} -> {remote_path}", quiet_if_file_transfer=True)
                 # No console output for start - Rich display shows current operation
                 
             self.create_remote_directory(remote_path)

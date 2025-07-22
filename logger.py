@@ -26,6 +26,7 @@ class Logger:
         self.console_output = self.config.get("console_output", False)
         self.separate_error_log = self.config.get("separate_error_log", False)
         self.filter_sensitive = self.config.get("filter_sensitive", False)
+        self.quiet_file_transfers = self.config.get("quiet_file_transfers", False)
         
         # Create log directory if it doesn't exist
         self.log_directory.mkdir(parents=True, exist_ok=True)
@@ -179,11 +180,24 @@ class Logger:
         except Exception:
             return message
     
-    def info(self, message: str) -> None:
+    def info(self, message: str, quiet_if_file_transfer: bool = False) -> None:
         """Log info message."""
         try:
             filtered_message = self._filter_sensitive_data(message)
-            self.logger.info(filtered_message)
+            
+            # Check if this is a file transfer verification message and should be quiet
+            if (self.quiet_file_transfers and quiet_if_file_transfer and 
+                ("File transfer verified:" in message or "File uploaded:" in message or "file transfer" in message.lower())):
+                # Log directly to file handlers only, skip queue/console handlers
+                for handler in self.logger.handlers:
+                    if isinstance(handler, (logging.FileHandler, logging.handlers.RotatingFileHandler, logging.handlers.TimedRotatingFileHandler)):
+                        record = self.logger.makeRecord(
+                            self.logger.name, logging.INFO, __file__, 0, filtered_message, (), None
+                        )
+                        handler.emit(record)
+            else:
+                self.logger.info(filtered_message)
+                
         except Exception as e:
             print(f"Error logging info message: {e}")
     
@@ -275,7 +289,17 @@ class Logger:
             activity_str = json.dumps(activity, default=str, separators=(',', ':'))
             network_message = f"NETWORK | {activity_str}"
             
-            self.logger.info(network_message)
+            # Only log to file if quiet file transfers is enabled
+            if self.quiet_file_transfers and activity.get("action") == "file_upload_completed":
+                # Log directly to file handlers only, skip queue/console handlers
+                for handler in self.logger.handlers:
+                    if isinstance(handler, (logging.FileHandler, logging.handlers.RotatingFileHandler, logging.handlers.TimedRotatingFileHandler)):
+                        record = self.logger.makeRecord(
+                            self.logger.name, logging.INFO, __file__, 0, network_message, (), None
+                        )
+                        handler.emit(record)
+            else:
+                self.logger.info(network_message)
             
         except Exception as e:
             print(f"Error logging network activity: {e}")

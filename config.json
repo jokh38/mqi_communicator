@@ -41,6 +41,7 @@
     "console_output": false,
     "separate_error_log": true,
     "filter_sensitive": true,
+    "quiet_file_transfers": true,
     "format": "%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s"
   }
 }
