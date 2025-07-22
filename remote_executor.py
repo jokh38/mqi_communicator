@@ -147,6 +147,8 @@ class RemoteExecutor(BaseSSHConnector):
                    f"--logdir {shlex.quote(log_dir)} "
                    f"--outputdir {shlex.quote(self.moqui_outputs_path)}")
         
+        logging.info(f"Executing MOQUI interpreter for case {case_id} with command: {command}")
+
         # Update status display - starting interpreter
         if status_display:
             status_display.update_case_status(
@@ -158,8 +160,15 @@ class RemoteExecutor(BaseSSHConnector):
         
         result = self.execute_command(command)
         
+        # Detailed logging for diagnostics
+        log_message = (
+            f"MOQUI interpreter execution for case {case_id} finished with exit code {result['exit_code']}.\n"
+            f"  - STDOUT: {result['stdout'].strip()}\n"
+            f"  - STDERR: {result['stderr'].strip()}"
+        )
+
         if result["exit_code"] == 0:
-            logging.info(f"MOQUI interpreter completed for case: {case_id}")
+            logging.info(log_message)
             if status_display:
                 status_display.update_case_status(
                     case_id=case_id,
@@ -169,7 +178,7 @@ class RemoteExecutor(BaseSSHConnector):
                 )
             return True
         else:
-            logging.error(f"MOQUI interpreter failed for case: {case_id}, Error: {result['stderr']}")
+            logging.error(log_message)
             if status_display:
                 status_display.update_case_status(
                     case_id=case_id,

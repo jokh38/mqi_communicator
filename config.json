@@ -32,5 +32,15 @@
   },
   "backup": {
     "months_to_keep": 12
+  },
+  "logging": {
+    "log_level": "INFO",
+    "max_file_size": "10MB",
+    "backup_count": 5,
+    "rotation_type": "time",
+    "console_output": false,
+    "separate_error_log": true,
+    "filter_sensitive": true,
+    "format": "%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s"
   }
 }
