@@ -8,12 +8,13 @@ from typing import List, Dict, Optional, Any
 
 class DirectoryManager:
     def __init__(self, local_base: str, remote_base: str, output_base: str, 
-                 sftp_manager=None, remote_executor=None):
+                 sftp_manager=None, remote_executor=None, logger=None):
         self.local_base = Path(local_base)
         self.remote_base = remote_base
         self.output_base = Path(output_base)
         self.sftp_manager = sftp_manager
         self.remote_executor = remote_executor
+        self.logger = logger
 
     def ensure_local_directory(self, directory_path: str) -> bool:
         """Ensure local directory exists, create if necessary."""

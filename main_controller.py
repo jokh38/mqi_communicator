@@ -247,24 +247,26 @@ class MainController:
             logging.info("=" * 80)
 
             # Initialize error handler
-            self.error_handler = ErrorHandler()
+            self.error_handler = ErrorHandler(logger=self.logger)
 
             # Initialize directory manager
             self.directory_manager = DirectoryManager(
                 local_base=self.config["paths"]["local_logdata"],
                 remote_base=self.config["paths"]["remote_workspace"],
-                output_base=self.config["paths"]["local_output"]
+                output_base=self.config["paths"]["local_output"],
+                logger=self.logger
             )
 
             # Initialize SFTP manager
             self.sftp_manager = SFTPManager(
                 host=self.config["servers"]["linux_gpu"],
                 username=self.config["credentials"]["username"],
-                password=self.config["credentials"]["password"]
+                password=self.config["credentials"]["password"],
+                logger=self.logger
             )
 
             # Initialize remote executor
-            self.remote_executor = RemoteExecutor(config=self.config)
+            self.remote_executor = RemoteExecutor(config=self.config, logger=self.logger)
 
             # Initialize GPU manager with remote executor
             self.gpu_manager = GPUManager(

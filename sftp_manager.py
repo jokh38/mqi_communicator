@@ -10,9 +10,10 @@ from base_ssh_connector import BaseSSHConnector
 
 
 class SFTPManager(BaseSSHConnector):
-    def __init__(self, host: str, username: str, password: str, port: int = 22, timeout: int = 30):
+    def __init__(self, host: str, username: str, password: str, port: int = 22, timeout: int = 30, logger=None):
         super().__init__(host, username, password, port, timeout)
         self.sftp: Optional[paramiko.SFTPClient] = None
+        self.logger = logger
 
     def _post_connect_setup(self) -> None:
         """Create SFTP client after SSH connection is established."""
@@ -86,17 +87,39 @@ class SFTPManager(BaseSSHConnector):
             # This function is now only responsible for the atomic upload operation.
             
             # 3. Upload file
+            upload_start_time = time.time()
             self.sftp.put(str(local_file), remote_path)
-            # Upload completion logging removed - using rich display instead
+            upload_duration = time.time() - upload_start_time
+            
+            # Log file upload completion with performance metrics
+            if self.logger:
+                self.logger.log_network_activity({
+                    "action": "file_upload_completed",
+                    "local_path": str(local_file),
+                    "remote_path": remote_path,
+                    "file_size_bytes": local_size,
+                    "upload_duration_ms": round(upload_duration * 1000, 2),
+                    "transfer_rate_mbps": round((local_size / (1024 * 1024)) / upload_duration, 2) if upload_duration > 0 else 0
+                })
+            else:
+                logging.info(f"File uploaded: {local_file.name} -> {remote_path} ({local_size} bytes, {upload_duration:.2f}s)")
 
             # 4. Post-flight verification: Check existence and size
             try:
                 remote_stat = self.sftp.stat(remote_path)
                 if remote_stat.st_size == local_size:
-                    # Post-flight verification logging removed - using rich display instead
+                    # Log successful verification
+                    if self.logger:
+                        self.logger.info(f"File transfer verified: {remote_path} (size: {remote_stat.st_size} bytes)")
+                    else:
+                        logging.info(f"File transfer verified: {remote_path} (size: {remote_stat.st_size} bytes)")
                     return True
                 else:
-                    logging.error(f"[SFTP] Post-flight verification failed for '{remote_path}'. Size mismatch: local={local_size}, remote={remote_stat.st_size}")
+                    error_msg = f"Size mismatch: local={local_size}, remote={remote_stat.st_size}"
+                    if self.logger:
+                        self.logger.error(f"File verification failed: {remote_path} - {error_msg}")
+                    else:
+                        logging.error(f"[SFTP] Post-flight verification failed for '{remote_path}'. {error_msg}")
                     raise IOError(f"SFTP size mismatch for {remote_path}")
             except FileNotFoundError:
                 logging.error(f"[SFTP] Post-flight verification failed for '{remote_path}'. File not found on remote server.")
@@ -108,7 +131,14 @@ class SFTPManager(BaseSSHConnector):
         try:
             return self._retry_on_network_error(_upload_file_internal)
         except Exception as e:
-            logging.error(f"Failed to upload file {local_path} after all checks and retries: {e}")
+            if self.logger:
+                self.logger.log_exception(e, {
+                    "operation": "file_upload_final_failure",
+                    "local_path": str(local_path),
+                    "case_id": case_id
+                })
+            else:
+                logging.error(f"Failed to upload file {local_path} after all checks and retries: {e}")
             return False
 
     def upload_directory(self, local_path: str, remote_path: str, 
@@ -120,24 +150,43 @@ class SFTPManager(BaseSSHConnector):
         
         local_dir = Path(local_path)
         if not local_dir.is_dir():
-            logging.error(f"Local path is not a directory: {local_dir}")
+            if self.logger:
+                self.logger.error(f"Invalid directory path for upload: {local_dir}")
+            else:
+                logging.error(f"Local path is not a directory: {local_dir}")
             return False
 
         try:
             # Step 1: Create all directories on the remote first.
-            # Directory structure creation - logging removed for rich display
+            if self.logger:
+                self.logger.info(f"Starting directory upload: {local_path} -> {remote_path}")
+            else:
+                logging.info(f"Starting directory upload: {local_path} -> {remote_path}")
+                
             self.create_remote_directory(remote_path)
+            dir_count = 0
             for local_subdir in local_dir.rglob("*"):
                 if local_subdir.is_dir():
                     relative_dir = local_subdir.relative_to(local_dir)
                     remote_subdir_path = f"{remote_path.rstrip('/')}/{str(relative_dir).replace(chr(92), '/')}"
                     self.create_remote_directory(remote_subdir_path)
+                    dir_count += 1
 
             # Step 2: Upload all files now that directories are guaranteed to exist.
-            # File upload start logging removed for rich display
             all_files = [p for p in local_dir.rglob("*") if p.is_file()]
             total_files = len(all_files)
-            # File count logging removed for rich display
+            
+            # Log upload operation details
+            if self.logger:
+                self.logger.log_structured("directory_upload_started", {
+                    "local_path": str(local_path),
+                    "remote_path": remote_path,
+                    "total_files": total_files,
+                    "directories_created": dir_count,
+                    "case_id": case_id
+                })
+            else:
+                logging.info(f"Directory upload started: {total_files} files, {dir_count} directories created")
 
             for i, file_path in enumerate(all_files):
                 relative_path = file_path.relative_to(local_dir)
@@ -159,7 +208,19 @@ class SFTPManager(BaseSSHConnector):
                         transfer_info=transfer_info
                     )
             
-            logging.info(f"Successfully uploaded all files from {local_dir}")
+            # Log successful directory upload completion
+            if self.logger:
+                self.logger.log_structured("directory_upload_completed", {
+                    "local_path": str(local_path),
+                    "remote_path": remote_path,
+                    "files_uploaded": total_files,
+                    "directories_created": dir_count,
+                    "case_id": case_id,
+                    "success": True
+                })
+            else:
+                logging.info(f"Successfully uploaded all files from {local_dir}")
+                
             if status_display and case_id:
                 status_display.update_case_status(
                     case_id=case_id, 
@@ -170,7 +231,16 @@ class SFTPManager(BaseSSHConnector):
             return True
             
         except Exception as e:
-            logging.error(f"Failed to upload directory {local_path}: {e}")
+            # Log directory upload failure with context
+            if self.logger:
+                self.logger.log_exception(e, {
+                    "operation": "directory_upload",
+                    "local_path": str(local_path),
+                    "remote_path": remote_path,
+                    "case_id": case_id
+                })
+            else:
+                logging.error(f"Failed to upload directory {local_path}: {e}")
             if status_display and case_id:
                 status_display.update_case_status(
                     case_id=case_id,

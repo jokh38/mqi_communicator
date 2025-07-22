@@ -11,7 +11,7 @@ from config_manager import ConfigManager
 
 
 class RemoteExecutor(BaseSSHConnector):
-    def __init__(self, config: Dict[str, Any], **kwargs):
+    def __init__(self, config: Dict[str, Any], logger=None, **kwargs):
         """
         Initialize RemoteExecutor.
         
@@ -34,6 +34,7 @@ class RemoteExecutor(BaseSSHConnector):
         
         self.ssh: Optional[paramiko.SSHClient] = None
         self.config = config
+        self.logger = logger
         self._connection_failures = 0
         
         # Extract paths from config
@@ -112,7 +113,14 @@ class RemoteExecutor(BaseSSHConnector):
                 "exit_code": -1
             }
         except Exception as e:
-            logging.error(f"Command execution failed: {e}")
+            if self.logger:
+                self.logger.log_exception(e, {
+                    "operation": "command_execution",
+                    "command": command,
+                    "host": self.host
+                })
+            else:
+                logging.error(f"Command execution failed: {e}")
             return {
                 "stdout": "",
                 "stderr": f"Execution error: {str(e)}",
@@ -147,7 +155,16 @@ class RemoteExecutor(BaseSSHConnector):
                    f"--logdir {shlex.quote(log_dir)} "
                    f"--outputdir {shlex.quote(self.moqui_outputs_path)}")
         
-        logging.info(f"Executing MOQUI interpreter for case {case_id} with command: {command}")
+        # Log MOQUI interpreter execution start
+        if self.logger:
+            self.logger.log_structured("moqui_interpreter_started", {
+                "case_id": case_id,
+                "command": command,
+                "log_dir": log_dir,
+                "output_dir": self.moqui_outputs_path
+            })
+        else:
+            logging.info(f"Executing MOQUI interpreter for case {case_id} with command: {command}")
 
         # Update status display - starting interpreter
         if status_display:
@@ -168,7 +185,14 @@ class RemoteExecutor(BaseSSHConnector):
         )
 
         if result["exit_code"] == 0:
-            logging.info(log_message)
+            if self.logger:
+                self.logger.log_case_progress(case_id, "INTERPRETER_SUCCESS", 1.0, {
+                    "stage": "moqui_interpreter",
+                    "stdout": result['stdout'].strip(),
+                    "execution_time_s": "measured_in_caller" # Could be enhanced
+                })
+            else:
+                logging.info(log_message)
             if status_display:
                 status_display.update_case_status(
                     case_id=case_id,
@@ -178,7 +202,14 @@ class RemoteExecutor(BaseSSHConnector):
                 )
             return True
         else:
-            logging.error(log_message)
+            if self.logger:
+                self.logger.log_case_progress(case_id, "INTERPRETER_FAILED", 0.0, {
+                    "stage": "moqui_interpreter",
+                    "error": result['stderr'].strip(),
+                    "exit_code": result["exit_code"]
+                })
+            else:
+                logging.error(log_message)
             if status_display:
                 status_display.update_case_status(
                     case_id=case_id,
@@ -208,7 +239,14 @@ class RemoteExecutor(BaseSSHConnector):
         result = self.execute_command(command, timeout=3600)  # 1 hour timeout
         
         if result["exit_code"] == 0:
-            logging.info(f"MOQUI beam {beam_id} completed for case: {case_id} on GPU {gpu_id}")
+            if self.logger:
+                self.logger.log_case_progress(case_id, "BEAM_COMPLETED", 1.0, {
+                    "stage": "moqui_beam_processing",
+                    "beam_id": beam_id,
+                    "gpu_id": gpu_id
+                })
+            else:
+                logging.info(f"MOQUI beam {beam_id} completed for case: {case_id} on GPU {gpu_id}")
             if status_display:
                 status_display.update_case_status(
                     case_id=case_id,
@@ -218,7 +256,16 @@ class RemoteExecutor(BaseSSHConnector):
                 )
             return True
         else:
-            logging.error(f"MOQUI beam {beam_id} failed for case: {case_id}, Error: {result['stderr']}")
+            if self.logger:
+                self.logger.log_case_progress(case_id, "BEAM_FAILED", 0.0, {
+                    "stage": "moqui_beam_processing",
+                    "beam_id": beam_id,
+                    "gpu_id": gpu_id,
+                    "error": result['stderr'].strip(),
+                    "exit_code": result['exit_code']
+                })
+            else:
+                logging.error(f"MOQUI beam {beam_id} failed for case: {case_id}, Error: {result['stderr']}")
             if status_display:
                 status_display.update_case_status(
                     case_id=case_id,
@@ -247,7 +294,13 @@ class RemoteExecutor(BaseSSHConnector):
         result = self.execute_command(command)
         
         if result["exit_code"] == 0:
-            logging.info(f"Raw to DICOM conversion completed for case: {case_id}")
+            if self.logger:
+                self.logger.log_case_progress(case_id, "RAW_TO_DICOM_SUCCESS", 1.0, {
+                    "stage": "raw_to_dicom",
+                    "stdout": result['stdout'].strip()
+                })
+            else:
+                logging.info(f"Raw to DICOM conversion completed for case: {case_id}")
             if status_display:
                 status_display.update_case_status(
                     case_id=case_id,
@@ -257,7 +310,14 @@ class RemoteExecutor(BaseSSHConnector):
                 )
             return True
         else:
-            logging.error(f"Raw to DICOM conversion failed for case: {case_id}, Error: {result['stderr']}")
+            if self.logger:
+                self.logger.log_case_progress(case_id, "RAW_TO_DICOM_FAILED", 0.0, {
+                    "stage": "raw_to_dicom",
+                    "error": result['stderr'].strip(),
+                    "exit_code": result['exit_code']
+                })
+            else:
+                logging.error(f"Raw to DICOM conversion failed for case: {case_id}, Error: {result['stderr']}")
             if status_display:
                 status_display.update_case_status(
                     case_id=case_id,

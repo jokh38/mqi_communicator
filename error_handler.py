@@ -24,9 +24,10 @@ class RetryStrategy(Enum):
 
 
 class ErrorHandler:
-    def __init__(self, max_retry_attempts: int = 3, max_retry_delay: float = 60.0):
+    def __init__(self, max_retry_attempts: int = 3, max_retry_delay: float = 60.0, logger=None):
         self.max_retry_attempts = max_retry_attempts
         self.max_retry_delay = max_retry_delay
+        self.logger = logger
         self.error_history: List[Dict[str, Any]] = []
         self.cleanup_functions: List[Callable] = []
         self.error_callback: Optional[Callable] = None
@@ -138,10 +139,22 @@ class ErrorHandler:
                 f"Context: {error_record['context']}"
             )
             
-            if error_record["is_critical"]:
-                logging.critical(message)
+            if self.logger:
+                if error_record["is_critical"]:
+                    self.logger.critical(message)
+                    self.logger.log_structured("critical_error_logged", {
+                        "error_type": error_record["error_type"],
+                        "error_message": str(error_record["error"]),
+                        "context": error_record.get("context", {}),
+                        "timestamp": error_record["timestamp"]
+                    })
+                else:
+                    self.logger.error(message)
             else:
-                logging.error(message)
+                if error_record["is_critical"]:
+                    logging.critical(message)
+                else:
+                    logging.error(message)
                 
         except Exception as log_error:
             logging.error(f"Failed to log error: {log_error}")
@@ -149,14 +162,24 @@ class ErrorHandler:
     def _handle_critical_error(self, error: Exception, context: Dict[str, Any]) -> None:
         """Handle critical errors that require immediate attention."""
         try:
-            logging.critical(f"Critical error detected: {error}")
+            if self.logger:
+                self.logger.critical(f"Critical error detected: {error}")
+                self.logger.log_structured("critical_error_detected", {
+                    "error": str(error),
+                    "cleanup_initiated": True
+                })
+            else:
+                logging.critical(f"Critical error detected: {error}")
             
             # Perform emergency cleanup
             self.cleanup_resources()
             
             # Could trigger alerts, notifications, etc.
             # For now, just log
-            logging.critical("Emergency cleanup completed")
+            if self.logger:
+                self.logger.critical("Emergency cleanup completed")
+            else:
+                logging.critical("Emergency cleanup completed")
             
         except Exception as critical_error:
             logging.error(f"Error handling critical error: {critical_error}")
@@ -230,7 +253,16 @@ class ErrorHandler:
                 # Check if we should retry
                 if attempt < max_attempts and self.should_retry(error, attempt):
                     delay = self.get_retry_delay(attempt)
-                    logging.info(f"Retrying in {delay:.2f} seconds (attempt {attempt + 1}/{max_attempts})")
+                    if self.logger:
+                        self.logger.log_structured("operation_retry", {
+                            "attempt": attempt + 1,
+                            "max_attempts": max_attempts,
+                            "delay_seconds": delay,
+                            "error_type": error_classification["error_type"],
+                            "operation": "retryable_operation"
+                        })
+                    else:
+                        logging.info(f"Retrying in {delay:.2f} seconds (attempt {attempt + 1}/{max_attempts})")
                     time.sleep(delay)
                     continue
                 else:
