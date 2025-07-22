@@ -44,8 +44,9 @@ class RemoteExecutor(BaseSSHConnector):
         self.moqui_binary_path = self.paths.get("linux_moqui_binary")
         self.raw_to_dcm_path = self.paths.get("linux_raw_to_dcm")
         self.moqui_outputs_path = self.paths.get("linux_moqui_outputs_dir")
+        self.venv_python_path = self.paths.get("linux_venv_python", "python3")  # Fallback to python3 if not configured
 
-        if not all([self.remote_workspace, self.mqi_interpreter_path, self.moqui_binary_path, self.raw_to_dcm_path, self.moqui_outputs_path]):
+        if not all([self.remote_workspace, self.mqi_interpreter_path, self.moqui_binary_path, self.raw_to_dcm_path, self.moqui_outputs_path, self.venv_python_path]):
             raise ValueError("One or more required paths are missing in the configuration file.")
 
     def _post_connect_setup(self) -> None:
@@ -128,17 +129,17 @@ class RemoteExecutor(BaseSSHConnector):
             }
 
     def run_python_script(self, script_path: str, args: List[str] = None) -> bool:
-        """Execute Python script remotely."""
+        """Execute Python script remotely using virtual environment."""
         args = args or []
-        command = f"python3 {script_path} {' '.join(args)}"
+        command = f"{self.venv_python_path} {script_path} {' '.join(args)}"
         
         result = self.execute_command(command)
         
         if result["exit_code"] == 0:
-            logging.info(f"Python3 script executed successfully: {script_path}")
+            logging.info(f"Python script executed successfully using {self.venv_python_path}: {script_path}")
             return True
         else:
-            logging.error(f"Python3 script failed: {script_path}, Error: {result['stderr']}")
+            logging.error(f"Python script failed: {script_path}, Error: {result['stderr']}")
             return False
 
 
@@ -152,7 +153,7 @@ class RemoteExecutor(BaseSSHConnector):
         
         # Enhanced command to capture all error output including Python tracebacks
         command = (f"cd {shlex.quote(case_path)} && "
-                   f"python3 -u {shlex.quote(self.mqi_interpreter_path)} "
+                   f"{self.venv_python_path} -u {shlex.quote(self.mqi_interpreter_path)} "
                    f"--logdir {shlex.quote(log_dir)} "
                    f"--outputdir {shlex.quote(self.moqui_outputs_path)} 2>&1")
         
@@ -312,7 +313,7 @@ class RemoteExecutor(BaseSSHConnector):
         """Run raw to DICOM converter."""
         workspace_path = workspace_path or self.remote_workspace
         case_path = f"{workspace_path}/{case_id}"
-        command = f"cd {shlex.quote(case_path)} && python3 {shlex.quote(self.raw_to_dcm_path)} --input moqui_output/dose.raw --output moqui_output/RTDOSE.dcm"
+        command = f"cd {shlex.quote(case_path)} && {self.venv_python_path} {shlex.quote(self.raw_to_dcm_path)} --input moqui_output/dose.raw --output moqui_output/RTDOSE.dcm"
         
         # Update status display - starting conversion
         if status_display:
