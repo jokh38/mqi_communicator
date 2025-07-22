@@ -27,8 +27,9 @@ class RemoteExecutor(BaseSSHConnector):
         self.mqi_interpreter_path = self.paths.get("linux_mqi_interpreter")
         self.moqui_binary_path = self.paths.get("linux_moqui_binary")
         self.raw_to_dcm_path = self.paths.get("linux_raw_to_dcm")
+        self.moqui_outputs_path = self.paths.get("linux_moqui_outputs_dir")
 
-        if not all([self.remote_workspace, self.mqi_interpreter_path, self.moqui_binary_path, self.raw_to_dcm_path]):
+        if not all([self.remote_workspace, self.mqi_interpreter_path, self.moqui_binary_path, self.raw_to_dcm_path, self.moqui_outputs_path]):
             raise ValueError("One or more required paths are missing in the configuration file.")
 
     def _post_connect_setup(self) -> None:
@@ -118,11 +119,18 @@ class RemoteExecutor(BaseSSHConnector):
             return False
 
 
-    def run_moqui_interpreter(self, case_id: str, workspace_path: str = None, status_display=None) -> bool:
+    def run_moqui_interpreter(self, case_id: str, log_dir: str, workspace_path: str = None, status_display=None) -> bool:
         """Run moqui interpreter for case parsing."""
         workspace_path = workspace_path or self.remote_workspace
         case_path = f"{workspace_path}/{case_id}"
-        command = f"cd {shlex.quote(case_path)} && python3 {shlex.quote(self.mqi_interpreter_path)} --logdir logs --outputdir moqui_inputs"
+        
+        # Ensure the output directory exists
+        self.create_directory(self.moqui_outputs_path)
+        
+        command = (f"cd {shlex.quote(case_path)} && "
+                   f"python3 {shlex.quote(self.mqi_interpreter_path)} "
+                   f"--logdir {shlex.quote(log_dir)} "
+                   f"--outputdir {shlex.quote(self.moqui_outputs_path)}")
         
         # Update status display - starting interpreter
         if status_display:

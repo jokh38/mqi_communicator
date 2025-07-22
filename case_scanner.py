@@ -160,7 +160,8 @@ class CaseScanner:
 
     def update_case_status(self, case_id: str, status: str, folder_hash: str = "", 
                           gpu_allocation: Optional[List[int]] = None, 
-                          retry_count: int = 0) -> None:
+                          retry_count: int = 0,
+                          remote_path: Optional[str] = None) -> None:
         """Update case status in memory and save to file."""
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
@@ -171,7 +172,8 @@ class CaseScanner:
                 "end_time": "",
                 "hash": folder_hash,
                 "gpu_allocation": gpu_allocation or [],
-                "retry_count": retry_count
+                "retry_count": retry_count,
+                "remote_path": remote_path or ""
             }
         else:
             # Update existing case
@@ -182,6 +184,9 @@ class CaseScanner:
             if gpu_allocation is not None:
                 self.case_status[case_id]["gpu_allocation"] = gpu_allocation
             
+            if remote_path is not None:
+                self.case_status[case_id]["remote_path"] = remote_path
+
             if status == "COMPLETED" or status == "FAILED":
                 self.case_status[case_id]["end_time"] = current_time
         

@@ -94,6 +94,13 @@ class UploadDataStep(ProcessingStep):
             logging.error(f"Failed to upload data for case: {context.case_id}")
             return False
         
+        # Save the remote path to the case status file
+        context.case_scanner.update_case_status(
+            case_id=context.case_id,
+            status="PROCESSING",  # Keep the status as PROCESSING
+            remote_path=context.remote_path
+        )
+        
         return True
 
 
@@ -105,7 +112,11 @@ class RunInterpreterStep(ProcessingStep):
     
     def execute(self, context: ProcessingContext) -> bool:
         """Run Python interpreter."""
-        if not context.remote_executor.run_moqui_interpreter(context.case_id, status_display=context.status_display):
+        if not context.remote_executor.run_moqui_interpreter(
+            context.case_id, 
+            log_dir=context.remote_path, 
+            status_display=context.status_display
+        ):
             logging.error(f"Failed to run interpreter for case: {context.case_id}")
             return False
         

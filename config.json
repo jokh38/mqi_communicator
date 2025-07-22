@@ -13,7 +13,8 @@
     "local_output": "C:\\moqui\\dose_dcm",
     "linux_mqi_interpreter": "/home/gpuadmin/MOQUI_SMC/mqi_interpreter/main_cli.py",
     "linux_moqui_binary": "/home/gpuadmin/MOQUI_SMC/moqui/main",
-    "linux_raw_to_dcm": "/home/gpuadmin/MOQUI_SMC/RawToDCM/moqui_raw2dicom.py"
+    "linux_raw_to_dcm": "/home/gpuadmin/MOQUI_SMC/RawToDCM/moqui_raw2dicom.py",
+    "linux_moqui_outputs_dir": "/home/gpuadmin/MOQUI_SMC/Outputs"
   },
   "scanning": {
     "interval_minutes": 1,
