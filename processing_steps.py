@@ -112,9 +112,10 @@ class RunInterpreterStep(ProcessingStep):
     
     def execute(self, context: ProcessingContext) -> bool:
         """Run Python interpreter."""
+        # Let run_moqui_interpreter use the case_path as log_dir by default
+        # This ensures find_dcm_file_in_logdir searches in the correct directory
         if not context.remote_executor.run_moqui_interpreter(
             context.case_id, 
-            log_dir=context.remote_path, 
             status_display=context.status_display
         ):
             logging.error(f"Failed to run interpreter for case: {context.case_id}")

@@ -143,10 +143,14 @@ class RemoteExecutor(BaseSSHConnector):
             return False
 
 
-    def run_moqui_interpreter(self, case_id: str, log_dir: str, workspace_path: str = None, status_display=None) -> bool:
+    def run_moqui_interpreter(self, case_id: str, log_dir: str = None, workspace_path: str = None, status_display=None) -> bool:
         """Run moqui interpreter for case parsing."""
         workspace_path = workspace_path or self.remote_workspace
         case_path = f"{workspace_path}/{case_id}"
+        
+        # The log directory should be the same as the case path where DCM files are located
+        # This is where find_dcm_file_in_logdir will search for DCM files
+        log_directory = log_dir or case_path
         
         # Ensure the output directory exists
         self.create_directory(self.moqui_outputs_path)
@@ -154,7 +158,7 @@ class RemoteExecutor(BaseSSHConnector):
         # Enhanced command to capture all error output including Python tracebacks
         command = (f"cd {shlex.quote(case_path)} && "
                    f"{self.venv_python_path} -u {shlex.quote(self.mqi_interpreter_path)} "
-                   f"--logdir {shlex.quote(log_dir)} "
+                   f"--logdir {shlex.quote(log_directory)} "
                    f"--outputdir {shlex.quote(self.moqui_outputs_path)} 2>&1")
         
         # Log MOQUI interpreter execution start
@@ -162,7 +166,8 @@ class RemoteExecutor(BaseSSHConnector):
             self.logger.log_structured("INFO", "MOQUI interpreter started", {
                 "case_id": case_id,
                 "command": command,
-                "log_dir": log_dir,
+                "log_dir": log_directory,
+                "case_path": case_path,
                 "output_dir": self.moqui_outputs_path
             })
         else:
