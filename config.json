@@ -17,6 +17,11 @@
     "linux_moqui_outputs_dir": "/home/gpuadmin/MOQUI_SMC/Outputs",
     "linux_venv_python": "/opt/deepops/env/bin/python3.10"
   },
+  "working_directories": {
+    "mqi_interpreter": "/home/gpuadmin/MOQUI_SMC/mqi_interpreter",
+    "moqui_binary": "/home/gpuadmin/MOQUI_SMC/moqui",
+    "raw2dicom": "/home/gpuadmin/MOQUI_SMC/RawToDCM"
+  },
   "scanning": {
     "interval_minutes": 1,
     "max_concurrent_cases": 2,

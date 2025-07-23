@@ -49,6 +49,11 @@ class RemoteExecutor(BaseSSHConnector):
         if not all([self.remote_workspace, self.mqi_interpreter_path, self.moqui_binary_path, self.raw_to_dcm_path, self.moqui_outputs_path, self.venv_python_path]):
             raise ValueError("One or more required paths are missing in the configuration file.")
 
+        # Load program working directories from config
+        self.working_directories = self.config.get("working_directories", {})
+        if not self.working_directories:
+            raise ValueError("Working directories not found in configuration file.")
+
     def _post_connect_setup(self) -> None:
         """Create SSH client after connection is established."""
         self.ssh = paramiko.SSHClient()
@@ -128,6 +133,11 @@ class RemoteExecutor(BaseSSHConnector):
                 "exit_code": -1
             }
 
+    def execute_command_with_workdir(self, command: str, working_dir: str, timeout: Optional[int] = None) -> Dict[str, Any]:
+        """Execute command in specified working directory."""
+        full_command = f"cd {shlex.quote(working_dir)} && {command}"
+        return self.execute_command(full_command, timeout)
+
     def run_python_script(self, script_path: str, args: List[str] = None) -> bool:
         """Execute Python script remotely using virtual environment."""
         args = args or []
@@ -156,11 +166,10 @@ class RemoteExecutor(BaseSSHConnector):
         self.create_directory(self.moqui_outputs_path)
         
         # Enhanced command to capture all error output including Python tracebacks
-        # Use absolute paths instead of cd command for better reliability
-        command = (f"{self.venv_python_path} -u {shlex.quote(self.mqi_interpreter_path)} "
+        # Use working directory change to ensure config files are found
+        command = (f"{self.venv_python_path} -u ./main_cli.py "
                    f"--logdir {shlex.quote(log_directory)} "
-                   f"--outputdir {shlex.quote(self.moqui_outputs_path)} "
-                   f"--workdir {shlex.quote(case_path)} 2>&1")
+                   f"--outputdir {shlex.quote(self.moqui_outputs_path)} 2>&1")
         
         # Log MOQUI interpreter execution start
         if self.logger:
@@ -183,7 +192,7 @@ class RemoteExecutor(BaseSSHConnector):
                 transfer_info="Parsing RTPLAN and preparing inputs..."
             )
         
-        result = self.execute_command(command, timeout=1800)  # 30 minute timeout for interpreter
+        result = self.execute_command_with_workdir(command, self.working_directories["mqi_interpreter"], timeout=1800)  # 30 minute timeout for interpreter
         
         # Enhanced error capture - since we used 2>&1, all output is in stdout
         stdout_output = result['stdout'].strip()
@@ -264,10 +273,10 @@ class RemoteExecutor(BaseSSHConnector):
         """Run moqui beam calculation on specific GPU."""
         workspace_path = workspace_path or self.remote_workspace
         case_path = f"{workspace_path}/{case_id}"
-        # Use absolute paths instead of cd command for better reliability
+        # Use working directory change to ensure proper execution environment
         input_dir = f"{case_path}/moqui_inputs"
         output_dir = f"{case_path}/moqui_output"
-        command = f"CUDA_VISIBLE_DEVICES={gpu_id} {shlex.quote(self.moqui_binary_path)} --input_dir {shlex.quote(input_dir)} --output_dir {shlex.quote(output_dir)}"
+        command = f"CUDA_VISIBLE_DEVICES={gpu_id} ./main --input_dir {shlex.quote(input_dir)} --output_dir {shlex.quote(output_dir)}"
         
         # Update status display - starting beam calculation
         if status_display:
@@ -278,7 +287,7 @@ class RemoteExecutor(BaseSSHConnector):
                 transfer_info=f"Processing beam {beam_id} on GPU {gpu_id}..."
             )
         
-        result = self.execute_command(command, timeout=3600)  # 1 hour timeout
+        result = self.execute_command_with_workdir(command, self.working_directories["moqui_binary"], timeout=3600)  # 1 hour timeout
         
         if result["exit_code"] == 0:
             if self.logger:
@@ -322,10 +331,10 @@ class RemoteExecutor(BaseSSHConnector):
         """Run raw to DICOM converter."""
         workspace_path = workspace_path or self.remote_workspace
         case_path = f"{workspace_path}/{case_id}"
-        # Use absolute paths instead of cd command for better reliability
+        # Use working directory change to ensure proper module imports
         input_file = f"{case_path}/moqui_output/dose.raw"
         output_file = f"{case_path}/moqui_output/RTDOSE.dcm"
-        command = f"{self.venv_python_path} {shlex.quote(self.raw_to_dcm_path)} --input {shlex.quote(input_file)} --output {shlex.quote(output_file)}"
+        command = f"{self.venv_python_path} ./moqui_raw2dicom.py --input {shlex.quote(input_file)} --output {shlex.quote(output_file)}"
         
         # Update status display - starting conversion
         if status_display:
@@ -336,7 +345,7 @@ class RemoteExecutor(BaseSSHConnector):
                 transfer_info="Converting raw data to DICOM format..."
             )
         
-        result = self.execute_command(command)
+        result = self.execute_command_with_workdir(command, self.working_directories["raw2dicom"])
         
         if result["exit_code"] == 0:
             if self.logger:
