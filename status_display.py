@@ -327,8 +327,8 @@ class StatusDisplay:
             
             table = Table(title="[Active Cases]", show_header=True, header_style="bold magenta")
             table.add_column("Case ID", style="cyan", width=15)
-            table.add_column("Task", style="magenta", width=15)
-            table.add_column("Progress", justify="center", width=10)
+            table.add_column("Task", style="magenta", width=25)
+            table.add_column("Progress", justify="center", width=8)
             table.add_column("Details", style="green", no_wrap=True, width=35)
             table.add_column("GPUs", style="red", width=8)
             table.add_column("Runtime", style="white", width=10)
@@ -354,7 +354,18 @@ class StatusDisplay:
                     if case_info.error_message:
                         details = f"[bold red]Error: {case_info.error_message[:30]}...[/bold red]"
                     elif case_info.transfer_info:
-                        details = case_info.transfer_info[:35]
+                        # Extract status and progress separately
+                        transfer_text = case_info.transfer_info
+                        if "(" in transfer_text and ")" in transfer_text:
+                            # Split "Uploading (80/223)" into "Uploading" and "80/223"
+                            status_part = transfer_text.split("(")[0].strip()
+                            progress_part = transfer_text.split("(")[1].split(")")[0]
+                            details = status_part[:35]
+                            # Update progress display with the count
+                            if progress_display == "-":
+                                progress_display = progress_part
+                        else:
+                            details = transfer_text[:35]
                     elif case_info.beam_info:
                         details = case_info.beam_info[:35]
                     else:
@@ -365,7 +376,7 @@ class StatusDisplay:
                 
                 table.add_row(
                     case_info.case_id[:15],  # Case ID 잘림 방지
-                    Text(task_display[:15], style=task_style),
+                    Text(task_display[:25], style=task_style),  # Increased from 15 to 25
                     Text(progress_display, style="bold yellow"),
                     details,
                     gpu_str,
