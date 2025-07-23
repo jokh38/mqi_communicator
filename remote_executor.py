@@ -350,6 +350,7 @@ class RemoteExecutor(BaseSSHConnector):
                     current_task="MOQUI Interpreter",
                     detailed_status="Interpreter completed successfully"
                 )
+            return True
         elif result["exit_code"] == 0 and has_python_error:
             # Exit code 0 but Python errors detected - treat as warning
             if self.logger:
