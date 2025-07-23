@@ -167,34 +167,94 @@ class ExecuteBeamCalculationsStep(ProcessingStep):
     
     def execute(self, context: ProcessingContext) -> bool:
         """Execute beam calculations."""
-        # Get next job from scheduler
-        job = context.job_scheduler.get_next_job()
-        if not job:
-            context.logger.error(f"Failed to get job for case: {context.case_id}")
+        try:
+            # Get next job from scheduler
+            job = context.job_scheduler.get_next_job()
+            if not job:
+                context.logger.error(f"Failed to get job for case: {context.case_id}")
+                return False
+            
+            # Update context with GPU allocation
+            gpu_allocation = job.get('gpu_allocation', [])
+            context.status_display.update_case_status(
+                case_id=context.case_id,
+                status="PROCESSING",
+                stage="Calculating beams",
+                gpu_allocation=gpu_allocation,
+                beam_info=f"Using GPUs: {gpu_allocation}"
+            )
+            
+            # Define parameters for moqui_tps.in (hard-coded for demonstration)
+            tps_params = {
+                "BEAM_MODEL": "6MV_FLATTENING_FILTER",
+                "DOSE_CALCULATION_ALGORITHM": "MONTE_CARLO",
+                "STATISTICAL_UNCERTAINTY": "2.0",
+                "MAX_HISTORIES": "1000000",
+                "VOXEL_SIZE": "2.5",
+                "OUTPUT_FORMAT": "DICOM"
+            }
+            
+            # Create the case-specific config file
+            if not context.remote_executor.update_moqui_tps_in(context.case_id, tps_params):
+                context.logger.error(f"Failed to update moqui_tps.in for case: {context.case_id}")
+                context.job_scheduler.complete_job(context.case_id, False)
+                return False
+            
+            # Check for beams data to determine how many beam calculations to run
+            # For demonstration, assume we have beam information from the case
+            workspace_path = context.remote_executor.remote_workspace
+            case_path = f"{workspace_path}/{context.case_id}"
+            
+            # Check if moqui_inputs directory exists and get beam information
+            inputs_check = context.remote_executor.execute_command(f"ls {case_path}/moqui_inputs/")
+            if inputs_check["exit_code"] != 0:
+                context.logger.error(f"No moqui_inputs found for case: {context.case_id}")
+                context.job_scheduler.complete_job(context.case_id, False)
+                return False
+            
+            # For demonstration, simulate multiple beams by iterating through available GPUs
+            beam_results = []
+            for i, gpu_id in enumerate(gpu_allocation):
+                beam_id = i + 1  # Start beam numbering from 1
+                
+                context.logger.info(f"Starting beam {beam_id} calculation for case {context.case_id} on GPU {gpu_id}")
+                
+                # Run beam calculation
+                beam_result = context.remote_executor.run_moqui_beam(
+                    case_id=context.case_id,
+                    beam_id=beam_id,
+                    gpu_id=gpu_id,
+                    status_display=context.status_display
+                )
+                
+                beam_results.append(beam_result)
+                
+                if not beam_result.get("success", False):
+                    context.logger.error(f"Beam {beam_id} calculation failed for case: {context.case_id}")
+                    context.job_scheduler.complete_job(context.case_id, False)
+                    return False
+                
+                context.logger.info(f"Beam {beam_id} calculation completed successfully for case: {context.case_id}")
+            
+            # Mark job as complete
+            success = all(result.get("success", False) for result in beam_results)
+            context.job_scheduler.complete_job(context.case_id, success)
+            
+            if not success:
+                context.logger.error(f"One or more beam calculations failed for case: {context.case_id}")
+                return False
+            
+            context.logger.info(f"All beam calculations completed successfully for case: {context.case_id}")
+            return True
+            
+        except Exception as e:
+            context.logger.error(f"Error executing beam calculations for case {context.case_id}: {e}")
+            # Ensure job is marked as failed
+            try:
+                context.job_scheduler.complete_job(context.case_id, False)
+            except:
+                pass  # Ignore errors in cleanup
             return False
-        
-        # Update context with GPU allocation
-        gpu_allocation = job.get('gpu_allocation', [])
-        context.status_display.update_case_status(
-            case_id=context.case_id,
-            status="PROCESSING",
-            stage="Calculating beams",
-            gpu_allocation=gpu_allocation,
-            beam_info=f"Using GPUs: {gpu_allocation}"
-        )
-        
-        # Execute beam calculations (this would integrate with actual beam execution)
-        # For now, we'll simulate completion
-        success = True  # This should be replaced with actual beam execution logic
-        
-        # Complete the job
-        context.job_scheduler.complete_job(context.case_id, success)
-        
-        if not success:
-            context.logger.error(f"Failed to execute beams for case: {context.case_id}")
-            return False
-        
-        return True
 
 
 class RunConverterStep(ProcessingStep):

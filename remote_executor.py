@@ -268,6 +268,57 @@ class RemoteExecutor(BaseSSHConnector):
             return False
 
 
+    def update_moqui_tps_in(self, case_id: str, tps_params: Dict[str, Any]) -> bool:
+        """Update moqui_tps.in configuration file for specific case."""
+        try:
+            # Define paths
+            template_path = f"{self.working_directories.get('tps_env', '')}/moqui_tps.in"
+            case_workspace = f"{self.remote_workspace}/{case_id}"
+            target_path = f"{case_workspace}/moqui_tps.in"
+            
+            # Read template file content
+            read_result = self.execute_command(f"cat {shlex.quote(template_path)}")
+            if read_result["exit_code"] != 0:
+                self.logger.error(f"Failed to read template moqui_tps.in from {template_path}: {read_result['stderr']}")
+                return False
+            
+            template_content = read_result["stdout"]
+            
+            # Modify content in memory by replacing existing values or appending new ones
+            modified_content = template_content
+            for key, value in tps_params.items():
+                # Check if key already exists in template
+                key_pattern = f"{key}="
+                if key_pattern in modified_content:
+                    # Replace existing value
+                    import re
+                    modified_content = re.sub(
+                        rf'^{re.escape(key)}=.*$',
+                        f'{key}={value}',
+                        modified_content,
+                        flags=re.MULTILINE
+                    )
+                else:
+                    # Append new key-value pair
+                    modified_content += f"\n{key}={value}"
+            
+            # Write modified content to target path using heredoc for stability
+            # Escape single quotes in content for heredoc
+            escaped_content = modified_content.replace("'", "'\"'\"'")
+            write_command = f"cat <<'EOF' > {shlex.quote(target_path)}\n{escaped_content}\nEOF"
+            
+            write_result = self.execute_command(write_command)
+            if write_result["exit_code"] != 0:
+                self.logger.error(f"Failed to write moqui_tps.in to {target_path}: {write_result['stderr']}")
+                return False
+            
+            self.logger.info(f"Successfully updated moqui_tps.in for case {case_id}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error updating moqui_tps.in for case {case_id}: {e}")
+            return False
+
     def run_moqui_interpreter(self, case_id: str, log_dir: str = None, workspace_path: str = None, status_display=None) -> Dict[str, Any]:
         """Run moqui interpreter for case parsing and return PID information."""
         workspace_path = workspace_path or self.remote_workspace
@@ -408,13 +459,11 @@ class RemoteExecutor(BaseSSHConnector):
                       workspace_path: str = None, status_display=None) -> Dict[str, Any]:
         """Run moqui beam calculation on specific GPU and return PID information."""
         workspace_path = workspace_path or self.remote_workspace
-        case_path = f"{workspace_path}/{case_id}"
-        # Use working directory change to ensure proper execution environment
-        input_dir = f"{case_path}/moqui_inputs"
-        output_dir = f"{case_path}/moqui_output"
+        case_workspace_path = f"{workspace_path}/{case_id}"
         
-        # Run in background and capture PID
-        command = f"CUDA_VISIBLE_DEVICES={gpu_id} nohup ./main --input_dir {shlex.quote(input_dir)} --output_dir {shlex.quote(output_dir)} > /dev/null 2>&1 & echo $!"
+        # Run from the case-specific workspace directory to use the updated moqui_tps.in
+        # The moqui binary will automatically find moqui_tps.in in its current directory
+        command = f"cd {shlex.quote(case_workspace_path)} && CUDA_VISIBLE_DEVICES={gpu_id} nohup {self.moqui_binary_path}/main > moqui.log 2>&1 & echo $!"
         
         # Update status display - starting beam calculation
         if status_display:
@@ -428,7 +477,7 @@ class RemoteExecutor(BaseSSHConnector):
             )
         
         # Get PID first
-        pid_result = self.execute_command_with_workdir(command, self.working_directories["moqui_binary"], timeout=30)
+        pid_result = self.execute_command(command, timeout=30)
         
         if pid_result["exit_code"] != 0:
             error_msg = f"Failed to start beam process: {pid_result['stderr']}"
@@ -460,7 +509,7 @@ class RemoteExecutor(BaseSSHConnector):
                 # Process has completed, check if it succeeded
                 # Since we redirected output, we need another way to check success
                 # Check if expected output files exist
-                output_check_result = self.execute_command(f"test -f {output_dir}/dose.raw")
+                output_check_result = self.execute_command(f"test -f {case_workspace_path}/moqui_output/dose.raw")
                 
                 if output_check_result["exit_code"] == 0:
                     if self.logger:
