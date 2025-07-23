@@ -268,9 +268,22 @@ class MainController:
                 password=self.config["credentials"]["password"],
                 logger=self.logger
             )
+            
+            # Update status display with SFTP connection
+            if hasattr(self, 'status_display'):
+                self.status_display.update_system_info({
+                    "sftp_connection": "INITIALIZED"
+                })
 
             # Initialize remote executor
             self.remote_executor = RemoteExecutor(config=self.config, logger=self.logger)
+            
+            # Update status display with remote executor
+            if hasattr(self, 'status_display'):
+                self.status_display.update_system_info({
+                    "remote_executor": "INITIALIZED",
+                    "gpu_server_auth": "READY"
+                })
 
             # Initialize GPU manager with remote executor
             self.gpu_manager = GPUManager(
@@ -308,12 +321,28 @@ class MainController:
             self.directory_manager.remote_executor = self.remote_executor
 
             self.logger.info("All components initialized successfully")
+            
+            # Update status display with successful initialization
+            if hasattr(self, 'status_display'):
+                self.status_display.update_system_info({
+                    "initialization_status": "COMPLETED",
+                    "gpu_server_connection": "ESTABLISHED",
+                    "system_status": "READY"
+                })
 
         except Exception as e:
             if hasattr(self, 'logger'):
                 self.logger.critical(f"Failed to initialize components: {e}")
             else:
-                print(f"Failed to initialize components: {e}")
+                # Fallback to console when logger is not available
+                import logging
+                logging.error(f"Failed to initialize components: {e}")
+            
+            # Also update status display if available
+            if hasattr(self, 'status_display'):
+                self.status_display.update_system_info({
+                    "initialization_status": f"FAILED: {str(e)}"
+                })
             raise
     
     def _calculate_next_scan_time(self, current_time: datetime) -> datetime:
@@ -343,6 +372,13 @@ class MainController:
             with self.scan_lock:
                 self.logger.info("Starting case scan")
                 
+                # Update status display with scan start
+                if hasattr(self, 'status_display'):
+                    self.status_display.update_system_info({
+                        "scan_status": "SCANNING",
+                        "last_scan": datetime.now().strftime("%H:%M:%S")
+                    })
+                
                 # Scan for new cases
                 new_cases = self.case_scanner.scan_for_new_cases()
                 
@@ -357,6 +393,14 @@ class MainController:
                     self.shared_state['last_scan_time'] = datetime.now()
                 
                 self.logger.info(f"Case scan completed. Found {len(new_cases)} new cases")
+                
+                # Update status display with scan results
+                if hasattr(self, 'status_display'):
+                    self.status_display.update_system_info({
+                        "scan_status": "COMPLETED",
+                        "new_cases_found": len(new_cases),
+                        "last_scan_result": f"Found {len(new_cases)} new cases"
+                    })
                 
         except Exception as e:
             self.error_handler.handle_error(e, {"operation": "case_scanning"})
@@ -852,7 +896,14 @@ class MainController:
             if hasattr(self, 'logger'):
                 self.logger.error(f"Error during shutdown: {e}")
             else:
-                print(f"Error during shutdown: {e}")
+                import logging
+                logging.error(f"Error during shutdown: {e}")
+            
+            # Update status display if available
+            if hasattr(self, 'status_display'):
+                self.status_display.update_system_info({
+                    "shutdown_status": f"ERROR: {str(e)}"
+                })
     
     def cleanup_resources(self) -> None:
         """Clean up all resources."""
@@ -877,7 +928,14 @@ class MainController:
             if hasattr(self, 'logger'):
                 self.logger.error(f"Error during resource cleanup: {e}")
             else:
-                print(f"Error during resource cleanup: {e}")
+                import logging
+                logging.error(f"Error during resource cleanup: {e}")
+            
+            # Update status display if available
+            if hasattr(self, 'status_display'):
+                self.status_display.update_system_info({
+                    "cleanup_status": f"ERROR: {str(e)}"
+                })
     
     def get_system_status(self) -> Dict[str, Any]:
         """Get current system status."""

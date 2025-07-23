@@ -14,6 +14,12 @@ class SFTPManager(BaseSSHConnector):
         super().__init__(host, username, password, port, timeout)
         self.sftp: Optional[paramiko.SFTPClient] = None
         self.logger = logger
+        self.transfer_stats = {
+            'total_bytes': 0,
+            'transferred_bytes': 0,
+            'start_time': None,
+            'current_speed': 0
+        }
 
     def _post_connect_setup(self) -> None:
         """Create SFTP client after SSH connection is established."""
@@ -91,6 +97,28 @@ class SFTPManager(BaseSSHConnector):
             self.sftp.put(str(local_file), remote_path)
             upload_duration = time.time() - upload_start_time
             
+            # Calculate transfer speed
+            if upload_duration > 0:
+                speed_bytes_per_sec = local_size / upload_duration
+                speed_mbps = speed_bytes_per_sec / (1024 * 1024)
+                
+                # Update transfer stats for directory-level tracking
+                self.transfer_stats['transferred_bytes'] += local_size
+                self.transfer_stats['current_speed'] = speed_mbps
+                
+                # Update status display with speed info
+                if status_display and case_id:
+                    if total_files > 0:
+                        transfer_info = f"Uploading ({current_file}/{total_files}) - {speed_mbps:.1f} MB/s"
+                    else:
+                        transfer_info = f"Uploading - {speed_mbps:.1f} MB/s"
+                    
+                    status_display.update_case_status(
+                        case_id=case_id,
+                        status="PROCESSING",
+                        transfer_info=transfer_info
+                    )
+            
             # Individual file upload logging removed - summary logging handled at directory level
 
             # 4. Post-flight verification: Check existence and size
@@ -142,6 +170,14 @@ class SFTPManager(BaseSSHConnector):
             return False
 
         try:
+            # Initialize transfer stats for directory upload
+            self.transfer_stats = {
+                'total_bytes': 0,
+                'transferred_bytes': 0,
+                'start_time': time.time(),
+                'current_speed': 0
+            }
+            
             # Step 1: Create all directories on the remote first.
             # Log directory upload start (summary logging only)
             if self.logger:
@@ -160,12 +196,17 @@ class SFTPManager(BaseSSHConnector):
             all_files = [p for p in local_dir.rglob("*") if p.is_file()]
             total_files = len(all_files)
             
+            # Calculate total bytes for accurate progress tracking
+            for file_path in all_files:
+                self.transfer_stats['total_bytes'] += file_path.stat().st_size
+            
             # Log upload operation summary
             if self.logger:
                 self.logger.log_structured("INFO", "Directory upload started", {
                     "local_path": str(local_path),
                     "remote_path": remote_path,
                     "total_files": total_files,
+                    "total_bytes": self.transfer_stats['total_bytes'],
                     "directories_created": dir_count,
                     "case_id": case_id
                 })
@@ -178,10 +219,18 @@ class SFTPManager(BaseSSHConnector):
                     logging.error(f"Stopping upload due to failure on file: {file_path}")
                     return False
                 
-                # Update progress
+                # Update progress with overall transfer speed
                 if status_display and case_id:
                     progress = (i + 1) / total_files
-                    transfer_info = f"Uploading: {i+1}/{total_files}"
+                    
+                    # Calculate overall average speed
+                    elapsed_time = time.time() - self.transfer_stats['start_time']
+                    if elapsed_time > 0 and self.transfer_stats['transferred_bytes'] > 0:
+                        avg_speed_mbps = (self.transfer_stats['transferred_bytes'] / elapsed_time) / (1024 * 1024)
+                        transfer_info = f"Uploading: {i+1}/{total_files} - {avg_speed_mbps:.1f} MB/s avg"
+                    else:
+                        transfer_info = f"Uploading: {i+1}/{total_files}"
+                    
                     status_display.update_case_status(
                         case_id=case_id,
                         status="PROCESSING",
@@ -231,18 +280,52 @@ class SFTPManager(BaseSSHConnector):
                 )
             return False
 
-    def download_file(self, remote_path: str, local_path: str) -> bool:
-        """Download single file with network retry."""
+    def download_file(self, remote_path: str, local_path: str, case_id: str = "", 
+                     status_display=None, current_file: int = 0, total_files: int = 0) -> bool:
+        """Download single file with network retry and speed tracking."""
         def _download_file_internal():
             if not self._ensure_connected():
                 raise ConnectionError("Failed to establish SFTP connection")
+            
+            # Get remote file size
+            try:
+                remote_stat = self.sftp.stat(remote_path)
+                file_size = remote_stat.st_size
+            except Exception as e:
+                logging.error(f"Failed to get remote file size for {remote_path}: {e}")
+                file_size = 0
             
             # Create local directory if needed
             local_file = Path(local_path)
             local_file.parent.mkdir(parents=True, exist_ok=True)
             
-            # Download file
+            # Download file with timing
+            download_start_time = time.time()
             self.sftp.get(remote_path, str(local_file))
+            download_duration = time.time() - download_start_time
+            
+            # Calculate transfer speed
+            if download_duration > 0 and file_size > 0:
+                speed_bytes_per_sec = file_size / download_duration
+                speed_mbps = speed_bytes_per_sec / (1024 * 1024)
+                
+                # Update transfer stats for directory-level tracking
+                self.transfer_stats['transferred_bytes'] += file_size
+                self.transfer_stats['current_speed'] = speed_mbps
+                
+                # Update status display with speed info
+                if status_display and case_id:
+                    if total_files > 0:
+                        transfer_info = f"Downloading ({current_file}/{total_files}) - {speed_mbps:.1f} MB/s"
+                    else:
+                        transfer_info = f"Downloading - {speed_mbps:.1f} MB/s"
+                    
+                    status_display.update_case_status(
+                        case_id=case_id,
+                        status="PROCESSING",
+                        transfer_info=transfer_info
+                    )
+            
             return True
         
         try:
@@ -259,6 +342,14 @@ class SFTPManager(BaseSSHConnector):
             return False
         
         try:
+            # Initialize transfer stats for directory download
+            self.transfer_stats = {
+                'total_bytes': 0,
+                'transferred_bytes': 0,
+                'start_time': time.time(),
+                'current_speed': 0
+            }
+            
             # Step 1: List all files to be downloaded to get a total count
             all_files = []
             items_to_scan = [remote_path]
@@ -270,9 +361,11 @@ class SFTPManager(BaseSSHConnector):
                         items_to_scan.append(item_full_path)
                     else:
                         all_files.append(item_full_path)
+                        # Add file size to total bytes
+                        self.transfer_stats['total_bytes'] += item.st_size
             
             total_files = len(all_files)
-            logging.info(f"[SFTP] Found {total_files} file(s) to download from {remote_path}.")
+            logging.info(f"[SFTP] Found {total_files} file(s) to download from {remote_path}. Total size: {self.transfer_stats['total_bytes']} bytes")
             
             # Step 2: Download files and update progress
             downloaded_count = 0
@@ -284,14 +377,22 @@ class SFTPManager(BaseSSHConnector):
                 # Ensure local directory exists
                 local_file_path.parent.mkdir(parents=True, exist_ok=True)
 
-                if not self.download_file(remote_file_path, str(local_file_path)):
+                if not self.download_file(remote_file_path, str(local_file_path), case_id, status_display, downloaded_count+1, total_files):
                     logging.error(f"Stopping download due to failure on file: {remote_file_path}")
                     return False
                 
                 downloaded_count += 1
                 if status_display and case_id:
                     progress = downloaded_count / total_files
-                    transfer_info = f"Downloading: {downloaded_count}/{total_files}"
+                    
+                    # Calculate overall average speed
+                    elapsed_time = time.time() - self.transfer_stats['start_time']
+                    if elapsed_time > 0 and self.transfer_stats['transferred_bytes'] > 0:
+                        avg_speed_mbps = (self.transfer_stats['transferred_bytes'] / elapsed_time) / (1024 * 1024)
+                        transfer_info = f"Downloading: {downloaded_count}/{total_files} - {avg_speed_mbps:.1f} MB/s avg"
+                    else:
+                        transfer_info = f"Downloading: {downloaded_count}/{total_files}"
+                    
                     status_display.update_case_status(
                         case_id=case_id,
                         status="PROCESSING",
