@@ -93,8 +93,7 @@ class StatusDisplay:
         if self.display_thread and self.display_thread.is_alive():
             self.display_thread.join(timeout=5)
             if self.display_thread.is_alive():
-                import logging
-                logging.warning("Display thread did not stop gracefully")
+                print("Warning: Display thread did not stop gracefully")
     
     def update_case_status(self, case_id: str, status: str = "", progress: float = 0.0, 
                           stage: str = "", gpu_allocation: List[int] = None, 
@@ -187,8 +186,7 @@ class StatusDisplay:
                     except KeyboardInterrupt:
                         break
                     except Exception as e:
-                        import logging
-                        logging.error(f"Display error: {e}")
+                        print(f"Display error: {e}")
                         time.sleep(self.update_interval)
         else:
             # Basic display loop

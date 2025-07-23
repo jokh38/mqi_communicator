@@ -75,6 +75,8 @@ class Logger:
             # Set up queue handler if a queue is provided for UI display
             if self.log_queue:
                 self._setup_queue_handler(formatter)
+                # Disable propagation to parent loggers to prevent console output
+                self.logger.propagate = False
             # Otherwise, set up console handler if requested
             elif self.console_output:
                 self._setup_console_handler(formatter)
