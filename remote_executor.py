@@ -138,6 +138,122 @@ class RemoteExecutor(BaseSSHConnector):
         full_command = f"cd {shlex.quote(working_dir)} && {command}"
         return self.execute_command(full_command, timeout)
 
+    def execute_command_streaming(self, command: str, working_dir: str, case_id: str, 
+                                 status_display=None, timeout: Optional[int] = None) -> Dict[str, Any]:
+        """Execute command with real-time output streaming for progress updates."""
+        if not self._ensure_ssh_connected():
+            self._connection_failures += 1
+            return {
+                "stdout": "",
+                "stderr": "Connection failed",
+                "exit_code": -1
+            }
+        
+        try:
+            full_command = f"cd {shlex.quote(working_dir)} && {command}"
+            stdin, stdout, stderr = self.ssh.exec_command(full_command, timeout=timeout)
+            
+            stdout_lines = []
+            stderr_lines = []
+            
+            # Stream stdout in real-time
+            while True:
+                line = stdout.readline()
+                if not line:
+                    break
+                    
+                line_str = line.decode('utf-8').rstrip()
+                stdout_lines.append(line_str)
+                
+                # Update progress display based on interpreter output
+                if status_display and line_str.strip():
+                    self._update_interpreter_progress(case_id, line_str, status_display)
+                
+                # Log individual progress lines
+                if self.logger and line_str.strip():
+                    self.logger.log_structured("INFO", "MOQUI interpreter progress", {
+                        "case_id": case_id,
+                        "output_line": line_str
+                    })
+            
+            # Read any remaining stderr
+            stderr_data = stderr.read().decode('utf-8')
+            if stderr_data:
+                stderr_lines.extend(stderr_data.splitlines())
+            
+            exit_code = stdout.channel.recv_exit_status()
+            
+            return {
+                "stdout": "\n".join(stdout_lines),
+                "stderr": "\n".join(stderr_lines),
+                "exit_code": exit_code
+            }
+            
+        except socket.timeout:
+            return {
+                "stdout": "\n".join(stdout_lines) if 'stdout_lines' in locals() else "",
+                "stderr": f"Command timed out after {timeout} seconds",
+                "exit_code": -1
+            }
+        except Exception as e:
+            if self.logger:
+                self.logger.log_exception(e, {
+                    "operation": "streaming_command_execution",
+                    "command": command,
+                    "host": self.host
+                })
+            else:
+                logging.error(f"Streaming command execution failed: {e}")
+            return {
+                "stdout": "\n".join(stdout_lines) if 'stdout_lines' in locals() else "",
+                "stderr": f"Execution error: {str(e)}",
+                "exit_code": -1
+            }
+
+    def _update_interpreter_progress(self, case_id: str, output_line: str, status_display):
+        """Update progress display based on interpreter output line."""
+        line = output_line.strip().lower()
+        
+        # Parse different progress indicators
+        if "parsing rt plan file" in line:
+            status_display.update_case_status(
+                case_id=case_id,
+                status="PROCESSING",
+                current_task="MOQUI Interpreter",
+                detailed_status="Parsing RT Plan file..."
+            )
+        elif "skipping beam" in line:
+            # Extract beam info for display
+            if ":" in output_line:
+                beam_info = output_line.split(":", 1)[1].strip()
+                status_display.update_case_status(
+                    case_id=case_id,
+                    status="PROCESSING", 
+                    current_task="MOQUI Interpreter",
+                    detailed_status=f"Processing beams: {beam_info[:30]}..."
+                )
+        elif "processing beam" in line:
+            status_display.update_case_status(
+                case_id=case_id,
+                status="PROCESSING",
+                current_task="MOQUI Interpreter", 
+                detailed_status="Processing beam data..."
+            )
+        elif "saved" in line and "output" in line:
+            status_display.update_case_status(
+                case_id=case_id,
+                status="PROCESSING",
+                current_task="MOQUI Interpreter",
+                detailed_status="Saving output files..."
+            )
+        elif "completed" in line or "finished" in line:
+            status_display.update_case_status(
+                case_id=case_id,
+                status="PROCESSING",
+                current_task="MOQUI Interpreter",
+                detailed_status="Interpreter completed successfully"
+            )
+
     def run_python_script(self, script_path: str, args: List[str] = None) -> bool:
         """Execute Python script remotely using virtual environment."""
         args = args or []
@@ -194,7 +310,14 @@ class RemoteExecutor(BaseSSHConnector):
                 detailed_status="Parsing RTPLAN and preparing inputs..."
             )
         
-        result = self.execute_command_with_workdir(command, self.working_directories["mqi_interpreter"], timeout=1800)  # 30 minute timeout for interpreter
+        # Use streaming execution for real-time progress updates
+        result = self.execute_command_streaming(
+            command, 
+            self.working_directories["mqi_interpreter"], 
+            case_id, 
+            status_display, 
+            timeout=1800  # 30 minute timeout for interpreter
+        )
         
         # Enhanced error capture - since we used 2>&1, all output is in stdout
         stdout_output = result['stdout'].strip()
