@@ -191,8 +191,17 @@ class ExecuteBeamCalculationsStep(ProcessingStep):
                 context.job_scheduler.complete_job(context.case_id, False)
                 return False
             
+            # Read gantry information from case_status.json
+            gantry_info = self._read_gantry_info_from_status(context.case_id)
+            
+            # Prepare dynamic parameters including gantry information
+            dynamic_params = self._prepare_dynamic_params(context, gantry_info)
+            
+            # Merge config params with dynamic params
+            merged_params = {**tps_params, **dynamic_params}
+            
             # Create the case-specific config file
-            if not context.remote_executor.update_moqui_tps_in(context.case_id, tps_params):
+            if not context.remote_executor.update_moqui_tps_in(context.case_id, merged_params):
                 context.logger.error(f"Failed to update moqui_tps.in for case: {context.case_id}")
                 context.job_scheduler.complete_job(context.case_id, False)
                 return False
@@ -252,6 +261,58 @@ class ExecuteBeamCalculationsStep(ProcessingStep):
             except:
                 pass  # Ignore errors in cleanup
             return False
+
+    def _read_gantry_info_from_status(self, case_id: str) -> Dict[str, Any]:
+        """Read gantry information from case_status.json."""
+        import json
+        from pathlib import Path
+        
+        try:
+            status_file_path = Path.cwd() / "case_status.json"
+            
+            if not status_file_path.exists():
+                return {}
+            
+            with open(status_file_path, 'r', encoding='utf-8') as f:
+                case_status = json.load(f)
+            
+            case_info = case_status.get(case_id, {})
+            return case_info.get('gantry_info', {})
+            
+        except Exception as e:
+            print(f"Error reading gantry info from case_status.json for case {case_id}: {e}")
+            return {}
+
+    def _prepare_dynamic_params(self, context, gantry_info: Dict[str, Any]) -> Dict[str, Any]:
+        """Prepare dynamic parameters for moqui_tps.in."""
+        config = context.remote_executor.config
+        paths = config.get("paths", {})
+        
+        dynamic_params = {}
+        
+        # Directory paths from config
+        remote_workspace = paths.get("remote_workspace", "/home/gpuadmin/MOQUI_SMC/tps")
+        case_path = f"{remote_workspace}/{context.case_id}"
+        
+        dynamic_params["ParentDir"] = case_path
+        dynamic_params["DicomDir"] = "plan"  # Standard DICOM directory name
+        dynamic_params["logFilePath"] = "log"
+        dynamic_params["OutputDir"] = f"Output/{context.case_id}"
+        
+        # Gantry information from DICOM parsing
+        if gantry_info:
+            # Use primary gantry number or first gantry angle
+            if 'primary_gantry' in gantry_info:
+                dynamic_params["GantryNum"] = gantry_info['primary_gantry']
+            elif 'gantry_angles' in gantry_info and gantry_info['gantry_angles']:
+                dynamic_params["GantryNum"] = int(gantry_info['gantry_angles'][0])
+            else:
+                # Default gantry number if no info available
+                dynamic_params["GantryNum"] = 0
+        else:
+            dynamic_params["GantryNum"] = 0
+        
+        return dynamic_params
 
 
 class RunConverterStep(ProcessingStep):

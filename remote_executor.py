@@ -5,6 +5,7 @@ import shlex
 from typing import Dict, List, Optional, Any
 import threading
 import signal
+from datetime import datetime
 from base_ssh_connector import BaseSSHConnector
 from config_manager import ConfigManager
 
@@ -287,20 +288,21 @@ class RemoteExecutor(BaseSSHConnector):
             # Modify content in memory by replacing existing values or appending new ones
             modified_content = template_content
             for key, value in tps_params.items():
-                # Check if key already exists in template
-                key_pattern = f"{key}="
-                if key_pattern in modified_content:
+                # Check if key already exists in template (moqui_tps.in format is "key value")
+                import re
+                key_pattern = rf'^{re.escape(key)}\s+'
+                
+                if re.search(key_pattern, modified_content, re.MULTILINE):
                     # Replace existing value
-                    import re
                     modified_content = re.sub(
-                        rf'^{re.escape(key)}=.*$',
-                        f'{key}={value}',
+                        rf'^{re.escape(key)}\s+.*$',
+                        f'{key} {value}',
                         modified_content,
                         flags=re.MULTILINE
                     )
                 else:
                     # Append new key-value pair
-                    modified_content += f"\n{key}={value}"
+                    modified_content += f"\n{key} {value}"
             
             # Write modified content to target path using heredoc for stability
             # Escape single quotes in content for heredoc
@@ -401,11 +403,19 @@ class RemoteExecutor(BaseSSHConnector):
                 
                 # Check if process completed successfully (no Python errors and expected outputs exist)
                 if not has_python_error:
+                    # Extract gantry information from interpreter output
+                    gantry_info = self._extract_gantry_info_from_output(stdout_output)
+                    
+                    # Update case_status.json with gantry information
+                    if gantry_info:
+                        self._update_case_status_with_gantry(case_id, gantry_info)
+                    
                     if self.logger:
                         self.logger.log_case_progress(case_id, "INTERPRETER_SUCCESS", 1.0, {
                             "stage": "moqui_interpreter",
                             "stdout": stdout_output,
-                            "remote_pid": remote_pid
+                            "remote_pid": remote_pid,
+                            "gantry_info": gantry_info
                         })
                     else:
                         self.logger.info(f"MOQUI interpreter completed successfully for case {case_id}")
@@ -416,7 +426,7 @@ class RemoteExecutor(BaseSSHConnector):
                             current_task="MOQUI Interpreter",
                             detailed_status="Interpreter completed successfully"
                         )
-                    return {"success": True, "remote_pid": remote_pid}
+                    return {"success": True, "remote_pid": remote_pid, "gantry_info": gantry_info}
                 else:
                     # Failure case - ensure ALL error information is captured
                     if self.logger:
@@ -750,6 +760,77 @@ class RemoteExecutor(BaseSSHConnector):
                     }
         
         return {}
+
+    def _extract_gantry_info_from_output(self, output: str) -> Dict[str, Any]:
+        """Extract gantry information from mqi_interpreter output."""
+        import re
+        
+        gantry_info = {}
+        
+        # Look for gantry angle patterns in the output
+        # Common patterns: "Gantry Angle: 180", "gantry_angle=180", "Processing beam with gantry 180"
+        gantry_pattern = r'(?i)gantry[_\s]*(?:angle)?[_\s]*[=:]\s*(\d+(?:\.\d+)?)'
+        matches = re.findall(gantry_pattern, output)
+        
+        if matches:
+            # Extract all unique gantry angles
+            gantry_angles = [float(angle) for angle in matches]
+            gantry_info['gantry_angles'] = sorted(list(set(gantry_angles)))
+            gantry_info['gantry_count'] = len(gantry_info['gantry_angles'])
+            
+            # Use the first gantry angle as primary
+            if gantry_angles:
+                gantry_info['primary_gantry'] = int(gantry_angles[0])
+        
+        # Look for beam information that might contain gantry data
+        beam_pattern = r'(?i)(?:processing|beam)\s+(\d+).*?gantry[_\s]*(?:angle)?[_\s]*[=:]\s*(\d+(?:\.\d+)?)'
+        beam_matches = re.findall(beam_pattern, output)
+        
+        if beam_matches:
+            beam_gantry_map = {}
+            for beam_id, gantry_angle in beam_matches:
+                beam_gantry_map[int(beam_id)] = float(gantry_angle)
+            gantry_info['beam_gantry_mapping'] = beam_gantry_map
+        
+        return gantry_info
+
+    def _update_case_status_with_gantry(self, case_id: str, gantry_info: Dict[str, Any]):
+        """Update case_status.json with gantry information."""
+        import json
+        import os
+        from pathlib import Path
+        
+        try:
+            # Path to case_status.json (in working directory)
+            status_file_path = Path.cwd() / "case_status.json"
+            
+            # Read current status
+            case_status = {}
+            if status_file_path.exists():
+                with open(status_file_path, 'r', encoding='utf-8') as f:
+                    case_status = json.load(f)
+            
+            # Update with gantry information
+            if case_id not in case_status:
+                case_status[case_id] = {}
+            
+            case_status[case_id]['gantry_info'] = gantry_info
+            case_status[case_id]['gantry_updated_time'] = str(datetime.now())
+            
+            # Write back to file atomically
+            temp_file_path = status_file_path.with_suffix('.tmp')
+            with open(temp_file_path, 'w', encoding='utf-8') as f:
+                json.dump(case_status, f, indent=2, ensure_ascii=False)
+            
+            # Atomic rename
+            temp_file_path.replace(status_file_path)
+            
+            if self.logger:
+                self.logger.info(f"Updated case_status.json with gantry info for case {case_id}: {gantry_info}")
+                
+        except Exception as e:
+            if self.logger:
+                self.logger.error(f"Failed to update case_status.json with gantry info for case {case_id}: {e}")
 
     def get_connection_info(self) -> Dict[str, Any]:
         """Get connection information."""
