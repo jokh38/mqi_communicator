@@ -33,7 +33,7 @@ class MainController:
         self.config_file = config_file
         self.running = False
         self.threads = []
-        self.lock_file = Path(".app.lock")
+        self.lock_file = Path("mqi_communicator.pid")
         
         # Initialize queues
         self.scan_queue = queue.Queue()
@@ -122,11 +122,15 @@ class MainController:
         try:
             self.logger.info("Performing startup recovery checks")
             
-            # Recover stale cases
-            recovery_result = self.case_scanner.check_and_recover_stale_cases(max_processing_hours=self.stale_case_recovery_hours)
+            # Recover stale cases with enhanced resource cleanup
+            recovery_result = self.case_scanner.recover_stale_jobs(max_processing_hours=self.stale_case_recovery_hours)
             
             if recovery_result["recovered_count"] > 0:
                 self.logger.warning(f"Recovered {recovery_result['recovered_count']} stale cases: {recovery_result['recovered_cases']}")
+                
+                # Clean up resources for recovered cases
+                for case_id in recovery_result['recovered_cases']:
+                    self._cleanup_stale_case_resources(case_id)
             else:
                 self.logger.info("No stale cases found during startup")
             
@@ -137,9 +141,52 @@ class MainController:
                     self.logger.warning(f"Cleaned up {len(zombie_processes)} zombie GPU processes")
                 else:
                     self.logger.info("No zombie GPU processes found")
+                
+                # Clean up stale GPU locks
+                cleaned_locks = self.gpu_manager.cleanup_stale_locks()
+                if cleaned_locks:
+                    self.logger.warning(f"Cleaned up stale locks for GPUs: {cleaned_locks}")
+                else:
+                    self.logger.info("No stale GPU locks found")
             
         except Exception as e:
             self.logger.error(f"Error during startup recovery checks: {e}")
+
+    def _cleanup_stale_case_resources(self, case_id: str) -> None:
+        """Clean up resources for a stale case."""
+        try:
+            case_status = self.case_scanner.get_case_status(case_id)
+            if not case_status:
+                return
+            
+            # Clean up remote processes
+            remote_pid = case_status.get('remote_pid')
+            if remote_pid and self.remote_executor:
+                try:
+                    result = self.remote_executor.execute_command(f"kill {remote_pid}")
+                    if result['exit_code'] == 0:
+                        self.logger.info(f"Killed remote process {remote_pid} for stale case {case_id}")
+                    else:
+                        self.logger.warning(f"Failed to kill remote process {remote_pid} for case {case_id}: {result['stderr']}")
+                except Exception as e:
+                    self.logger.warning(f"Error killing remote process {remote_pid} for case {case_id}: {e}")
+            
+            # Release GPU locks
+            locked_gpus = case_status.get('locked_gpus', [])
+            if locked_gpus and self.remote_executor:
+                for gpu_id in locked_gpus:
+                    try:
+                        lock_dir = f"/var/lock/mqi_locks/gpu_{gpu_id}"
+                        result = self.remote_executor.execute_command(f"rmdir {lock_dir}")
+                        if result['exit_code'] == 0:
+                            self.logger.info(f"Released GPU lock for GPU {gpu_id} (case {case_id})")
+                        else:
+                            self.logger.warning(f"Failed to release GPU lock for GPU {gpu_id} (case {case_id}): {result['stderr']}")
+                    except Exception as e:
+                        self.logger.warning(f"Error releasing GPU lock for GPU {gpu_id} (case {case_id}): {e}")
+            
+        except Exception as e:
+            self.logger.error(f"Error cleaning up resources for stale case {case_id}: {e}")
 
     def _is_network_error(self, exception: Exception) -> bool:
         """Check if the exception is a network-related error."""
@@ -881,6 +928,9 @@ class MainController:
             self.logger.info("Shutting down MOQUI automation system")
             self.running = False
             
+            # Clean up remote processes for currently processing cases
+            self._cleanup_active_remote_processes()
+            
             # Wait for background threads to finish
             for thread in self.threads:
                 if thread.is_alive():
@@ -908,6 +958,49 @@ class MainController:
                 self.status_display.update_system_info({
                     "shutdown_status": f"ERROR: {str(e)}"
                 })
+
+    def _cleanup_active_remote_processes(self) -> None:
+        """Clean up remote processes for active cases during shutdown."""
+        try:
+            if not hasattr(self, 'case_scanner') or not self.remote_executor:
+                return
+                
+            processing_cases = self.case_scanner.get_cases_by_status("PROCESSING")
+            if not processing_cases:
+                return
+                
+            self.logger.info(f"Cleaning up remote processes for {len(processing_cases)} active cases")
+            
+            for case_id in processing_cases:
+                case_status = self.case_scanner.get_case_status(case_id)
+                if not case_status:
+                    continue
+                    
+                # Kill remote process
+                remote_pid = case_status.get('remote_pid')
+                if remote_pid:
+                    try:
+                        result = self.remote_executor.execute_command(f"kill {remote_pid}")
+                        if result['exit_code'] == 0:
+                            self.logger.info(f"Killed remote process {remote_pid} for case {case_id}")
+                        else:
+                            self.logger.warning(f"Failed to kill remote process {remote_pid}: {result['stderr']}")
+                    except Exception as e:
+                        self.logger.warning(f"Error killing remote process {remote_pid} for case {case_id}: {e}")
+                
+                # Release GPU locks
+                locked_gpus = case_status.get('locked_gpus', [])
+                for gpu_id in locked_gpus:
+                    try:
+                        lock_dir = f"/var/lock/mqi_locks/gpu_{gpu_id}"
+                        result = self.remote_executor.execute_command(f"rmdir {lock_dir}")
+                        if result['exit_code'] == 0:
+                            self.logger.info(f"Released GPU lock for GPU {gpu_id} (case {case_id})")
+                    except Exception as e:
+                        self.logger.warning(f"Error releasing GPU lock for GPU {gpu_id}: {e}")
+                        
+        except Exception as e:
+            self.logger.error(f"Error cleaning up active remote processes: {e}")
     
     def cleanup_resources(self) -> None:
         """Clean up all resources."""

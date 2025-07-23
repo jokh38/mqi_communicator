@@ -65,12 +65,18 @@ class CreateWorkspaceStep(ProcessingStep):
         super().__init__("Create Workspace")
     
     def execute(self, context: ProcessingContext) -> bool:
-        """Create workspace directories."""
-        if not context.directory_manager.create_case_workspace(context.case_id):
-            context.logger.error(f"Failed to create workspace for case: {context.case_id}")
+        """Create workspace directories (idempotent)."""
+        try:
+            # This operation is idempotent - creating existing directories is safe
+            if not context.directory_manager.create_case_workspace(context.case_id):
+                context.logger.error(f"Failed to create workspace for case: {context.case_id}")
+                return False
+            
+            context.logger.info(f"Workspace created/verified for case: {context.case_id}")
+            return True
+        except Exception as e:
+            context.logger.error(f"Error creating workspace for case {context.case_id}: {e}")
             return False
-        
-        return True
 
 
 class UploadDataStep(ProcessingStep):
@@ -80,27 +86,34 @@ class UploadDataStep(ProcessingStep):
         super().__init__("Upload Data")
     
     def execute(self, context: ProcessingContext) -> bool:
-        """Upload log data to remote server."""
-        context.local_path = str(context.directory_manager.get_case_local_path(context.case_id))
-        context.remote_path = context.directory_manager.get_case_remote_path(context.case_id)
-        
-        if not context.sftp_manager.upload_directory(
-            local_path=context.local_path, 
-            remote_path=context.remote_path,
-            status_display=context.status_display,
-            case_id=context.case_id
-        ):
-            context.logger.error(f"Failed to upload data for case: {context.case_id}")
+        """Upload log data to remote server (idempotent)."""
+        try:
+            context.local_path = str(context.directory_manager.get_case_local_path(context.case_id))
+            context.remote_path = context.directory_manager.get_case_remote_path(context.case_id)
+            
+            # Check if remote directory already exists and has content
+            # This makes the upload idempotent by allowing overwrite
+            if not context.sftp_manager.upload_directory(
+                local_path=context.local_path, 
+                remote_path=context.remote_path,
+                status_display=context.status_display,
+                case_id=context.case_id
+            ):
+                context.logger.error(f"Failed to upload data for case: {context.case_id}")
+                return False
+            
+            # Save the remote path to the case status file
+            context.case_scanner.update_case_status(
+                case_id=context.case_id,
+                status="PROCESSING",  # Keep the status as PROCESSING
+                remote_path=context.remote_path
+            )
+            
+            context.logger.info(f"Data uploaded/verified for case: {context.case_id}")
+            return True
+        except Exception as e:
+            context.logger.error(f"Error uploading data for case {context.case_id}: {e}")
             return False
-        
-        # Save the remote path to the case status file
-        context.case_scanner.update_case_status(
-            case_id=context.case_id,
-            status="PROCESSING",  # Keep the status as PROCESSING
-            remote_path=context.remote_path
-        )
-        
-        return True
 
 
 class RunInterpreterStep(ProcessingStep):
@@ -110,17 +123,40 @@ class RunInterpreterStep(ProcessingStep):
         super().__init__("Run Interpreter")
     
     def execute(self, context: ProcessingContext) -> bool:
-        """Run Python interpreter."""
-        # Let run_moqui_interpreter use the case_path as log_dir by default
-        # This ensures find_dcm_file_in_logdir searches in the correct directory
-        if not context.remote_executor.run_moqui_interpreter(
-            context.case_id, 
-            status_display=context.status_display
-        ):
-            context.logger.error(f"Failed to run interpreter for case: {context.case_id}")
+        """Run Python interpreter (idempotent with output check)."""
+        try:
+            # Check if interpreter output already exists (for idempotency)
+            workspace_path = context.directory_manager.get_case_remote_path(context.case_id)
+            inputs_check = context.remote_executor.execute_command(f"test -d {workspace_path}/moqui_inputs")
+            
+            if inputs_check["exit_code"] == 0:
+                context.logger.info(f"Interpreter output already exists for case {context.case_id}, skipping")
+                return True
+            
+            # Let run_moqui_interpreter use the case_path as log_dir by default
+            # This ensures find_dcm_file_in_logdir searches in the correct directory
+            result = context.remote_executor.run_moqui_interpreter(
+                context.case_id, 
+                status_display=context.status_display
+            )
+            
+            if not result.get("success", False):
+                context.logger.error(f"Failed to run interpreter for case: {context.case_id}")
+                return False
+            
+            # Store remote PID in case status for cleanup purposes
+            remote_pid = result.get("remote_pid")
+            if remote_pid:
+                context.case_scanner.update_case_status(
+                    case_id=context.case_id,
+                    status="PROCESSING",
+                    remote_pid=remote_pid
+                )
+            
+            return True
+        except Exception as e:
+            context.logger.error(f"Error running interpreter for case {context.case_id}: {e}")
             return False
-        
-        return True
 
 
 class ExecuteBeamCalculationsStep(ProcessingStep):
@@ -168,12 +204,24 @@ class RunConverterStep(ProcessingStep):
         super().__init__("Run Converter")
     
     def execute(self, context: ProcessingContext) -> bool:
-        """Run raw to DICOM converter."""
-        if not context.remote_executor.run_raw_to_dicom_converter(context.case_id, status_display=context.status_display):
-            context.logger.error(f"Failed to run converter for case: {context.case_id}")
+        """Run raw to DICOM converter (idempotent with output check)."""
+        try:
+            # Check if converter output already exists (for idempotency)
+            workspace_path = context.directory_manager.get_case_remote_path(context.case_id)
+            dicom_check = context.remote_executor.execute_command(f"test -f {workspace_path}/moqui_output/RTDOSE.dcm")
+            
+            if dicom_check["exit_code"] == 0:
+                context.logger.info(f"DICOM output already exists for case {context.case_id}, skipping")
+                return True
+            
+            if not context.remote_executor.run_raw_to_dicom_converter(context.case_id, status_display=context.status_display):
+                context.logger.error(f"Failed to run converter for case: {context.case_id}")
+                return False
+            
+            return True
+        except Exception as e:
+            context.logger.error(f"Error running converter for case {context.case_id}: {e}")
             return False
-        
-        return True
 
 
 class CreateOutputDirectoryStep(ProcessingStep):
@@ -183,12 +231,18 @@ class CreateOutputDirectoryStep(ProcessingStep):
         super().__init__("Create Output")
     
     def execute(self, context: ProcessingContext) -> bool:
-        """Create output directory."""
-        if not context.directory_manager.create_output_directory(context.case_id):
-            context.logger.error(f"Failed to create output directory for case: {context.case_id}")
+        """Create output directory (idempotent)."""
+        try:
+            # This operation is idempotent - creating existing directories is safe
+            if not context.directory_manager.create_output_directory(context.case_id):
+                context.logger.error(f"Failed to create output directory for case: {context.case_id}")
+                return False
+            
+            context.logger.info(f"Output directory created/verified for case: {context.case_id}")
+            return True
+        except Exception as e:
+            context.logger.error(f"Error creating output directory for case {context.case_id}: {e}")
             return False
-        
-        return True
 
 
 class CheckDiskSpaceStep(ProcessingStep):
@@ -218,19 +272,32 @@ class DownloadResultsStep(ProcessingStep):
         super().__init__("Download Results")
     
     def execute(self, context: ProcessingContext) -> bool:
-        """Download results from remote server."""
-        context.output_path = str(context.directory_manager.get_case_output_path(context.case_id))
-        
-        if not context.sftp_manager.download_directory(
-            remote_path=context.remote_path, 
-            local_path=context.output_path,
-            status_display=context.status_display,
-            case_id=context.case_id
-        ):
-            context.logger.error(f"Failed to download results for case: {context.case_id}")
+        """Download results from remote server (idempotent)."""
+        try:
+            context.output_path = str(context.directory_manager.get_case_output_path(context.case_id))
+            
+            # Check if results already downloaded (for idempotency)
+            import os
+            output_exists = os.path.exists(context.output_path) and os.listdir(context.output_path)
+            
+            if output_exists:
+                context.logger.info(f"Results already downloaded for case {context.case_id}, skipping")
+                return True
+            
+            if not context.sftp_manager.download_directory(
+                remote_path=context.remote_path, 
+                local_path=context.output_path,
+                status_display=context.status_display,
+                case_id=context.case_id
+            ):
+                context.logger.error(f"Failed to download results for case: {context.case_id}")
+                return False
+            
+            context.logger.info(f"Results downloaded for case: {context.case_id}")
+            return True
+        except Exception as e:
+            context.logger.error(f"Error downloading results for case {context.case_id}: {e}")
             return False
-        
-        return True
 
 
 class CompleteProcessingStep(ProcessingStep):
@@ -269,16 +336,43 @@ class WorkflowEngine:
     
     def execute_workflow(self, context: ProcessingContext, 
                         workflow: Optional[list] = None) -> bool:
-        """Execute the complete workflow."""
+        """Execute the complete workflow with step resumption support."""
         steps = workflow or self.default_workflow
         
         try:
-            for step in steps:
-                context.logger.info(f"Executing step: {step.name} for case {context.case_id}")
+            # Check if we need to resume from a specific step
+            case_status = context.case_scanner.get_case_status(context.case_id)
+            last_completed_step = case_status.get('last_completed_step', '') if case_status else ''
+            
+            start_index = 0
+            if last_completed_step:
+                # Find the index of the last completed step
+                for i, step in enumerate(steps):
+                    if step.name == last_completed_step:
+                        start_index = i + 1  # Start from the next step
+                        context.logger.info(f"Resuming workflow for case {context.case_id} from step {start_index + 1}: {steps[start_index].name if start_index < len(steps) else 'completed'}")
+                        break
+                else:
+                    # Last completed step not found, start from beginning
+                    context.logger.warning(f"Last completed step '{last_completed_step}' not found in workflow for case {context.case_id}, starting from beginning")
+                    start_index = 0
+            
+            # Execute steps starting from the determined index
+            for i in range(start_index, len(steps)):
+                step = steps[i]
+                context.logger.info(f"Executing step {i + 1}/{len(steps)}: {step.name} for case {context.case_id}")
                 
                 if not step.execute(context):
                     context.logger.error(f"Step {step.name} failed for case {context.case_id}")
                     return False
+                
+                # Mark step as completed in case status
+                context.case_scanner.update_case_status(
+                    case_id=context.case_id,
+                    status="PROCESSING",
+                    last_completed_step=step.name
+                )
+                context.logger.info(f"Completed step: {step.name} for case {context.case_id}")
             
             return True
             

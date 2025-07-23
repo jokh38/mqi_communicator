@@ -26,6 +26,7 @@ class GPUManager:
         self.allocated_gpus: List[int] = []
         self.remote_executor = remote_executor
         self.logger = logger
+        self.lock_dir_base = "/var/lock/mqi_locks"
 
     def get_gpu_info(self) -> List[Dict[str, Any]]:
         """Get detailed GPU information using nvidia-smi."""
@@ -233,6 +234,187 @@ class GPUManager:
                 continue
         
         return zombie_processes
+
+    def acquire_gpu_lock(self, gpu_id: int) -> bool:
+        """Atomically acquire lock for a specific GPU using mkdir."""
+        if not self.remote_executor:
+            self.logger.error("Remote executor not available for GPU locking")
+            return False
+            
+        try:
+            # Ensure lock directory base exists
+            result = self.remote_executor.execute_command(f"mkdir -p {self.lock_dir_base}")
+            if result["exit_code"] != 0:
+                self.logger.error(f"Failed to create lock directory base: {result['stderr']}")
+                return False
+            
+            # Try to atomically create GPU lock directory
+            lock_dir = f"{self.lock_dir_base}/gpu_{gpu_id}"
+            result = self.remote_executor.execute_command(f"mkdir {lock_dir}")
+            
+            if result["exit_code"] == 0:
+                self.logger.info(f"Successfully acquired lock for GPU {gpu_id}")
+                return True
+            else:
+                self.logger.debug(f"Failed to acquire lock for GPU {gpu_id} - already locked")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"Error acquiring GPU lock for GPU {gpu_id}: {e}")
+            return False
+
+    def release_gpu_lock(self, gpu_id: int) -> bool:
+        """Release lock for a specific GPU."""
+        if not self.remote_executor:
+            self.logger.error("Remote executor not available for GPU unlocking")
+            return False
+            
+        try:
+            lock_dir = f"{self.lock_dir_base}/gpu_{gpu_id}"
+            result = self.remote_executor.execute_command(f"rmdir {lock_dir}")
+            
+            if result["exit_code"] == 0:
+                self.logger.info(f"Successfully released lock for GPU {gpu_id}")
+                return True
+            else:
+                self.logger.warning(f"Failed to release lock for GPU {gpu_id}: {result['stderr']}")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"Error releasing GPU lock for GPU {gpu_id}: {e}")
+            return False
+
+    def is_gpu_locked(self, gpu_id: int) -> bool:
+        """Check if a specific GPU is locked."""
+        if not self.remote_executor:
+            return False
+            
+        try:
+            lock_dir = f"{self.lock_dir_base}/gpu_{gpu_id}"
+            result = self.remote_executor.execute_command(f"test -d {lock_dir}")
+            return result["exit_code"] == 0
+        except Exception as e:
+            self.logger.error(f"Error checking GPU lock for GPU {gpu_id}: {e}")
+            return True  # Assume locked if we can't check
+
+    def get_available_gpus_with_locking(self) -> List[int]:
+        """Get list of available GPU IDs considering atomic locks."""
+        gpu_info = self.get_gpu_info()
+        available_gpus = []
+        
+        for gpu in gpu_info:
+            gpu_id = gpu['gpu_id']
+            
+            # Skip reserved GPUs
+            if gpu_id in self.reserved_gpus:
+                continue
+            
+            # Skip already allocated GPUs
+            if gpu_id in self.allocated_gpus:
+                continue
+            
+            # Skip locked GPUs
+            if self.is_gpu_locked(gpu_id):
+                continue
+            
+            # Check if GPU has free memory above threshold
+            if gpu['memory_free'] >= self.memory_threshold:
+                # Check if GPU has no or minimal processes
+                if len(gpu['processes']) == 0:
+                    available_gpus.append(gpu_id)
+        
+        return sorted(available_gpus)
+
+    def allocate_gpu_with_lock(self, gpu_id: int) -> bool:
+        """Atomically allocate a specific GPU with locking."""
+        try:
+            # First check if GPU is available (without lock check)
+            if not self.is_gpu_available(gpu_id):
+                self.logger.debug(f"GPU {gpu_id} not available for allocation")
+                return False
+            
+            # Try to acquire lock atomically
+            if not self.acquire_gpu_lock(gpu_id):
+                self.logger.debug(f"Failed to acquire lock for GPU {gpu_id}")
+                return False
+            
+            # Double-check availability after acquiring lock
+            if not self.is_gpu_available(gpu_id):
+                self.logger.warning(f"GPU {gpu_id} became unavailable after lock acquisition")
+                self.release_gpu_lock(gpu_id)
+                return False
+            
+            # Add to allocated list
+            if gpu_id not in self.allocated_gpus:
+                self.allocated_gpus.append(gpu_id)
+            
+            self.logger.info(f"Successfully allocated GPU {gpu_id} with lock")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error allocating GPU {gpu_id} with lock: {e}")
+            # Try to release lock if something went wrong
+            try:
+                self.release_gpu_lock(gpu_id)
+            except:
+                pass
+            return False
+
+    def release_gpu_with_lock(self, gpu_id: int) -> bool:
+        """Release a GPU and its lock."""
+        try:
+            # Remove from allocated list
+            if gpu_id in self.allocated_gpus:
+                self.allocated_gpus.remove(gpu_id)
+            
+            # Release the lock
+            success = self.release_gpu_lock(gpu_id)
+            
+            if success:
+                self.logger.info(f"Successfully released GPU {gpu_id} with lock")
+            else:
+                self.logger.warning(f"Failed to release lock for GPU {gpu_id}")
+            
+            return success
+            
+        except Exception as e:
+            self.logger.error(f"Error releasing GPU {gpu_id} with lock: {e}")
+            return False
+
+    def cleanup_stale_locks(self) -> List[int]:
+        """Clean up stale GPU locks (should only be called during recovery)."""
+        cleaned_gpus = []
+        
+        if not self.remote_executor:
+            return cleaned_gpus
+            
+        try:
+            # List all lock directories
+            result = self.remote_executor.execute_command(f"ls {self.lock_dir_base}")
+            if result["exit_code"] != 0:
+                return cleaned_gpus
+            
+            for line in result["stdout"].strip().split('\n'):
+                if line.startswith('gpu_'):
+                    try:
+                        gpu_id = int(line.split('_')[1])
+                        lock_dir = f"{self.lock_dir_base}/{line}"
+                        
+                        # Force remove the lock directory
+                        remove_result = self.remote_executor.execute_command(f"rmdir {lock_dir}")
+                        if remove_result["exit_code"] == 0:
+                            cleaned_gpus.append(gpu_id)
+                            self.logger.info(f"Cleaned up stale lock for GPU {gpu_id}")
+                        else:
+                            self.logger.warning(f"Failed to clean up stale lock for GPU {gpu_id}")
+                            
+                    except (ValueError, IndexError):
+                        continue
+                        
+        except Exception as e:
+            self.logger.error(f"Error cleaning up stale locks: {e}")
+        
+        return cleaned_gpus
 
     def get_gpu_status_summary(self) -> Dict[str, Any]:
         """Get comprehensive GPU status summary."""

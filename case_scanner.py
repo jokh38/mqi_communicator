@@ -161,7 +161,10 @@ class CaseScanner:
     def update_case_status(self, case_id: str, status: str, folder_hash: str = "", 
                           gpu_allocation: Optional[List[int]] = None, 
                           retry_count: int = 0,
-                          remote_path: Optional[str] = None) -> None:
+                          remote_path: Optional[str] = None,
+                          remote_pid: Optional[int] = None,
+                          locked_gpus: Optional[List[int]] = None,
+                          last_completed_step: Optional[str] = None) -> None:
         """Update case status in memory and save to file."""
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
@@ -173,7 +176,10 @@ class CaseScanner:
                 "hash": folder_hash,
                 "gpu_allocation": gpu_allocation or [],
                 "retry_count": retry_count,
-                "remote_path": remote_path or ""
+                "remote_path": remote_path or "",
+                "remote_pid": remote_pid,
+                "locked_gpus": locked_gpus or [],
+                "last_completed_step": last_completed_step or ""
             }
         else:
             # Update existing case
@@ -186,6 +192,15 @@ class CaseScanner:
             
             if remote_path is not None:
                 self.case_status[case_id]["remote_path"] = remote_path
+                
+            if remote_pid is not None:
+                self.case_status[case_id]["remote_pid"] = remote_pid
+                
+            if locked_gpus is not None:
+                self.case_status[case_id]["locked_gpus"] = locked_gpus
+                
+            if last_completed_step is not None:
+                self.case_status[case_id]["last_completed_step"] = last_completed_step
 
             if status == "COMPLETED" or status == "FAILED":
                 self.case_status[case_id]["end_time"] = current_time
@@ -299,10 +314,16 @@ class CaseScanner:
         """Get complete case status dictionary."""
         return self.case_status.copy()
 
-    def recover_stale_cases(self, max_processing_hours: int = 1) -> List[str]:
+    def recover_stale_jobs(self, max_processing_hours: int = 1) -> Dict[str, Any]:
         """Recover cases that have been stuck in PROCESSING state for too long."""
         if not self.case_status:
-            return []
+            return {
+                "recovered_cases": [],
+                "recovered_count": 0,
+                "remaining_processing_cases": [],
+                "remaining_processing_count": 0,
+                "recovery_timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
         
         current_time = datetime.now()
         cutoff_time = current_time.timestamp() - (max_processing_hours * 3600)
@@ -325,6 +346,9 @@ class CaseScanner:
                     self.case_status[case_id]["status"] = "NEW"
                     self.case_status[case_id]["end_time"] = ""
                     self.case_status[case_id]["retry_count"] = info.get("retry_count", 0) + 1
+                    # Clear remote process and lock information for stale recovery
+                    self.case_status[case_id]["remote_pid"] = None
+                    self.case_status[case_id]["locked_gpus"] = []
                     
                     recovered_cases.append(case_id)
                     self.logger.warning(f"Recovered stale case {case_id} (processing for {max_processing_hours}+ hours)")
@@ -336,7 +360,16 @@ class CaseScanner:
         if recovered_cases:
             self._save_case_status()
         
-        return recovered_cases
+        # Get remaining processing cases after recovery
+        processing_cases = self.get_cases_by_status("PROCESSING")
+        
+        return {
+            "recovered_cases": recovered_cases,
+            "recovered_count": len(recovered_cases),
+            "remaining_processing_cases": processing_cases,
+            "remaining_processing_count": len(processing_cases),
+            "recovery_timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
 
     def check_and_recover_stale_cases(self, max_processing_hours: int = 1) -> Dict[str, Any]:
         """Check for and recover stale cases, returning recovery statistics."""

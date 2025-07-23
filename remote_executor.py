@@ -268,8 +268,8 @@ class RemoteExecutor(BaseSSHConnector):
             return False
 
 
-    def run_moqui_interpreter(self, case_id: str, log_dir: str = None, workspace_path: str = None, status_display=None) -> bool:
-        """Run moqui interpreter for case parsing."""
+    def run_moqui_interpreter(self, case_id: str, log_dir: str = None, workspace_path: str = None, status_display=None) -> Dict[str, Any]:
+        """Run moqui interpreter for case parsing and return PID information."""
         workspace_path = workspace_path or self.remote_workspace
         case_path = f"{workspace_path}/{case_id}"
         
@@ -282,13 +282,14 @@ class RemoteExecutor(BaseSSHConnector):
         
         # Enhanced command to capture all error output including Python tracebacks
         # Use working directory change to ensure config files are found
-        command = (f"{self.venv_python_path} -u ./main_cli.py "
+        # Run in background to capture PID
+        command = (f"nohup {self.venv_python_path} -u ./main_cli.py "
                    f"--logdir {shlex.quote(log_directory)} "
-                   f"--outputdir {shlex.quote(self.moqui_outputs_path)} 2>&1")
+                   f"--outputdir {shlex.quote(self.moqui_outputs_path)} > interpreter.log 2>&1 & echo $!")
         
         # Log MOQUI interpreter execution start
         if self.logger:
-            self.logger.log_structured("INFO", "MOQUI interpreter started", {
+            self.logger.log_structured("INFO", "MOQUI interpreter started with PID tracking", {
                 "case_id": case_id,
                 "command": command,
                 "log_dir": log_directory,
@@ -309,108 +310,111 @@ class RemoteExecutor(BaseSSHConnector):
                 detailed_status="Parsing RTPLAN and preparing inputs..."
             )
         
-        # Use streaming execution for real-time progress updates
-        result = self.execute_command_streaming(
-            command, 
-            self.working_directories["mqi_interpreter"], 
-            case_id, 
-            status_display, 
-            timeout=1800  # 30 minute timeout for interpreter
-        )
+        # Get PID first
+        pid_result = self.execute_command_with_workdir(command, self.working_directories["mqi_interpreter"], timeout=30)
         
-        # Enhanced error capture - since we used 2>&1, all output is in stdout
-        stdout_output = result['stdout'].strip()
-        stderr_output = result['stderr'].strip()
+        if pid_result["exit_code"] != 0:
+            error_msg = f"Failed to start interpreter process: {pid_result['stderr']}"
+            if self.logger:
+                self.logger.error(error_msg)
+            return {"success": False, "error": error_msg, "remote_pid": None}
         
-        # Detailed logging for diagnostics with comprehensive error capture
-        log_message = (
-            f"MOQUI interpreter execution for case {case_id} finished with exit code {result['exit_code']}.\n"
-            f"  - COMBINED OUTPUT: {stdout_output}\n"
-            f"  - STDERR (if any): {stderr_output}"
-        )
+        try:
+            remote_pid = int(pid_result["stdout"].strip())
+        except (ValueError, AttributeError):
+            error_msg = f"Failed to parse PID from output: {pid_result['stdout']}"
+            if self.logger:
+                self.logger.error(error_msg)
+            return {"success": False, "error": error_msg, "remote_pid": None}
         
-        # Extract error information for better visibility
-        has_python_error = any(keyword in stdout_output.lower() for keyword in 
-                              ['traceback', 'error:', 'exception:', 'failed', 'errno'])
-        has_stderr = len(stderr_output) > 0
-
-        if result["exit_code"] == 0 and not has_python_error:
-            if self.logger:
-                self.logger.log_case_progress(case_id, "INTERPRETER_SUCCESS", 1.0, {
-                    "stage": "moqui_interpreter",
-                    "stdout": stdout_output,
-                    "execution_time_s": "measured_in_caller" # Could be enhanced
-                })
-            else:
-                self.logger.info(log_message)
-            if status_display:
-                status_display.update_case_status(
-                    case_id=case_id,
-                    status="PROCESSING",
-                    current_task="MOQUI Interpreter",
-                    detailed_status="Interpreter completed successfully"
-                )
-            return True
-        elif result["exit_code"] == 0 and has_python_error:
-            # Exit code 0 but Python errors detected - treat as warning
-            if self.logger:
-                self.logger.warning(f"MOQUI interpreter completed with warnings for case {case_id}")
-                self.logger.warning(f"Python warnings/errors detected: {stdout_output}")
-            else:
-                self.logger.warning(f"MOQUI interpreter completed with warnings for case {case_id}")
-                self.logger.warning(f"Output contains errors: {log_message}")
-            if status_display:
-                status_display.update_case_status(
-                    case_id=case_id,
-                    status="PROCESSING",
-                    current_task="MOQUI Interpreter",
-                    current_step=2,
-                    total_steps=4,
-                    detailed_status="RTPLAN parsed successfully"
-                )
-            return True
-        else:
-            # Failure case - ensure ALL error information is captured and displayed
-            full_error_output = stdout_output if stdout_output else stderr_output
-            
-            if self.logger:
-                self.logger.error(f"MOQUI interpreter FAILED for case {case_id}")
-                self.logger.error(f"Exit code: {result['exit_code']}")
-                self.logger.error(f"Full error output from GPU server:")
-                self.logger.error(f"{full_error_output}")
+        if self.logger:
+            self.logger.info(f"Started MOQUI interpreter for case {case_id} with PID {remote_pid}")
+        
+        # Wait for process to complete (poll periodically)
+        import time
+        timeout_seconds = 1800  # 30 minute timeout for interpreter
+        poll_interval = 10  # Check every 10 seconds
+        elapsed_time = 0
+        
+        while elapsed_time < timeout_seconds:
+            # Check if process is still running
+            check_result = self.execute_command(f"ps -p {remote_pid}")
+            if check_result["exit_code"] != 0:
+                # Process has completed, check the log for results
+                log_result = self.execute_command_with_workdir("cat interpreter.log", self.working_directories["mqi_interpreter"])
+                stdout_output = log_result.get('stdout', '').strip()
                 
-                self.logger.log_case_progress(case_id, "INTERPRETER_FAILED", 0.0, {
-                    "stage": "moqui_interpreter",
-                    "error": full_error_output,
-                    "stderr": stderr_output,
-                    "exit_code": result["exit_code"],
-                    "command": command
-                })
-            else:
-                self.logger.error(f"MOQUI interpreter FAILED for case {case_id}")
-                self.logger.error(log_message)
+                # Extract error information for better visibility
+                has_python_error = any(keyword in stdout_output.lower() for keyword in 
+                                      ['traceback', 'error:', 'exception:', 'failed', 'errno'])
                 
-            if status_display:
-                # Show more error details in status display
-                error_preview = full_error_output[:200] + "..." if len(full_error_output) > 200 else full_error_output
-                status_display.update_case_status(
-                    case_id=case_id,
-                    status="PROCESSING",
-                    stage="Interpreter Failed",
-                    error_message=f"Exit code {result['exit_code']}: {error_preview}",
-                    transfer_info=""
-                )
-            return False
+                # Check if process completed successfully (no Python errors and expected outputs exist)
+                if not has_python_error:
+                    if self.logger:
+                        self.logger.log_case_progress(case_id, "INTERPRETER_SUCCESS", 1.0, {
+                            "stage": "moqui_interpreter",
+                            "stdout": stdout_output,
+                            "remote_pid": remote_pid
+                        })
+                    else:
+                        self.logger.info(f"MOQUI interpreter completed successfully for case {case_id}")
+                    if status_display:
+                        status_display.update_case_status(
+                            case_id=case_id,
+                            status="PROCESSING",
+                            current_task="MOQUI Interpreter",
+                            detailed_status="Interpreter completed successfully"
+                        )
+                    return {"success": True, "remote_pid": remote_pid}
+                else:
+                    # Failure case - ensure ALL error information is captured
+                    if self.logger:
+                        self.logger.error(f"MOQUI interpreter FAILED for case {case_id}")
+                        self.logger.error(f"Full error output from GPU server:")
+                        self.logger.error(f"{stdout_output}")
+                        
+                        self.logger.log_case_progress(case_id, "INTERPRETER_FAILED", 0.0, {
+                            "stage": "moqui_interpreter",
+                            "error": stdout_output,
+                            "remote_pid": remote_pid
+                        })
+                    else:
+                        self.logger.error(f"MOQUI interpreter FAILED for case {case_id}")
+                        
+                    if status_display:
+                        # Show more error details in status display
+                        error_preview = stdout_output[:200] + "..." if len(stdout_output) > 200 else stdout_output
+                        status_display.update_case_status(
+                            case_id=case_id,
+                            status="PROCESSING",
+                            stage="Interpreter Failed",
+                            error_message=f"Interpreter failed: {error_preview}",
+                            transfer_info=""
+                        )
+                    return {"success": False, "error": stdout_output, "remote_pid": remote_pid}
+                    
+            time.sleep(poll_interval)
+            elapsed_time += poll_interval
+        
+        # Timeout reached
+        error_msg = f"MOQUI interpreter timed out after {timeout_seconds} seconds"
+        if self.logger:
+            self.logger.error(error_msg)
+        # Kill the timed-out process
+        self.execute_command(f"kill {remote_pid}")
+        return {"success": False, "error": error_msg, "remote_pid": remote_pid}
 
     def run_moqui_beam(self, case_id: str, beam_id: int, gpu_id: int, 
-                      workspace_path: str = None, status_display=None) -> bool:
-        """Run moqui beam calculation on specific GPU."""
+                      workspace_path: str = None, status_display=None) -> Dict[str, Any]:
+        """Run moqui beam calculation on specific GPU and return PID information."""
         workspace_path = workspace_path or self.remote_workspace
         case_path = f"{workspace_path}/{case_id}"
         # Use working directory change to ensure proper execution environment
         input_dir = f"{case_path}/moqui_inputs"
         output_dir = f"{case_path}/moqui_output"
-        command = f"CUDA_VISIBLE_DEVICES={gpu_id} ./main --input_dir {shlex.quote(input_dir)} --output_dir {shlex.quote(output_dir)}"
+        
+        # Run in background and capture PID
+        command = f"CUDA_VISIBLE_DEVICES={gpu_id} nohup ./main --input_dir {shlex.quote(input_dir)} --output_dir {shlex.quote(output_dir)} > /dev/null 2>&1 & echo $!"
         
         # Update status display - starting beam calculation
         if status_display:
@@ -423,47 +427,93 @@ class RemoteExecutor(BaseSSHConnector):
                 detailed_status=f"Processing beam {beam_id} on GPU {gpu_id}"
             )
         
-        result = self.execute_command_with_workdir(command, self.working_directories["moqui_binary"], timeout=3600)  # 1 hour timeout
+        # Get PID first
+        pid_result = self.execute_command_with_workdir(command, self.working_directories["moqui_binary"], timeout=30)
         
-        if result["exit_code"] == 0:
+        if pid_result["exit_code"] != 0:
+            error_msg = f"Failed to start beam process: {pid_result['stderr']}"
             if self.logger:
-                self.logger.log_case_progress(case_id, "BEAM_COMPLETED", 1.0, {
-                    "stage": "moqui_beam_processing",
-                    "beam_id": beam_id,
-                    "gpu_id": gpu_id
-                })
-            else:
-                self.logger.info(f"MOQUI beam {beam_id} completed for case: {case_id} on GPU {gpu_id}")
-            if status_display:
-                status_display.update_case_status(
-                    case_id=case_id,
-                    status="PROCESSING",
-                    current_task="Beam Calculation",
-                    current_step=3,
-                    total_steps=4,
-                    detailed_status=f"Beam {beam_id} completed on GPU {gpu_id}"
-                )
-            return True
-        else:
+                self.logger.error(error_msg)
+            return {"success": False, "error": error_msg, "remote_pid": None}
+        
+        try:
+            remote_pid = int(pid_result["stdout"].strip())
+        except (ValueError, AttributeError):
+            error_msg = f"Failed to parse PID from output: {pid_result['stdout']}"
             if self.logger:
-                self.logger.log_case_progress(case_id, "BEAM_FAILED", 0.0, {
-                    "stage": "moqui_beam_processing",
-                    "beam_id": beam_id,
-                    "gpu_id": gpu_id,
-                    "error": result['stderr'].strip(),
-                    "exit_code": result['exit_code']
-                })
-            else:
-                self.logger.error(f"MOQUI beam {beam_id} failed for case: {case_id}, Error: {result['stderr']}")
-            if status_display:
-                status_display.update_case_status(
-                    case_id=case_id,
-                    status="PROCESSING",
-                    stage="Beam Failed",
-                    error_message=f"Beam {beam_id} failed on GPU {gpu_id}: {result['stderr'][:100]}...",
-                    transfer_info=""
-                )
-            return False
+                self.logger.error(error_msg)
+            return {"success": False, "error": error_msg, "remote_pid": None}
+        
+        if self.logger:
+            self.logger.info(f"Started beam calculation for case {case_id} with PID {remote_pid}")
+        
+        # Wait for process to complete (poll periodically)
+        import time
+        timeout_seconds = 3600  # 1 hour timeout
+        poll_interval = 30  # Check every 30 seconds
+        elapsed_time = 0
+        
+        while elapsed_time < timeout_seconds:
+            # Check if process is still running
+            check_result = self.execute_command(f"ps -p {remote_pid}")
+            if check_result["exit_code"] != 0:
+                # Process has completed, check if it succeeded
+                # Since we redirected output, we need another way to check success
+                # Check if expected output files exist
+                output_check_result = self.execute_command(f"test -f {output_dir}/dose.raw")
+                
+                if output_check_result["exit_code"] == 0:
+                    if self.logger:
+                        self.logger.log_case_progress(case_id, "BEAM_COMPLETED", 1.0, {
+                            "stage": "moqui_beam_processing",
+                            "beam_id": beam_id,
+                            "gpu_id": gpu_id,
+                            "remote_pid": remote_pid
+                        })
+                    else:
+                        self.logger.info(f"MOQUI beam {beam_id} completed for case: {case_id} on GPU {gpu_id}")
+                    if status_display:
+                        status_display.update_case_status(
+                            case_id=case_id,
+                            status="PROCESSING",
+                            current_task="Beam Calculation",
+                            current_step=3,
+                            total_steps=4,
+                            detailed_status=f"Beam {beam_id} completed on GPU {gpu_id}"
+                        )
+                    return {"success": True, "remote_pid": remote_pid}
+                else:
+                    error_msg = f"Beam calculation failed - no output file found"
+                    if self.logger:
+                        self.logger.log_case_progress(case_id, "BEAM_FAILED", 0.0, {
+                            "stage": "moqui_beam_processing",
+                            "beam_id": beam_id,
+                            "gpu_id": gpu_id,
+                            "error": error_msg,
+                            "remote_pid": remote_pid
+                        })
+                    else:
+                        self.logger.error(f"MOQUI beam {beam_id} failed for case: {case_id}, Error: {error_msg}")
+                    if status_display:
+                        status_display.update_case_status(
+                            case_id=case_id,
+                            status="PROCESSING",
+                            stage="Beam Failed",
+                            error_message=f"Beam {beam_id} failed on GPU {gpu_id}: {error_msg}",
+                            transfer_info=""
+                        )
+                    return {"success": False, "error": error_msg, "remote_pid": remote_pid}
+                    
+            time.sleep(poll_interval)
+            elapsed_time += poll_interval
+        
+        # Timeout reached
+        error_msg = f"Beam calculation timed out after {timeout_seconds} seconds"
+        if self.logger:
+            self.logger.error(error_msg)
+        # Kill the timed-out process
+        self.execute_command(f"kill {remote_pid}")
+        return {"success": False, "error": error_msg, "remote_pid": remote_pid}
 
     def run_raw_to_dicom_converter(self, case_id: str, workspace_path: str = None, status_display=None) -> bool:
         """Run raw to DICOM converter."""
