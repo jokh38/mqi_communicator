@@ -23,7 +23,7 @@
     "raw2dicom": "/home/gpuadmin/MOQUI_SMC/RawToDCM"
   },
   "scanning": {
-    "interval_minutes": 1,
+    "interval_minutes": 30,
     "max_concurrent_cases": 2,
     "stale_case_recovery_hours": 1
   },
