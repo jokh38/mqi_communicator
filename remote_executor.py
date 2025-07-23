@@ -162,7 +162,7 @@ class RemoteExecutor(BaseSSHConnector):
                 if not line:
                     break
                     
-                line_str = line.decode('utf-8').rstrip()
+                line_str = line.rstrip()
                 stdout_lines.append(line_str)
                 
                 # Update progress display based on interpreter output
