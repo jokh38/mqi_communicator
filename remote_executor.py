@@ -188,8 +188,10 @@ class RemoteExecutor(BaseSSHConnector):
             status_display.update_case_status(
                 case_id=case_id,
                 status="PROCESSING",
-                stage="Running Interpreter",
-                transfer_info="Parsing RTPLAN and preparing inputs..."
+                current_task="MOQUI Interpreter",
+                current_step=1,
+                total_steps=4,
+                detailed_status="Parsing RTPLAN and preparing inputs..."
             )
         
         result = self.execute_command_with_workdir(command, self.working_directories["mqi_interpreter"], timeout=1800)  # 30 minute timeout for interpreter
@@ -231,8 +233,10 @@ class RemoteExecutor(BaseSSHConnector):
                 status_display.update_case_status(
                     case_id=case_id,
                     status="PROCESSING",
-                    stage="Interpreter Complete",
-                    transfer_info="RTPLAN parsed successfully"
+                    current_task="MOQUI Interpreter",
+                    current_step=2,
+                    total_steps=4,
+                    detailed_status="RTPLAN parsed successfully"
                 )
             return True
         else:
@@ -283,8 +287,10 @@ class RemoteExecutor(BaseSSHConnector):
             status_display.update_case_status(
                 case_id=case_id,
                 status="PROCESSING",
-                stage="Calculating Beam",
-                transfer_info=f"Processing beam {beam_id} on GPU {gpu_id}..."
+                current_task="Beam Calculation",
+                current_step=3,
+                total_steps=4,
+                detailed_status=f"Processing beam {beam_id} on GPU {gpu_id}"
             )
         
         result = self.execute_command_with_workdir(command, self.working_directories["moqui_binary"], timeout=3600)  # 1 hour timeout
@@ -302,8 +308,10 @@ class RemoteExecutor(BaseSSHConnector):
                 status_display.update_case_status(
                     case_id=case_id,
                     status="PROCESSING",
-                    stage="Beam Complete",
-                    transfer_info=f"Beam {beam_id} calculated successfully on GPU {gpu_id}"
+                    current_task="Beam Calculation",
+                    current_step=3,
+                    total_steps=4,
+                    detailed_status=f"Beam {beam_id} completed on GPU {gpu_id}"
                 )
             return True
         else:
@@ -341,8 +349,10 @@ class RemoteExecutor(BaseSSHConnector):
             status_display.update_case_status(
                 case_id=case_id,
                 status="PROCESSING",
-                stage="Converting to DICOM",
-                transfer_info="Converting raw data to DICOM format..."
+                current_task="DICOM Conversion",
+                current_step=4,
+                total_steps=4,
+                detailed_status="Converting raw data to DICOM format..."
             )
         
         result = self.execute_command_with_workdir(command, self.working_directories["raw2dicom"])
@@ -358,9 +368,11 @@ class RemoteExecutor(BaseSSHConnector):
             if status_display:
                 status_display.update_case_status(
                     case_id=case_id,
-                    status="PROCESSING",
-                    stage="Conversion Complete",
-                    transfer_info="DICOM conversion completed successfully"
+                    status="COMPLETED",
+                    current_task="DICOM Conversion",
+                    current_step=4,
+                    total_steps=4,
+                    detailed_status="DICOM conversion completed successfully"
                 )
             return True
         else:

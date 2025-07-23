@@ -12,14 +12,32 @@ from queue import Queue
 @dataclass
 class CaseDisplayInfo:
     case_id: str
-    status: str
-    progress: float
-    stage: str
-    start_time: Optional[datetime]
-    gpu_allocation: List[int]
+    # 새로운 구조화된 필드들
+    current_task: str = ""      # "MOQUI Interpreter", "Beam Calculation", "DICOM Conversion"
+    current_step: int = 0       # 현재 단계 (1, 2, 3, 4)
+    total_steps: int = 4        # 전체 단계 수
+    detailed_status: str = ""   # 상세 상태 ("Parsing RTPLAN...", "Processing beam 2/5 on GPU 3")
+    
+    # 기존 필드들 (호환성 유지)
+    status: str = "IDLE"
+    progress: float = 0.0
+    stage: str = ""
+    start_time: Optional[datetime] = None
+    gpu_allocation: List[int] = None
     beam_info: str = ""
     transfer_info: str = ""
     error_message: str = ""
+    
+    def __post_init__(self):
+        if self.gpu_allocation is None:
+            self.gpu_allocation = []
+    
+    @property
+    def progress_display(self) -> str:
+        """진행상황을 1/4, 2/4 형태로 표시"""
+        if self.total_steps > 0:
+            return f"{self.current_step}/{self.total_steps}"
+        return "0/0"
 
 
 class StatusDisplay:
@@ -78,26 +96,48 @@ class StatusDisplay:
                 import logging
                 logging.warning("Display thread did not stop gracefully")
     
-    def update_case_status(self, case_id: str, status: str, progress: float = 0.0, 
+    def update_case_status(self, case_id: str, status: str = "", progress: float = 0.0, 
                           stage: str = "", gpu_allocation: List[int] = None, 
                           beam_info: str = "", transfer_info: str = "", 
-                          error_message: str = "") -> None:
-        """Update case status information."""
+                          error_message: str = "",
+                          # 새로운 매개변수들
+                          current_task: str = "", current_step: int = 0,
+                          total_steps: int = 4, detailed_status: str = "") -> None:
+        """Update case status information with enhanced display structure."""
         with self.lock:
             if case_id not in self.cases:
                 self.cases[case_id] = CaseDisplayInfo(
                     case_id=case_id,
-                    status=status,
+                    status=status or "PROCESSING",
                     progress=progress,
                     stage=stage,
                     start_time=datetime.now() if status == "PROCESSING" else None,
-                    gpu_allocation=gpu_allocation or []
+                    gpu_allocation=gpu_allocation or [],
+                    beam_info=beam_info,
+                    transfer_info=transfer_info,
+                    error_message=error_message,
+                    # 새로운 필드들
+                    current_task=current_task,
+                    current_step=current_step,
+                    total_steps=total_steps,
+                    detailed_status=detailed_status
                 )
             else:
                 case_info = self.cases[case_id]
-                case_info.status = status
-                case_info.progress = progress
-                case_info.stage = stage
+                if status:
+                    case_info.status = status
+                if progress > 0:
+                    case_info.progress = progress
+                if stage:
+                    case_info.stage = stage
+                if current_task:
+                    case_info.current_task = current_task
+                if current_step > 0:
+                    case_info.current_step = current_step
+                if total_steps > 0:
+                    case_info.total_steps = total_steps
+                if detailed_status:
+                    case_info.detailed_status = detailed_status
                 case_info.gpu_allocation = gpu_allocation or case_info.gpu_allocation
                 case_info.beam_info = beam_info
                 case_info.transfer_info = transfer_info
@@ -223,8 +263,8 @@ class StatusDisplay:
                 print("[Active Cases]:")
                 print("-" * self.terminal_width)
                 
-                # Header
-                print(f"{'Case ID':<12} {'Status':<12} {'Progress':<10} {'Stage':<20} {'GPUs':<8} {'Runtime':<10}")
+                # Header (새로운 구조)
+                print(f"{'Case ID':<15} {'Task':<15} {'Progress':<10} {'Details':<35} {'GPUs':<8} {'Runtime':<10}")
                 print("-" * self.terminal_width)
                 
                 # Cases
@@ -233,19 +273,26 @@ class StatusDisplay:
                     if case_info.start_time:
                         runtime = str(datetime.now() - case_info.start_time).split('.')[0]
                     
-                    gpu_str = ",".join(map(str, case_info.gpu_allocation)) if case_info.gpu_allocation else "None"
-                    progress_str = f"{case_info.progress*100:.1f}%" if case_info.progress > 0 else "-"
+                    gpu_str = ",".join(map(str, case_info.gpu_allocation)) if case_info.gpu_allocation else ""
                     
-                    print(f"{case_info.case_id:<12} {case_info.status:<12} {progress_str:<10} "
-                          f"{case_info.stage:<20} {gpu_str:<8} {runtime:<10}")
+                    # 새로운 구조화된 표시 (Rich와 동일한 로직)
+                    task_display = (case_info.current_task or case_info.stage or "Idle")[:15]
+                    progress_display = case_info.progress_display if case_info.current_step > 0 else "-"
                     
-                    # Additional info
-                    if case_info.beam_info:
-                        print(f"             --> {case_info.beam_info}")
-                    if case_info.transfer_info:
-                        print(f"             --> {case_info.transfer_info}")
-                    if case_info.error_message:
-                        print(f"             [Error] {case_info.error_message}")
+                    # 상세 정보 우선순위: detailed_status > error > transfer_info > beam_info
+                    details = case_info.detailed_status
+                    if not details:
+                        if case_info.error_message:
+                            details = f"Error: {case_info.error_message[:30]}..."
+                        elif case_info.transfer_info:
+                            details = case_info.transfer_info[:35]
+                        elif case_info.beam_info:
+                            details = case_info.beam_info[:35]
+                        else:
+                            details = case_info.stage[:35] if case_info.stage else ""
+                    
+                    print(f"{case_info.case_id[:15]:<15} {task_display:<15} {progress_display:<10} "
+                          f"{details[:35]:<35} {gpu_str:<8} {runtime:<10}")
             else:
                 print("No active cases")
             
@@ -273,16 +320,16 @@ class StatusDisplay:
             return "MOQUI Automation System"
     
     def _create_cases_table(self):
-        """Create cases table for rich display."""
+        """Create cases table for rich display with enhanced structure."""
         try:
             from rich.table import Table
             from rich.text import Text
             
             table = Table(title="[Active Cases]", show_header=True, header_style="bold magenta")
-            table.add_column("Case ID", style="cyan", width=12)
-            table.add_column("Status", style="green", width=12)
-            table.add_column("Progress", style="yellow", width=12)
-            table.add_column("Details", style="blue", no_wrap=True, width=40)
+            table.add_column("Case ID", style="cyan", width=15)
+            table.add_column("Task", style="magenta", width=15)
+            table.add_column("Progress", justify="center", width=10)
+            table.add_column("Details", style="green", no_wrap=True, width=35)
             table.add_column("GPUs", style="red", width=8)
             table.add_column("Runtime", style="white", width=10)
             
@@ -295,27 +342,31 @@ class StatusDisplay:
                 if case_info.start_time:
                     runtime = str(datetime.now() - case_info.start_time).split('.')[0]
                 
-                gpu_str = ",".join(map(str, case_info.gpu_allocation)) if case_info.gpu_allocation else "None"
-                progress_str = f"{case_info.progress*100:.1f}%" if case_info.progress > 0 else "-"
+                gpu_str = ",".join(map(str, case_info.gpu_allocation)) if case_info.gpu_allocation else ""
                 
-                # Determine the most relevant detail to show
-                details = case_info.stage
-                if case_info.transfer_info:
-                    details = case_info.transfer_info
-                elif case_info.beam_info:
-                    details = case_info.beam_info
-                elif case_info.error_message:
-                    details = f"[bold red]Error: {case_info.error_message}[/bold red]"
+                # 새로운 구조화된 표시
+                task_display = case_info.current_task or case_info.stage or "Idle"
+                progress_display = case_info.progress_display if case_info.current_step > 0 else "-"
+                
+                # 상세 정보 우선순위: detailed_status > error > transfer_info > beam_info
+                details = case_info.detailed_status
+                if not details:
+                    if case_info.error_message:
+                        details = f"[bold red]Error: {case_info.error_message[:30]}...[/bold red]"
+                    elif case_info.transfer_info:
+                        details = case_info.transfer_info[:35]
+                    elif case_info.beam_info:
+                        details = case_info.beam_info[:35]
+                    else:
+                        details = case_info.stage[:35] if case_info.stage else ""
 
-                # Status styling
-                status_style = "green" if case_info.status == "COMPLETED" else \
-                              "red" if case_info.status == "FAILED" else \
-                              "yellow" if case_info.status == "PROCESSING" else "white"
+                # Task 스타일링
+                task_style = "bold magenta" if case_info.status == "PROCESSING" else "dim"
                 
                 table.add_row(
-                    case_info.case_id,
-                    Text(case_info.status, style=status_style),
-                    progress_str,
+                    case_info.case_id[:15],  # Case ID 잘림 방지
+                    Text(task_display[:15], style=task_style),
+                    Text(progress_display, style="bold yellow"),
                     details,
                     gpu_str,
                     runtime
