@@ -20,7 +20,8 @@
   "working_directories": {
     "mqi_interpreter": "/home/gpuadmin/MOQUI_SMC/mqi_interpreter",
     "moqui_binary": "/home/gpuadmin/MOQUI_SMC/moqui",
-    "raw2dicom": "/home/gpuadmin/MOQUI_SMC/RawToDCM"
+    "raw2dicom": "/home/gpuadmin/MOQUI_SMC/RawToDCM",
+    "tps_env": "/home/gpuadmin/MOQUI_SMC/tps_env"
   },
   "scanning": {
     "interval_minutes": 30,
@@ -52,5 +53,13 @@
     "quiet_file_transfers": true,
     "summary_only_transfers": true,
     "format": "%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s"
+  },
+  "moqui_tps_params": {
+    "BEAM_MODEL": "6MV_FLATTENING_FILTER",
+    "DOSE_CALCULATION_ALGORITHM": "MONTE_CARLO",
+    "STATISTICAL_UNCERTAINTY": "2.0",
+    "MAX_HISTORIES": "1000000",
+    "VOXEL_SIZE": "2.5",
+    "OUTPUT_FORMAT": "DICOM"
   }
 }

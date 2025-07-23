@@ -184,15 +184,12 @@ class ExecuteBeamCalculationsStep(ProcessingStep):
                 beam_info=f"Using GPUs: {gpu_allocation}"
             )
             
-            # Define parameters for moqui_tps.in (hard-coded for demonstration)
-            tps_params = {
-                "BEAM_MODEL": "6MV_FLATTENING_FILTER",
-                "DOSE_CALCULATION_ALGORITHM": "MONTE_CARLO",
-                "STATISTICAL_UNCERTAINTY": "2.0",
-                "MAX_HISTORIES": "1000000",
-                "VOXEL_SIZE": "2.5",
-                "OUTPUT_FORMAT": "DICOM"
-            }
+            # Get parameters for moqui_tps.in from configuration
+            tps_params = context.remote_executor.config.get("moqui_tps_params", {})
+            if not tps_params:
+                context.logger.error(f"No moqui_tps_params found in configuration for case: {context.case_id}")
+                context.job_scheduler.complete_job(context.case_id, False)
+                return False
             
             # Create the case-specific config file
             if not context.remote_executor.update_moqui_tps_in(context.case_id, tps_params):
