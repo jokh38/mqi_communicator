@@ -5,7 +5,6 @@ import time
 import socket
 from pathlib import Path
 from typing import Optional, Callable, Dict, Any
-import logging
 from base_ssh_connector import BaseSSHConnector
 
 
@@ -57,7 +56,7 @@ class SFTPManager(BaseSSHConnector):
             return True
             
         except Exception as e:
-            logging.error(f"Failed to create remote directory {remote_path}: {e}")
+            self.logger.error(f"Failed to create remote directory {remote_path}: {e}")
             return False
 
     def upload_file(self, local_path: str, remote_path: str, case_id: str = "", 
@@ -71,7 +70,7 @@ class SFTPManager(BaseSSHConnector):
             
             # 1. Pre-flight check: Ensure local file exists right before upload
             if not local_file.exists() or not local_file.is_file():
-                logging.error(f"[SFTP] Pre-flight check failed: Local file not found at {local_path}")
+                self.logger.error(f"[SFTP] Pre-flight check failed: Local file not found at {local_path}")
                 raise FileNotFoundError(f"Local file does not exist or is not a file: {local_path}")
             
             local_size = local_file.stat().st_size
@@ -132,13 +131,13 @@ class SFTPManager(BaseSSHConnector):
                     if self.logger:
                         self.logger.error(f"File verification failed: {remote_path} - {error_msg}")
                     else:
-                        logging.error(f"[SFTP] Post-flight verification failed for '{remote_path}'. {error_msg}")
+                        self.logger.error(f"[SFTP] Post-flight verification failed for '{remote_path}'. {error_msg}")
                     raise IOError(f"SFTP size mismatch for {remote_path}")
             except FileNotFoundError:
-                logging.error(f"[SFTP] Post-flight verification failed for '{remote_path}'. File not found on remote server.")
+                self.logger.error(f"[SFTP] Post-flight verification failed for '{remote_path}'. File not found on remote server.")
                 raise
             except Exception as e:
-                logging.error(f"[SFTP] Post-flight verification failed for '{remote_path}' with error: {e}")
+                self.logger.error(f"[SFTP] Post-flight verification failed for '{remote_path}' with error: {e}")
                 raise
 
         try:
@@ -151,7 +150,7 @@ class SFTPManager(BaseSSHConnector):
                     "case_id": case_id
                 })
             else:
-                logging.error(f"Failed to upload file {local_path} after all checks and retries: {e}")
+                self.logger.error(f"Failed to upload file {local_path} after all checks and retries: {e}")
             return False
 
     def upload_directory(self, local_path: str, remote_path: str, 
@@ -166,7 +165,7 @@ class SFTPManager(BaseSSHConnector):
             if self.logger:
                 self.logger.error(f"Invalid directory path for upload: {local_dir}")
             else:
-                logging.error(f"Local path is not a directory: {local_dir}")
+                self.logger.error(f"Local path is not a directory: {local_dir}")
             return False
 
         try:
@@ -216,7 +215,7 @@ class SFTPManager(BaseSSHConnector):
                 remote_file_path = f"{remote_path.rstrip('/')}/{str(relative_path).replace(chr(92), '/')}"
                 
                 if not self.upload_file(str(file_path), remote_file_path, case_id, status_display, i+1, total_files):
-                    logging.error(f"Stopping upload due to failure on file: {file_path}")
+                    self.logger.error(f"Stopping upload due to failure on file: {file_path}")
                     return False
                 
                 # Update progress with overall transfer speed
@@ -269,7 +268,7 @@ class SFTPManager(BaseSSHConnector):
                     "case_id": case_id
                 })
             else:
-                logging.error(f"Failed to upload directory {local_path}: {e}")
+                self.logger.error(f"Failed to upload directory {local_path}: {e}")
             if status_display and case_id:
                 status_display.update_case_status(
                     case_id=case_id,
@@ -292,7 +291,7 @@ class SFTPManager(BaseSSHConnector):
                 remote_stat = self.sftp.stat(remote_path)
                 file_size = remote_stat.st_size
             except Exception as e:
-                logging.error(f"Failed to get remote file size for {remote_path}: {e}")
+                self.logger.error(f"Failed to get remote file size for {remote_path}: {e}")
                 file_size = 0
             
             # Create local directory if needed
@@ -331,7 +330,7 @@ class SFTPManager(BaseSSHConnector):
         try:
             return self._retry_on_network_error(_download_file_internal)
         except Exception as e:
-            logging.error(f"Failed to download file {remote_path} after retries: {e}")
+            self.logger.error(f"Failed to download file {remote_path} after retries: {e}")
             return False
 
     def download_directory(self, remote_path: str, local_path: str, 
@@ -365,7 +364,7 @@ class SFTPManager(BaseSSHConnector):
                         self.transfer_stats['total_bytes'] += item.st_size
             
             total_files = len(all_files)
-            logging.info(f"[SFTP] Found {total_files} file(s) to download from {remote_path}. Total size: {self.transfer_stats['total_bytes']} bytes")
+            self.logger.info(f"[SFTP] Found {total_files} file(s) to download from {remote_path}. Total size: {self.transfer_stats['total_bytes']} bytes")
             
             # Step 2: Download files and update progress
             downloaded_count = 0
@@ -378,7 +377,7 @@ class SFTPManager(BaseSSHConnector):
                 local_file_path.parent.mkdir(parents=True, exist_ok=True)
 
                 if not self.download_file(remote_file_path, str(local_file_path), case_id, status_display, downloaded_count+1, total_files):
-                    logging.error(f"Stopping download due to failure on file: {remote_file_path}")
+                    self.logger.error(f"Stopping download due to failure on file: {remote_file_path}")
                     return False
                 
                 downloaded_count += 1
@@ -401,7 +400,7 @@ class SFTPManager(BaseSSHConnector):
                         transfer_info=transfer_info
                     )
             
-            logging.info(f"Successfully downloaded all files to {local_path}")
+            self.logger.info(f"Successfully downloaded all files to {local_path}")
             if status_display and case_id:
                 status_display.update_case_status(
                     case_id=case_id, 
@@ -412,7 +411,7 @@ class SFTPManager(BaseSSHConnector):
             return True
             
         except Exception as e:
-            logging.error(f"Failed to download directory {remote_path}: {e}")
+            self.logger.error(f"Failed to download directory {remote_path}: {e}")
             if status_display and case_id:
                 status_display.update_case_status(
                     case_id=case_id,
@@ -434,7 +433,7 @@ class SFTPManager(BaseSSHConnector):
         except FileNotFoundError:
             return False
         except Exception as e:
-            logging.error(f"Error checking file existence {remote_path}: {e}")
+            self.logger.error(f"Error checking file existence {remote_path}: {e}")
             return False
 
     def get_file_size(self, remote_path: str) -> int:
@@ -448,7 +447,7 @@ class SFTPManager(BaseSSHConnector):
         except FileNotFoundError:
             return 0
         except Exception as e:
-            logging.error(f"Error getting file size {remote_path}: {e}")
+            self.logger.error(f"Error getting file size {remote_path}: {e}")
             return 0
 
     def list_directory(self, remote_path: str) -> list:
@@ -459,7 +458,7 @@ class SFTPManager(BaseSSHConnector):
         try:
             return self.sftp.listdir(remote_path)
         except Exception as e:
-            logging.error(f"Error listing directory {remote_path}: {e}")
+            self.logger.error(f"Error listing directory {remote_path}: {e}")
             return []
 
     def remove_file(self, remote_path: str) -> bool:
@@ -471,7 +470,7 @@ class SFTPManager(BaseSSHConnector):
             self.sftp.remove(remote_path)
             return True
         except Exception as e:
-            logging.error(f"Error removing file {remote_path}: {e}")
+            self.logger.error(f"Error removing file {remote_path}: {e}")
             return False
 
     def remove_directory(self, remote_path: str) -> bool:
@@ -498,7 +497,7 @@ class SFTPManager(BaseSSHConnector):
             return True
             
         except Exception as e:
-            logging.error(f"Error removing directory {remote_path}: {e}")
+            self.logger.error(f"Error removing directory {remote_path}: {e}")
             return False
 
     def sync_directory(self, local_path: str, remote_path: str, 
@@ -509,7 +508,7 @@ class SFTPManager(BaseSSHConnector):
         elif direction == "download":
             return self.download_directory(remote_path, local_path)
         else:
-            logging.error(f"Invalid sync direction: {direction}")
+            self.logger.error(f"Invalid sync direction: {direction}")
             return False
 
     def get_connection_info(self) -> Dict[str, Any]:

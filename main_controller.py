@@ -1,4 +1,3 @@
-import logging
 import threading
 import time
 import queue
@@ -290,12 +289,14 @@ class MainController:
                 total_gpus=self.config["gpu_management"]["total_gpus"],
                 reserved_gpus=self.config["gpu_management"]["reserved_gpus"],
                 memory_threshold=self.config["gpu_management"]["memory_threshold_mb"],
-                remote_executor=self.remote_executor
+                remote_executor=self.remote_executor,
+                logger=self.logger
             )
 
             # Initialize case scanner
             self.case_scanner = CaseScanner(
-                base_path=self.config["paths"]["local_logdata"]
+                base_path=self.config["paths"]["local_logdata"],
+                logger=self.logger
             )
 
             # Initialize job scheduler
@@ -306,14 +307,16 @@ class MainController:
                 remote_executor=self.remote_executor,
                 config=self.config,
                 directory_manager=self.directory_manager,
-                status_display=self.status_display
+                status_display=self.status_display,
+                logger=self.logger
             )
 
             # Initialize process monitor
             self.process_monitor = ProcessMonitor(
                 remote_executor=self.remote_executor,
                 monitoring_interval=self.monitoring_interval,
-                status_display=self.status_display
+                status_display=self.status_display,
+                logger=self.logger
             )
 
             # Connect directory manager to other components
@@ -335,7 +338,7 @@ class MainController:
                 self.logger.critical(f"Failed to initialize components: {e}")
             else:
                 # Fallback to console when logger is not available
-                logging.error(f"Failed to initialize components: {e}")
+                print(f"ERROR: Failed to initialize components: {e}")
             
             # Also update status display if available
             if hasattr(self, 'status_display'):
@@ -790,7 +793,10 @@ class MainController:
         try:
             # Acquire application lock to prevent multiple instances
             if not self._acquire_lock():
-                logging.critical("Failed to acquire application lock. Another instance may be running.")
+                if hasattr(self, 'logger'):
+                    self.logger.critical("Failed to acquire application lock. Another instance may be running.")
+                else:
+                    print("CRITICAL: Failed to acquire application lock. Another instance may be running.")
                 return
             
             self.logger.info("Starting MOQUI automation system")
@@ -895,7 +901,7 @@ class MainController:
             if hasattr(self, 'logger'):
                 self.logger.error(f"Error during shutdown: {e}")
             else:
-                logging.error(f"Error during shutdown: {e}")
+                print(f"ERROR: Error during shutdown: {e}")
             
             # Update status display if available
             if hasattr(self, 'status_display'):
@@ -926,7 +932,7 @@ class MainController:
             if hasattr(self, 'logger'):
                 self.logger.error(f"Error during resource cleanup: {e}")
             else:
-                logging.error(f"Error during resource cleanup: {e}")
+                print(f"ERROR: Error during resource cleanup: {e}")
             
             # Update status display if available
             if hasattr(self, 'status_display'):
@@ -984,11 +990,12 @@ class MainController:
 
 if __name__ == "__main__":
     # Example usage
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
     try:
         with MainController() as controller:
             controller.run()
     except KeyboardInterrupt:
-        logging.info("Shutting down...")
+        print("Shutting down...")
     except Exception as e:
-        logging.critical(f"Error: {e}", exc_info=True)
+        print(f"CRITICAL: Error: {e}")
+        import traceback
+        traceback.print_exc()

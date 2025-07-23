@@ -1,4 +1,3 @@
-import logging
 import time
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Any
@@ -22,10 +21,11 @@ class ProcessInfo:
 
 
 class ProcessMonitor:
-    def __init__(self, remote_executor, monitoring_interval: int = 10, status_display=None):
+    def __init__(self, remote_executor, monitoring_interval: int = 10, status_display=None, logger=None):
         self.remote_executor = remote_executor
         self.monitoring_interval = monitoring_interval
         self.status_display = status_display
+        self.logger = logger
         self.tracked_processes: List[Dict[str, Any]] = []
         self.monitoring_active = False
         self.monitor_thread: Optional[threading.Thread] = None
@@ -51,11 +51,11 @@ class ProcessMonitor:
                 
                 self.tracked_processes.append(tracked_process)
                 
-                logging.info(f"Started monitoring process: {process_info['case_id']}-{process_info['beam_id']}")
+                self.logger.info(f"Started monitoring process: {process_info['case_id']}-{process_info['beam_id']}")
                 return True
                 
         except Exception as e:
-            logging.error(f"Error starting process monitoring: {e}")
+            self.logger.error(f"Error starting process monitoring: {e}")
             return False
 
     def stop_monitoring_process(self, case_id: str, beam_id: int) -> bool:
@@ -68,13 +68,13 @@ class ProcessMonitor:
                             process["status"] = "COMPLETED"
                             process["end_time"] = datetime.now()
                             
-                            logging.info(f"Stopped monitoring process: {case_id}-{beam_id}")
+                            self.logger.info(f"Stopped monitoring process: {case_id}-{beam_id}")
                             return True
                 
                 return False
                 
         except Exception as e:
-            logging.error(f"Error stopping process monitoring: {e}")
+            self.logger.error(f"Error stopping process monitoring: {e}")
             return False
 
     def check_process_status(self) -> List[Dict[str, Any]]:
@@ -113,7 +113,7 @@ class ProcessMonitor:
                             "runtime": self._calculate_runtime(process)
                         })
                         
-                        logging.info(f"Process completed: {process['case_id']}-{process['beam_id']}")
+                        self.logger.info(f"Process completed: {process['case_id']}-{process['beam_id']}")
                         
                         # Update status display for process completion
                         if self.status_display:
@@ -127,7 +127,7 @@ class ProcessMonitor:
                 return status_updates
                 
         except Exception as e:
-            logging.error(f"Error checking process status: {e}")
+            self.logger.error(f"Error checking process status: {e}")
             return status_updates
 
     def check_timeouts(self) -> List[Dict[str, Any]]:
@@ -154,7 +154,7 @@ class ProcessMonitor:
                                 "actual_runtime": runtime
                             })
                             
-                            logging.warning(f"Process timed out: {process['case_id']}-{process['beam_id']}")
+                            self.logger.warning(f"Process timed out: {process['case_id']}-{process['beam_id']}")
                             
                             # Update status display for timeout
                             if self.status_display:
@@ -169,7 +169,7 @@ class ProcessMonitor:
                 return timed_out_processes
                 
         except Exception as e:
-            logging.error(f"Error checking timeouts: {e}")
+            self.logger.error(f"Error checking timeouts: {e}")
             return timed_out_processes
 
     def wait_for_beam_completion(self, case_id: str, timeout: int = 3600) -> bool:
@@ -180,7 +180,7 @@ class ProcessMonitor:
             while True:
                 # Check if timeout exceeded
                 if (datetime.now() - start_time).total_seconds() > timeout:
-                    logging.error(f"Timeout waiting for beam completion: {case_id}")
+                    self.logger.error(f"Timeout waiting for beam completion: {case_id}")
                     return False
                 
                 # Get all processes for this case
@@ -198,7 +198,7 @@ class ProcessMonitor:
                         break
                 
                 if all_completed:
-                    logging.info(f"All beams completed for case: {case_id}")
+                    self.logger.info(f"All beams completed for case: {case_id}")
                     return True
                 
                 # Update process status
@@ -208,7 +208,7 @@ class ProcessMonitor:
                 time.sleep(self.monitoring_interval)
                 
         except Exception as e:
-            logging.error(f"Error waiting for beam completion: {e}")
+            self.logger.error(f"Error waiting for beam completion: {e}")
             return False
 
     def kill_process(self, case_id: str, beam_id: int) -> bool:
@@ -227,23 +227,23 @@ class ProcessMonitor:
                                     process["status"] = "KILLED"
                                     process["end_time"] = datetime.now()
                                     
-                                    logging.info(f"Killed process: {case_id}-{beam_id}")
+                                    self.logger.info(f"Killed process: {case_id}-{beam_id}")
                                     return True
                                 else:
-                                    logging.error(f"Failed to kill process: {case_id}-{beam_id}")
+                                    self.logger.error(f"Failed to kill process: {case_id}-{beam_id}")
                                     return False
                             else:
-                                logging.error(f"Process PID not found: {case_id}-{beam_id}")
+                                self.logger.error(f"Process PID not found: {case_id}-{beam_id}")
                                 return False
                         else:
-                            logging.warning(f"Process not running: {case_id}-{beam_id}")
+                            self.logger.warning(f"Process not running: {case_id}-{beam_id}")
                             return False
                 
-                logging.warning(f"Process not found: {case_id}-{beam_id}")
+                self.logger.warning(f"Process not found: {case_id}-{beam_id}")
                 return False
                 
         except Exception as e:
-            logging.error(f"Error killing process: {e}")
+            self.logger.error(f"Error killing process: {e}")
             return False
 
     def _find_process_pid(self, process: Dict[str, Any]) -> Optional[int]:
@@ -262,7 +262,7 @@ class ProcessMonitor:
             return None
             
         except Exception as e:
-            logging.error(f"Error finding process PID: {e}")
+            self.logger.error(f"Error finding process PID: {e}")
             return None
 
     def get_process_info(self, case_id: str, beam_id: int) -> Optional[Dict[str, Any]]:
@@ -278,7 +278,7 @@ class ProcessMonitor:
                 return None
                 
         except Exception as e:
-            logging.error(f"Error getting process info: {e}")
+            self.logger.error(f"Error getting process info: {e}")
             return None
 
     def get_case_processes(self, case_id: str) -> List[Dict[str, Any]]:
@@ -294,7 +294,7 @@ class ProcessMonitor:
                 return case_processes
                 
         except Exception as e:
-            logging.error(f"Error getting case processes: {e}")
+            self.logger.error(f"Error getting case processes: {e}")
             return []
 
     def get_case_status(self, case_id: str) -> Dict[str, Any]:
@@ -348,7 +348,7 @@ class ProcessMonitor:
             }
             
         except Exception as e:
-            logging.error(f"Error getting case status: {e}")
+            self.logger.error(f"Error getting case status: {e}")
             return {"case_id": case_id, "overall_status": "ERROR"}
 
     def cleanup_completed_processes(self, max_age_hours: int = 24) -> int:
@@ -368,12 +368,12 @@ class ProcessMonitor:
                 cleaned_count = initial_count - len(self.tracked_processes)
                 
                 if cleaned_count > 0:
-                    logging.info(f"Cleaned up {cleaned_count} old processes")
+                    self.logger.info(f"Cleaned up {cleaned_count} old processes")
                 
                 return cleaned_count
                 
         except Exception as e:
-            logging.error(f"Error cleaning up processes: {e}")
+            self.logger.error(f"Error cleaning up processes: {e}")
             return 0
 
     def get_monitoring_stats(self) -> Dict[str, Any]:
@@ -405,7 +405,7 @@ class ProcessMonitor:
                 return stats
                 
         except Exception as e:
-            logging.error(f"Error getting monitoring stats: {e}")
+            self.logger.error(f"Error getting monitoring stats: {e}")
             return {"total_processes": 0}
 
     def monitor_log_file(self, case_id: str, log_path: str, lines: int = 10) -> str:
@@ -413,13 +413,13 @@ class ProcessMonitor:
         try:
             return self.remote_executor.monitor_log_file(log_path, lines)
         except Exception as e:
-            logging.error(f"Error monitoring log file: {e}")
+            self.logger.error(f"Error monitoring log file: {e}")
             return f"Error reading log: {str(e)}"
 
     def set_monitoring_interval(self, interval: int) -> None:
         """Set the monitoring interval in seconds."""
         self.monitoring_interval = interval
-        logging.info(f"Monitoring interval set to {interval} seconds")
+        self.logger.info(f"Monitoring interval set to {interval} seconds")
 
     def get_process_runtime(self, case_id: str, beam_id: int) -> float:
         """Get runtime of a specific process in seconds."""
@@ -432,7 +432,7 @@ class ProcessMonitor:
             return self._calculate_runtime(process_info)
             
         except Exception as e:
-            logging.error(f"Error getting process runtime: {e}")
+            self.logger.error(f"Error getting process runtime: {e}")
             return 0.0
 
     def _calculate_runtime(self, process: Dict[str, Any]) -> float:
@@ -449,14 +449,14 @@ class ProcessMonitor:
             return (end_time - start_time).total_seconds()
             
         except Exception as e:
-            logging.error(f"Error calculating runtime: {e}")
+            self.logger.error(f"Error calculating runtime: {e}")
             return 0.0
 
     def start_background_monitoring(self) -> bool:
         """Start background monitoring thread."""
         try:
             if self.monitoring_active:
-                logging.warning("Background monitoring already active")
+                self.logger.warning("Background monitoring already active")
                 return False
             
             self.monitoring_active = True
@@ -464,18 +464,18 @@ class ProcessMonitor:
             self.monitor_thread.daemon = True
             self.monitor_thread.start()
             
-            logging.info("Background monitoring started")
+            self.logger.info("Background monitoring started")
             return True
             
         except Exception as e:
-            logging.error(f"Error starting background monitoring: {e}")
+            self.logger.error(f"Error starting background monitoring: {e}")
             return False
 
     def stop_background_monitoring(self) -> bool:
         """Stop background monitoring thread."""
         try:
             if not self.monitoring_active:
-                logging.warning("Background monitoring not active")
+                self.logger.warning("Background monitoring not active")
                 return False
             
             self.monitoring_active = False
@@ -483,11 +483,11 @@ class ProcessMonitor:
             if self.monitor_thread and self.monitor_thread.is_alive():
                 self.monitor_thread.join(timeout=10)
             
-            logging.info("Background monitoring stopped")
+            self.logger.info("Background monitoring stopped")
             return True
             
         except Exception as e:
-            logging.error(f"Error stopping background monitoring: {e}")
+            self.logger.error(f"Error stopping background monitoring: {e}")
             return False
 
     def _background_monitor_loop(self) -> None:
@@ -504,7 +504,7 @@ class ProcessMonitor:
                 time.sleep(self.monitoring_interval)
                 
         except Exception as e:
-            logging.error(f"Error in background monitoring loop: {e}")
+            self.logger.error(f"Error in background monitoring loop: {e}")
         finally:
             self.monitoring_active = False
 
@@ -521,7 +521,7 @@ class ProcessMonitor:
                 return list(active_cases)
                 
         except Exception as e:
-            logging.error(f"Error getting active cases: {e}")
+            self.logger.error(f"Error getting active cases: {e}")
             return []
 
     def __enter__(self):
@@ -535,5 +535,5 @@ class ProcessMonitor:
 
     def stop(self):
         """Alias for stop_background_monitoring for cleanup."""
-        logging.info("ProcessMonitor stop method called, stopping background monitoring.")
+        self.logger.info("ProcessMonitor stop method called, stopping background monitoring.")
         self.stop_background_monitoring()

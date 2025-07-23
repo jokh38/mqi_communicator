@@ -1,6 +1,5 @@
 import subprocess
 import re
-import logging
 from typing import List, Dict, Optional, Any, TYPE_CHECKING
 from dataclasses import dataclass
 
@@ -20,12 +19,13 @@ class GPUInfo:
 
 class GPUManager:
     def __init__(self, total_gpus: int = 8, reserved_gpus: List[int] = None, 
-                 memory_threshold: int = 1024, remote_executor: Optional['RemoteExecutor'] = None):
+                 memory_threshold: int = 1024, remote_executor: Optional['RemoteExecutor'] = None, logger=None):
         self.total_gpus = total_gpus
         self.reserved_gpus = reserved_gpus or []
         self.memory_threshold = memory_threshold  # MB
         self.allocated_gpus: List[int] = []
         self.remote_executor = remote_executor
+        self.logger = logger
 
     def get_gpu_info(self) -> List[Dict[str, Any]]:
         """Get detailed GPU information using nvidia-smi."""
@@ -224,12 +224,12 @@ class GPUManager:
                     try:
                         kill_result = self.remote_executor.execute_command(f"kill -9 {pid}")
                         if kill_result.success:
-                            logging.info(f"Successfully killed zombie process {pid} on remote server")
+                            self.logger.info(f"Successfully killed zombie process {pid} on remote server")
                     except Exception as e:
-                        logging.error(f"Failed to kill zombie process {pid}: {e}")
+                        self.logger.error(f"Failed to kill zombie process {pid}: {e}")
             
             except Exception as e:
-                logging.error(f"Error checking process {process['pid']}: {e}")
+                self.logger.error(f"Error checking process {process['pid']}: {e}")
                 continue
         
         return zombie_processes

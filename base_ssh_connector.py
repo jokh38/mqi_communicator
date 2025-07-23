@@ -1,7 +1,6 @@
 import paramiko
 import socket
 import time
-import logging
 import threading
 from typing import Optional, Any, Dict, ClassVar
 from abc import ABC, abstractmethod
@@ -15,12 +14,13 @@ class BaseSSHConnector(ABC):
     _last_connection_times: ClassVar[Dict[str, float]] = {}
     _global_lock: ClassVar[threading.Lock] = threading.Lock()
     
-    def __init__(self, host: str, username: str, password: str, port: int = 22, timeout: int = 30):
+    def __init__(self, host: str, username: str, password: str, port: int = 22, timeout: int = 30, logger=None):
         self.host = host
         self.username = username
         self.password = password
         self.port = port
         self.timeout = timeout
+        self.logger = logger
         self.transport: Optional[paramiko.Transport] = None
         self.connected = False
         
@@ -59,7 +59,7 @@ class BaseSSHConnector(ABC):
             time_since_last = current_time - last_connection_time
             if time_since_last < self.min_connection_interval:
                 sleep_time = self.min_connection_interval - time_since_last
-                logging.debug(f"Rate limiting: waiting {sleep_time:.2f}s before connecting to {host_key}")
+                self.logger.debug(f"Rate limiting: waiting {sleep_time:.2f}s before connecting to {host_key}")
                 time.sleep(sleep_time)
             
             # Update last connection time
@@ -77,7 +77,7 @@ class BaseSSHConnector(ABC):
                 
                 # Explicitly check for FileNotFoundError and do not retry
                 if isinstance(e, FileNotFoundError):
-                    logging.error(f"Local file not found: {e}. This is not a network error and will not be retried.")
+                    self.logger.error(f"Local file not found: {e}. This is not a network error and will not be retried.")
                     raise e
 
                 if not self._is_network_error(e):
@@ -87,7 +87,7 @@ class BaseSSHConnector(ABC):
                 if attempt < self.max_retries:
                     # Use a fixed delay instead of exponential backoff
                     delay = self.retry_delay
-                    logging.warning(f"Network error on attempt {attempt + 1}/{self.max_retries + 1}: {e}. "
+                    self.logger.warning(f"Network error on attempt {attempt + 1}/{self.max_retries + 1}: {e}. "
                                   f"Retrying in {delay} seconds...")
                     time.sleep(delay)
                     
@@ -95,7 +95,7 @@ class BaseSSHConnector(ABC):
                     if not self.connected:
                         self.connect()
                 else:
-                    logging.error(f"Failed after {self.max_retries + 1} attempts. Last error: {e}")
+                    self.logger.error(f"Failed after {self.max_retries + 1} attempts. Last error: {e}")
         
         # If we get here, all retries failed
         raise last_exception
@@ -155,7 +155,7 @@ class BaseSSHConnector(ABC):
                 # Add a small fixed delay between attempts
                 if attempt > 0:
                     delay = self.retry_delay
-                    logging.info(f"Retrying SSH connection in {delay} seconds (attempt {attempt + 1}/{max_attempts})")
+                    self.logger.info(f"Retrying SSH connection in {delay} seconds (attempt {attempt + 1}/{max_attempts})")
                     time.sleep(delay)
                 
                 self._enforce_connection_rate_limit()
@@ -167,7 +167,7 @@ class BaseSSHConnector(ABC):
                 self.transport.connect(username=self.username, password=self.password)
                 
                 self.connected = True
-                logging.info(f"Successfully connected to {self.host}:{self.port} on attempt {attempt + 1}")
+                self.logger.info(f"Successfully connected to {self.host}:{self.port} on attempt {attempt + 1}")
                 self._post_connect_setup()
                 
                 return True
@@ -180,9 +180,9 @@ class BaseSSHConnector(ABC):
                     try:
                         # Attempt to read raw data from the socket for logging
                         raw_banner_data = self.transport.sock.recv(1024) if self.transport and self.transport.sock else b''
-                        logging.error(f"Raw data received from server on banner error: {raw_banner_data!r}")
+                        self.logger.error(f"Raw data received from server on banner error: {raw_banner_data!r}")
                     except Exception as sock_err:
-                        logging.error(f"Could not retrieve raw banner data from socket: {sock_err}")
+                        self.logger.error(f"Could not retrieve raw banner data from socket: {sock_err}")
 
                 # Comprehensive list of retryable SSH errors
                 retryable_errors = [
@@ -202,21 +202,21 @@ class BaseSSHConnector(ABC):
                 ]
                 
                 if any(keyword in error_msg for keyword in retryable_errors):
-                    logging.warning(f"SSH connection error on attempt {attempt + 1}/{max_attempts}: {error_msg}")
+                    self.logger.warning(f"SSH connection error on attempt {attempt + 1}/{max_attempts}: {error_msg}")
                     if attempt < max_attempts - 1:
                         # Use a fixed delay for retrying
                         total_delay = self.retry_delay
-                        logging.info(f"Retrying SSH connection in {total_delay} seconds (attempt {attempt + 2}/{max_attempts})")
+                        self.logger.info(f"Retrying SSH connection in {total_delay} seconds (attempt {attempt + 2}/{max_attempts})")
                         time.sleep(total_delay)
                         continue  # Retry on all retryable errors
                     else:
-                        logging.error(f"SSH connection failed after {max_attempts} attempts due to persistent errors")
+                        self.logger.error(f"SSH connection failed after {max_attempts} attempts due to persistent errors")
                 else:
-                    logging.error(f"SSH connection failed with non-retryable error: {error_msg}")
+                    self.logger.error(f"SSH connection failed with non-retryable error: {error_msg}")
                     break  # Don't retry on authentication errors, etc.
                 
             except Exception as e:
-                logging.error(f"SSH connection failed on attempt {attempt + 1}/{max_attempts}: {e}")
+                self.logger.error(f"SSH connection failed on attempt {attempt + 1}/{max_attempts}: {e}")
                 if attempt < max_attempts - 1:
                     continue  # Retry on general errors
         
@@ -231,7 +231,7 @@ class BaseSSHConnector(ABC):
     
     def disconnect(self) -> None:
         """Close SSH connection and perform aggressive cleanup."""
-        logging.info(f"Disconnecting from {self.host}:{self.port}...")
+        self.logger.info(f"Disconnecting from {self.host}:{self.port}...")
         try:
             self._pre_disconnect_cleanup()
             
@@ -240,19 +240,19 @@ class BaseSSHConnector(ABC):
                     # Check if transport is still connected before closing
                     if self.transport.is_active():
                         self.transport.close()
-                        logging.info("Transport closed successfully.")
+                        self.logger.info("Transport closed successfully.")
                 except Exception as e:
-                    logging.warning(f"Error while closing transport: {e}")
+                    self.logger.warning(f"Error while closing transport: {e}")
                 finally:
                     # Aggressively clean up transport and its socket
                     self.transport.sock = None
                     self.transport = None
             
             self.connected = False
-            logging.info(f"Disconnection from {self.host}:{self.port} completed.")
+            self.logger.info(f"Disconnection from {self.host}:{self.port} completed.")
             
         except Exception as e:
-            logging.error(f"Error during disconnect: {e}")
+            self.logger.error(f"Error during disconnect: {e}")
         finally:
             # Ensure all resources are released
             self.transport = None
@@ -293,7 +293,7 @@ class BaseSSHConnector(ABC):
                 return False
                 
         except Exception as e:
-            logging.error(f"Connection test failed: {e}")
+            self.logger.error(f"Connection test failed: {e}")
             return False
     
     def __enter__(self):

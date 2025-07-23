@@ -1,4 +1,3 @@
-import logging
 import shutil
 import time
 from pathlib import Path
@@ -25,7 +24,7 @@ class Job:
 
 
 class JobScheduler:
-    def __init__(self, gpu_manager, case_scanner, max_concurrent_jobs: int = 2, remote_executor=None, config: Optional[Dict[str, Any]] = None, directory_manager=None, status_display=None):
+    def __init__(self, gpu_manager, case_scanner, max_concurrent_jobs: int = 2, remote_executor=None, config: Optional[Dict[str, Any]] = None, directory_manager=None, status_display=None, logger=None):
         self.gpu_manager = gpu_manager
         self.case_scanner = case_scanner
         self.remote_executor = remote_executor
@@ -33,6 +32,7 @@ class JobScheduler:
         self.config = config or {}
         self.directory_manager = directory_manager
         self.status_display = status_display
+        self.logger = logger
         
         self.job_queue: List[Dict[str, Any]] = []
         self.active_jobs: Dict[str, Dict[str, Any]] = {}
@@ -70,7 +70,7 @@ class JobScheduler:
             }
             
         except Exception as e:
-            logging.error(f"Failed to check local disk space: {e}")
+            self.logger.error(f"Failed to check local disk space: {e}")
             return {
                 "total_gb": 0,
                 "used_gb": 0,
@@ -108,7 +108,7 @@ class JobScheduler:
             if hasattr(self.remote_executor, '_connection_failures'):
                 failure_count = getattr(self.remote_executor, '_connection_failures', 0)
                 if failure_count >= 5:
-                    logging.warning(f"Remote executor has {failure_count} consecutive failures, assuming sufficient disk space")
+                    self.logger.warning(f"Remote executor has {failure_count} consecutive failures, assuming sufficient disk space")
                     return {
                         "total_gb": 1000,  # Assume large disk
                         "used_gb": 100,
@@ -127,7 +127,7 @@ class JobScheduler:
                     if result["exit_code"] != 0:
                         last_error = f"df command failed: {result['stderr']}"
                         if attempt < max_retries - 1:
-                            logging.warning(f"Disk space check attempt {attempt + 1} failed, retrying: {last_error}")
+                            self.logger.warning(f"Disk space check attempt {attempt + 1} failed, retrying: {last_error}")
                             time.sleep(2)  # Brief delay before retry
                             continue
                         else:
@@ -138,7 +138,7 @@ class JobScheduler:
                     if len(fields) < 4:
                         last_error = "Unexpected df output format"
                         if attempt < max_retries - 1:
-                            logging.warning(f"Disk space check attempt {attempt + 1} failed, retrying: {last_error}")
+                            self.logger.warning(f"Disk space check attempt {attempt + 1} failed, retrying: {last_error}")
                             time.sleep(2)
                             continue
                         else:
@@ -163,17 +163,17 @@ class JobScheduler:
                 except Exception as e:
                     last_error = str(e)
                     if attempt < max_retries - 1:
-                        logging.warning(f"Disk space check attempt {attempt + 1} failed, retrying: {last_error}")
+                        self.logger.warning(f"Disk space check attempt {attempt + 1} failed, retrying: {last_error}")
                         time.sleep(2)
                     else:
-                        logging.error(f"Failed to check remote disk space after {max_retries} attempts: {last_error}")
+                        self.logger.error(f"Failed to check remote disk space after {max_retries} attempts: {last_error}")
                         break
             
             # If we get here, all retries failed
             return _default_error_response(last_error or "Unknown error")
             
         except Exception as e:
-            logging.error(f"Failed to check remote disk space: {e}")
+            self.logger.error(f"Failed to check remote disk space: {e}")
             return _default_error_response(str(e))
 
     def estimate_case_disk_usage(self, case_id: str) -> float:
@@ -190,7 +190,7 @@ class JobScheduler:
             return estimated_gb
             
         except Exception as e:
-            logging.warning(f"Failed to estimate disk usage for case {case_id}: {e}")
+            self.logger.warning(f"Failed to estimate disk usage for case {case_id}: {e}")
             return 2.0  # Conservative default estimate
 
     def analyze_case_beam_count(self, case_id: str) -> int:
@@ -203,19 +203,19 @@ class JobScheduler:
                 case_path = Path(self.workspace_path) / case_id
             
             if not case_path.exists():
-                logging.warning(f"Case directory not found: {case_id}")
+                self.logger.warning(f"Case directory not found: {case_id}")
                 return 0
             
             # Count subdirectories within the case directory
             subdirectories = [item for item in case_path.iterdir() if item.is_dir()]
             beam_count = len(subdirectories)
             
-            logging.info(f"Found {beam_count} beams (subdirectories) for case {case_id}")
+            self.logger.info(f"Found {beam_count} beams (subdirectories) for case {case_id}")
             
             return beam_count
             
         except Exception as e:
-            logging.error(f"Error analyzing case {case_id}: {e}")
+            self.logger.error(f"Error analyzing case {case_id}: {e}")
             return 0
 
     def can_schedule_case(self, case_id: str, beam_count: int) -> bool:
@@ -223,7 +223,7 @@ class JobScheduler:
         try:
             # Check if we have reached max concurrent jobs
             if len(self.active_jobs) >= self.max_concurrent_jobs:
-                logging.info(f"Max concurrent jobs reached ({self.max_concurrent_jobs})")
+                self.logger.info(f"Max concurrent jobs reached ({self.max_concurrent_jobs})")
                 return False
             
             # Check remote disk space
@@ -231,7 +231,7 @@ class JobScheduler:
             remote_space = self.check_remote_disk_space(estimated_usage)
             
             if not remote_space["sufficient"]:
-                logging.warning(f"Insufficient remote disk space for case {case_id}: "
+                self.logger.warning(f"Insufficient remote disk space for case {case_id}: "
                               f"need {estimated_usage}GB, have {remote_space['free_gb']}GB")
                 return False
             
@@ -242,7 +242,7 @@ class JobScheduler:
             return True
             
         except Exception as e:
-            logging.error(f"Error checking schedulability for case {case_id}: {e}")
+            self.logger.error(f"Error checking schedulability for case {case_id}: {e}")
             return False
 
     def optimize_gpu_allocation(self, beam_count: int) -> List[int]:
@@ -250,7 +250,7 @@ class JobScheduler:
         available_gpus = self.gpu_manager.get_available_gpus()
         
         if len(available_gpus) < beam_count:
-            logging.warning(f"Insufficient GPUs available: need {beam_count}, have {len(available_gpus)}")
+            self.logger.warning(f"Insufficient GPUs available: need {beam_count}, have {len(available_gpus)}")
             return available_gpus
         
         # Prefer consecutive GPU IDs for better performance
@@ -288,11 +288,11 @@ class JobScheduler:
                 "priority": priority
             }
             
-            logging.info(f"Created job for case {case_id} with {beam_count} beams (GPUs will be allocated at execution)")
+            self.logger.info(f"Created job for case {case_id} with {beam_count} beams (GPUs will be allocated at execution)")
             return job
             
         except Exception as e:
-            logging.error(f"Error creating job for case {case_id}: {e}")
+            self.logger.error(f"Error creating job for case {case_id}: {e}")
             return None
 
     def schedule_case(self, case_id: str, priority: int = 0) -> bool:
@@ -301,24 +301,24 @@ class JobScheduler:
             try:
                 # Check if case is already scheduled or processing
                 if case_id in self.active_jobs:
-                    logging.warning(f"Case {case_id} is already being processed")
+                    self.logger.warning(f"Case {case_id} is already being processed")
                     return False
                 
                 # Check if case is already in queue
                 if any(job["case_id"] == case_id for job in self.job_queue):
-                    logging.warning(f"Case {case_id} is already in queue")
+                    self.logger.warning(f"Case {case_id} is already in queue")
                     return False
                 
                 # Analyze case
                 beam_count = self.analyze_case_beam_count(case_id)
                 
                 if beam_count == 0:
-                    logging.error(f"No beams found for case {case_id}")
+                    self.logger.error(f"No beams found for case {case_id}")
                     return False
                 
                 # Check if case can be scheduled
                 if not self.can_schedule_case(case_id, beam_count):
-                    logging.info(f"Case {case_id} cannot be scheduled now - will retry later")
+                    self.logger.info(f"Case {case_id} cannot be scheduled now - will retry later")
                     return False
                 
                 # Create job
@@ -333,11 +333,11 @@ class JobScheduler:
                 # Sort queue by priority (higher priority first)
                 self.job_queue.sort(key=lambda x: x["priority"], reverse=True)
                 
-                logging.info(f"Case {case_id} scheduled successfully")
+                self.logger.info(f"Case {case_id} scheduled successfully")
                 return True
                 
             except Exception as e:
-                logging.error(f"Error scheduling case {case_id}: {e}")
+                self.logger.error(f"Error scheduling case {case_id}: {e}")
                 return False
 
     def get_next_job(self) -> Optional[Dict[str, Any]]:
@@ -355,7 +355,7 @@ class JobScheduler:
                         gpu_allocation = self.gpu_manager.allocate_gpus(beam_count)
                         
                         if not gpu_allocation:
-                            logging.warning(f"Cannot allocate {beam_count} GPUs for case {job['case_id']} - keeping in queue")
+                            self.logger.warning(f"Cannot allocate {beam_count} GPUs for case {job['case_id']} - keeping in queue")
                             continue  # Try next job in queue
                         
                         # Move to active jobs with GPU allocation
@@ -365,7 +365,7 @@ class JobScheduler:
                         job["gpu_allocation"] = gpu_allocation
                         self.active_jobs[job["case_id"]] = job
                         
-                        logging.info(f"Started job for case {job['case_id']} with GPUs {gpu_allocation}")
+                        self.logger.info(f"Started job for case {job['case_id']} with GPUs {gpu_allocation}")
                         
                         # Update status display
                         if self.status_display:
@@ -382,7 +382,7 @@ class JobScheduler:
                 return None
                 
             except Exception as e:
-                logging.error(f"Error getting next job: {e}")
+                self.logger.error(f"Error getting next job: {e}")
                 # If allocation failed, make sure to release any partially allocated GPUs
                 if 'gpu_allocation' in locals() and gpu_allocation:
                     self.gpu_manager.release_gpus(gpu_allocation)
@@ -393,7 +393,7 @@ class JobScheduler:
         with self.lock:
             try:
                 if case_id not in self.active_jobs:
-                    logging.warning(f"Job for case {case_id} not found in active jobs")
+                    self.logger.warning(f"Job for case {case_id} not found in active jobs")
                     return False
                 
                 job = self.active_jobs[case_id]
@@ -401,7 +401,7 @@ class JobScheduler:
                 
                 if success:
                     job["status"] = "COMPLETED"
-                    logging.info(f"Job for case {case_id} completed successfully")
+                    self.logger.info(f"Job for case {case_id} completed successfully")
                     
                     # Update status display for success
                     if self.status_display:
@@ -414,7 +414,7 @@ class JobScheduler:
                 else:
                     job["status"] = "FAILED"
                     job["error_message"] = error_message
-                    logging.error(f"Job for case {case_id} failed: {error_message}")
+                    self.logger.error(f"Job for case {case_id} failed: {error_message}")
                     
                     # Update status display for failure
                     if self.status_display:
@@ -441,7 +441,7 @@ class JobScheduler:
                 return True
                 
             except Exception as e:
-                logging.error(f"Error completing job for case {case_id}: {e}")
+                self.logger.error(f"Error completing job for case {case_id}: {e}")
                 return False
 
     def cancel_job(self, case_id: str) -> bool:
@@ -457,7 +457,7 @@ class JobScheduler:
                         if job.get("gpu_allocation"):
                             self.gpu_manager.release_gpus(job["gpu_allocation"])
                         
-                        logging.info(f"Canceled queued job for case {case_id}")
+                        self.logger.info(f"Canceled queued job for case {case_id}")
                         return True
                 
                 # Check if job is active
@@ -474,14 +474,14 @@ class JobScheduler:
                     self.completed_jobs.append(job)
                     del self.active_jobs[case_id]
                     
-                    logging.info(f"Canceled active job for case {case_id}")
+                    self.logger.info(f"Canceled active job for case {case_id}")
                     return True
                 
-                logging.warning(f"Job for case {case_id} not found")
+                self.logger.warning(f"Job for case {case_id} not found")
                 return False
                 
             except Exception as e:
-                logging.error(f"Error canceling job for case {case_id}: {e}")
+                self.logger.error(f"Error canceling job for case {case_id}: {e}")
                 return False
 
     def get_job_status(self, case_id: str) -> Optional[str]:
@@ -554,7 +554,7 @@ class JobScheduler:
             cleaned_count = initial_count - len(self.completed_jobs)
             
             if cleaned_count > 0:
-                logging.info(f"Cleaned up {cleaned_count} old completed jobs")
+                self.logger.info(f"Cleaned up {cleaned_count} old completed jobs")
             
             return cleaned_count
 
@@ -575,7 +575,7 @@ class JobScheduler:
                     # Reschedule
                     if self.schedule_case(case_id, job["priority"]):
                         retry_count += 1
-                        logging.info(f"Retrying failed job for case {case_id}")
+                        self.logger.info(f"Retrying failed job for case {case_id}")
             
             return retry_count
 

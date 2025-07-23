@@ -1,6 +1,5 @@
 import paramiko
 import time
-import logging
 import socket
 import shlex
 from typing import Dict, List, Optional, Any
@@ -82,7 +81,7 @@ class RemoteExecutor(BaseSSHConnector):
                 self.ssh.exec_command("echo test", timeout=5)
                 return True
             except Exception as e:
-                logging.warning(f"SSH connection test failed, reconnecting: {e}")
+                self.logger.warning(f"SSH connection test failed, reconnecting: {e}")
                 self.connected = False
                 self.ssh = None
         
@@ -126,7 +125,7 @@ class RemoteExecutor(BaseSSHConnector):
                     "host": self.host
                 })
             else:
-                logging.error(f"Command execution failed: {e}")
+                self.logger.error(f"Command execution failed: {e}")
             return {
                 "stdout": "",
                 "stderr": f"Execution error: {str(e)}",
@@ -203,7 +202,7 @@ class RemoteExecutor(BaseSSHConnector):
                     "host": self.host
                 })
             else:
-                logging.error(f"Streaming command execution failed: {e}")
+                self.logger.error(f"Streaming command execution failed: {e}")
             return {
                 "stdout": "\n".join(stdout_lines) if 'stdout_lines' in locals() else "",
                 "stderr": f"Execution error: {str(e)}",
@@ -262,10 +261,10 @@ class RemoteExecutor(BaseSSHConnector):
         result = self.execute_command(command)
         
         if result["exit_code"] == 0:
-            logging.info(f"Python script executed successfully using {self.venv_python_path}: {script_path}")
+            self.logger.info(f"Python script executed successfully using {self.venv_python_path}: {script_path}")
             return True
         else:
-            logging.error(f"Python script failed: {script_path}, Error: {result['stderr']}")
+            self.logger.error(f"Python script failed: {script_path}, Error: {result['stderr']}")
             return False
 
 
@@ -297,7 +296,7 @@ class RemoteExecutor(BaseSSHConnector):
                 "output_dir": self.moqui_outputs_path
             })
         else:
-            logging.info(f"Executing MOQUI interpreter for case {case_id} with command: {command}")
+            self.logger.info(f"Executing MOQUI interpreter for case {case_id} with command: {command}")
 
         # Update status display - starting interpreter
         if status_display:
@@ -343,7 +342,7 @@ class RemoteExecutor(BaseSSHConnector):
                     "execution_time_s": "measured_in_caller" # Could be enhanced
                 })
             else:
-                logging.info(log_message)
+                self.logger.info(log_message)
             if status_display:
                 status_display.update_case_status(
                     case_id=case_id,
@@ -357,8 +356,8 @@ class RemoteExecutor(BaseSSHConnector):
                 self.logger.warning(f"MOQUI interpreter completed with warnings for case {case_id}")
                 self.logger.warning(f"Python warnings/errors detected: {stdout_output}")
             else:
-                logging.warning(f"MOQUI interpreter completed with warnings for case {case_id}")
-                logging.warning(f"Output contains errors: {log_message}")
+                self.logger.warning(f"MOQUI interpreter completed with warnings for case {case_id}")
+                self.logger.warning(f"Output contains errors: {log_message}")
             if status_display:
                 status_display.update_case_status(
                     case_id=case_id,
@@ -387,8 +386,8 @@ class RemoteExecutor(BaseSSHConnector):
                     "command": command
                 })
             else:
-                logging.error(f"MOQUI interpreter FAILED for case {case_id}")
-                logging.error(log_message)
+                self.logger.error(f"MOQUI interpreter FAILED for case {case_id}")
+                self.logger.error(log_message)
                 
             if status_display:
                 # Show more error details in status display
@@ -433,7 +432,7 @@ class RemoteExecutor(BaseSSHConnector):
                     "gpu_id": gpu_id
                 })
             else:
-                logging.info(f"MOQUI beam {beam_id} completed for case: {case_id} on GPU {gpu_id}")
+                self.logger.info(f"MOQUI beam {beam_id} completed for case: {case_id} on GPU {gpu_id}")
             if status_display:
                 status_display.update_case_status(
                     case_id=case_id,
@@ -454,7 +453,7 @@ class RemoteExecutor(BaseSSHConnector):
                     "exit_code": result['exit_code']
                 })
             else:
-                logging.error(f"MOQUI beam {beam_id} failed for case: {case_id}, Error: {result['stderr']}")
+                self.logger.error(f"MOQUI beam {beam_id} failed for case: {case_id}, Error: {result['stderr']}")
             if status_display:
                 status_display.update_case_status(
                     case_id=case_id,
@@ -494,7 +493,7 @@ class RemoteExecutor(BaseSSHConnector):
                     "stdout": result['stdout'].strip()
                 })
             else:
-                logging.info(f"Raw to DICOM conversion completed for case: {case_id}")
+                self.logger.info(f"Raw to DICOM conversion completed for case: {case_id}")
             if status_display:
                 status_display.update_case_status(
                     case_id=case_id,
@@ -513,7 +512,7 @@ class RemoteExecutor(BaseSSHConnector):
                     "exit_code": result['exit_code']
                 })
             else:
-                logging.error(f"Raw to DICOM conversion failed for case: {case_id}, Error: {result['stderr']}")
+                self.logger.error(f"Raw to DICOM conversion failed for case: {case_id}, Error: {result['stderr']}")
             if status_display:
                 status_display.update_case_status(
                     case_id=case_id,
@@ -552,10 +551,10 @@ class RemoteExecutor(BaseSSHConnector):
         result = self.execute_command(command)
         
         if result["exit_code"] == 0:
-            logging.info(f"Process {pid} killed successfully")
+            self.logger.info(f"Process {pid} killed successfully")
             return True
         else:
-            logging.error(f"Failed to kill process {pid}: {result['stderr']}")
+            self.logger.error(f"Failed to kill process {pid}: {result['stderr']}")
             return False
 
     def check_file_exists(self, file_path: str) -> bool:
@@ -579,10 +578,10 @@ class RemoteExecutor(BaseSSHConnector):
         result = self.execute_command(command)
         
         if result["exit_code"] == 0:
-            logging.info(f"Directory created: {dir_path}")
+            self.logger.info(f"Directory created: {dir_path}")
             return True
         else:
-            logging.error(f"Failed to create directory {dir_path}: {result['stderr']}")
+            self.logger.error(f"Failed to create directory {dir_path}: {result['stderr']}")
             return False
 
     def get_system_info(self) -> Dict[str, str]:
@@ -624,10 +623,10 @@ class RemoteExecutor(BaseSSHConnector):
         result = self.execute_command(command)
         
         if result["exit_code"] == 0:
-            logging.info(f"Cleanup completed in {directory}")
+            self.logger.info(f"Cleanup completed in {directory}")
             return True
         else:
-            logging.error(f"Cleanup failed in {directory}: {result['stderr']}")
+            self.logger.error(f"Cleanup failed in {directory}: {result['stderr']}")
             return False
 
     def get_disk_usage(self, path: str = "/") -> Dict[str, str]:

@@ -1,4 +1,3 @@
-import logging
 import shutil
 import time
 from pathlib import Path
@@ -25,32 +24,32 @@ class DirectoryManager:
                 return True
             
             path.mkdir(parents=True, exist_ok=True)
-            logging.info(f"Created local directory: {directory_path}")
+            self.logger.info(f"Created local directory: {directory_path}")
             return True
             
         except Exception as e:
-            logging.error(f"Failed to create local directory {directory_path}: {e}")
+            self.logger.error(f"Failed to create local directory {directory_path}: {e}")
             return False
 
     def ensure_remote_directory(self, directory_path: str) -> bool:
         """Ensure remote directory exists, create if necessary."""
         try:
             if not self.remote_executor:
-                logging.error("Remote executor not available")
+                self.logger.error("Remote executor not available")
                 return False
             
             if self.remote_executor.check_directory_exists(directory_path):
                 return True
             
             if self.remote_executor.create_directory(directory_path):
-                logging.info(f"Created remote directory: {directory_path}")
+                self.logger.info(f"Created remote directory: {directory_path}")
                 return True
             else:
-                logging.error(f"Failed to create remote directory: {directory_path}")
+                self.logger.error(f"Failed to create remote directory: {directory_path}")
                 return False
                 
         except Exception as e:
-            logging.error(f"Error ensuring remote directory {directory_path}: {e}")
+            self.logger.error(f"Error ensuring remote directory {directory_path}: {e}")
             return False
 
     def create_case_workspace(self, case_id: str) -> bool:
@@ -66,11 +65,11 @@ class DirectoryManager:
             if not self.ensure_remote_directory(remote_path):
                 return False
             
-            logging.info(f"Created workspace for case: {case_id}")
+            self.logger.info(f"Created workspace for case: {case_id}")
             return True
             
         except Exception as e:
-            logging.error(f"Error creating workspace for case {case_id}: {e}")
+            self.logger.error(f"Error creating workspace for case {case_id}: {e}")
             return False
 
     def create_output_directory(self, case_id: str, date: Optional[datetime] = None) -> bool:
@@ -82,13 +81,13 @@ class DirectoryManager:
             output_path = self.get_case_output_path(case_id, date)
             
             if self.ensure_local_directory(str(output_path)):
-                logging.info(f"Created output directory for case: {case_id}")
+                self.logger.info(f"Created output directory for case: {case_id}")
                 return True
             else:
                 return False
                 
         except Exception as e:
-            logging.error(f"Error creating output directory for case {case_id}: {e}")
+            self.logger.error(f"Error creating output directory for case {case_id}: {e}")
             return False
 
     def get_case_local_path(self, case_id: str) -> Path:
@@ -116,7 +115,7 @@ class DirectoryManager:
             return case_path.exists() and case_path.is_dir()
             
         except Exception as e:
-            logging.error(f"Error validating case directory {case_id}: {e}")
+            self.logger.error(f"Error validating case directory {case_id}: {e}")
             return False
 
     def validate_remote_case_directory(self, case_id: str) -> bool:
@@ -129,7 +128,7 @@ class DirectoryManager:
             return self.remote_executor.check_directory_exists(remote_path)
             
         except Exception as e:
-            logging.error(f"Error validating remote case directory {case_id}: {e}")
+            self.logger.error(f"Error validating remote case directory {case_id}: {e}")
             return False
 
     def cleanup_old_directories(self, days: int = 30) -> int:
@@ -148,14 +147,14 @@ class DirectoryManager:
                         if directory.stat().st_mtime < cutoff_time:
                             shutil.rmtree(directory)
                             cleaned_count += 1
-                            logging.info(f"Removed old directory: {directory}")
+                            self.logger.info(f"Removed old directory: {directory}")
                     except Exception as e:
-                        logging.warning(f"Failed to remove directory {directory}: {e}")
+                        self.logger.warning(f"Failed to remove directory {directory}: {e}")
             
             return cleaned_count
             
         except Exception as e:
-            logging.error(f"Error cleaning up old directories: {e}")
+            self.logger.error(f"Error cleaning up old directories: {e}")
             return 0
 
     def get_directory_size(self, directory_path: str) -> int:
@@ -177,7 +176,7 @@ class DirectoryManager:
             return total_size
             
         except Exception as e:
-            logging.error(f"Error getting directory size {directory_path}: {e}")
+            self.logger.error(f"Error getting directory size {directory_path}: {e}")
             return 0
 
     def get_remote_directory_size(self, directory_path: str) -> int:
@@ -197,7 +196,7 @@ class DirectoryManager:
             return 0
             
         except Exception as e:
-            logging.error(f"Error getting remote directory size {directory_path}: {e}")
+            self.logger.error(f"Error getting remote directory size {directory_path}: {e}")
             return 0
 
     def list_case_directories(self) -> List[str]:
@@ -214,7 +213,7 @@ class DirectoryManager:
             return sorted(case_ids)
             
         except Exception as e:
-            logging.error(f"Error listing case directories: {e}")
+            self.logger.error(f"Error listing case directories: {e}")
             return []
 
     def list_remote_case_directories(self) -> List[str]:
@@ -239,7 +238,7 @@ class DirectoryManager:
             return sorted(case_ids)
             
         except Exception as e:
-            logging.error(f"Error listing remote case directories: {e}")
+            self.logger.error(f"Error listing remote case directories: {e}")
             return []
 
     def get_directory_info(self, case_id: str) -> Dict[str, Any]:
@@ -280,14 +279,14 @@ class DirectoryManager:
             return info
             
         except Exception as e:
-            logging.error(f"Error getting directory info for {case_id}: {e}")
+            self.logger.error(f"Error getting directory info for {case_id}: {e}")
             return {"case_id": case_id, "exists": False, "size_bytes": 0}
 
     def sync_directories(self, case_id: str, direction: str = "upload", status_display=None) -> bool:
         """Sync directories between local and remote."""
         try:
             if not self.sftp_manager:
-                logging.error("SFTP manager not available")
+                self.logger.error("SFTP manager not available")
                 return False
             
             if direction == "upload":
@@ -311,11 +310,11 @@ class DirectoryManager:
                 return self.sftp_manager.download_directory(remote_path, local_path, status_display, case_id)
                 
             else:
-                logging.error(f"Invalid sync direction: {direction}")
+                self.logger.error(f"Invalid sync direction: {direction}")
                 return False
                 
         except Exception as e:
-            logging.error(f"Error syncing directories for case {case_id}: {e}")
+            self.logger.error(f"Error syncing directories for case {case_id}: {e}")
             return False
 
     def backup_case_directory(self, case_id: str, backup_location: str) -> bool:
@@ -324,7 +323,7 @@ class DirectoryManager:
             case_path = self.get_case_local_path(case_id)
             
             if not self.validate_case_directory(case_id):
-                logging.error(f"Case directory not found: {case_id}")
+                self.logger.error(f"Case directory not found: {case_id}")
                 return False
             
             backup_path = Path(backup_location) / f"{case_id}_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -332,11 +331,11 @@ class DirectoryManager:
             # Create backup
             shutil.copytree(case_path, backup_path)
             
-            logging.info(f"Created backup for case {case_id} at {backup_path}")
+            self.logger.info(f"Created backup for case {case_id} at {backup_path}")
             return True
             
         except Exception as e:
-            logging.error(f"Error creating backup for case {case_id}: {e}")
+            self.logger.error(f"Error creating backup for case {case_id}: {e}")
             return False
 
     def restore_case_directory(self, case_id: str, backup_path: str) -> bool:
@@ -346,7 +345,7 @@ class DirectoryManager:
             target_path = self.get_case_local_path(case_id)
             
             if not source_path.exists():
-                logging.error(f"Backup not found: {backup_path}")
+                self.logger.error(f"Backup not found: {backup_path}")
                 return False
             
             # Remove existing directory if it exists
@@ -356,11 +355,11 @@ class DirectoryManager:
             # Restore from backup
             shutil.copytree(source_path, target_path)
             
-            logging.info(f"Restored case {case_id} from backup {backup_path}")
+            self.logger.info(f"Restored case {case_id} from backup {backup_path}")
             return True
             
         except Exception as e:
-            logging.error(f"Error restoring case {case_id} from backup: {e}")
+            self.logger.error(f"Error restoring case {case_id} from backup: {e}")
             return False
 
     def get_disk_usage(self) -> Dict[str, Any]:
@@ -400,7 +399,7 @@ class DirectoryManager:
             return usage_info
             
         except Exception as e:
-            logging.error(f"Error getting disk usage: {e}")
+            self.logger.error(f"Error getting disk usage: {e}")
             return {}
 
     def verify_directory_integrity(self, case_id: str) -> Dict[str, Any]:
@@ -448,7 +447,7 @@ class DirectoryManager:
             return integrity_info
             
         except Exception as e:
-            logging.error(f"Error verifying directory integrity for {case_id}: {e}")
+            self.logger.error(f"Error verifying directory integrity for {case_id}: {e}")
             return {"case_id": case_id, "valid": False, "errors": [str(e)]}
 
     def get_directory_tree(self, case_id: str, max_depth: int = 3) -> Dict[str, Any]:
@@ -482,5 +481,5 @@ class DirectoryManager:
             }
             
         except Exception as e:
-            logging.error(f"Error getting directory tree for {case_id}: {e}")
+            self.logger.error(f"Error getting directory tree for {case_id}: {e}")
             return {"case_id": case_id, "tree": {}, "exists": False, "error": str(e)}

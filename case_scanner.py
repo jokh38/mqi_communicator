@@ -2,17 +2,17 @@ import json
 import hashlib
 import os
 import tempfile
-import logging
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
 
 
 class CaseScanner:
-    def __init__(self, base_path: str, status_file: str = "case_status.json", stability_period_seconds: int = 10):
+    def __init__(self, base_path: str, status_file: str = "case_status.json", stability_period_seconds: int = 10, logger=None):
         self.base_path = Path(base_path)
         self.status_file = Path(status_file)
         self.stability_period_seconds = stability_period_seconds
+        self.logger = logger
         self.case_status = self._load_case_status()
 
     def _load_case_status(self) -> Dict[str, Any]:
@@ -110,33 +110,33 @@ class CaseScanner:
         """Scan base directory for new or modified cases."""
         new_cases = []
         
-        logging.info(f"Scanning directory: {self.base_path}")
+        self.logger.info(f"Scanning directory: {self.base_path}")
         
         if not self.base_path.exists():
-            logging.warning(f"Base path does not exist: {self.base_path}")
+            self.logger.warning(f"Base path does not exist: {self.base_path}")
             return new_cases
         
         try:
             directories_found = list(self.base_path.iterdir())
-            logging.info(f"Found {len(directories_found)} items in base path")
+            self.logger.info(f"Found {len(directories_found)} items in base path")
             
             for case_dir in directories_found:
                 if not case_dir.is_dir():
-                    logging.debug(f"Skipping non-directory: {case_dir}")
+                    self.logger.debug(f"Skipping non-directory: {case_dir}")
                     continue
                 
                 case_id = case_dir.name
-                logging.info(f"Processing case directory: {case_id}")
+                self.logger.info(f"Processing case directory: {case_id}")
                 
                 # Validate case directory
                 if not self._validate_case_directory(case_id):
-                    logging.warning(f"Case directory validation failed: {case_id}")
+                    self.logger.warning(f"Case directory validation failed: {case_id}")
                     continue
                 
                 # Check for directory stability
                 last_mod_time = self._get_last_modified_time(case_dir)
                 if last_mod_time and (datetime.now().timestamp() - last_mod_time) < self.stability_period_seconds:
-                    logging.info(f"Case '{case_id}' is still being modified. Skipping for now.")
+                    self.logger.info(f"Case '{case_id}' is still being modified. Skipping for now.")
                     continue
 
                 # Calculate current hash
@@ -144,18 +144,18 @@ class CaseScanner:
                 
                 # Check if case is new or modified
                 if self._is_case_new(case_id, current_hash):
-                    logging.info(f"New case detected: {case_id}")
+                    self.logger.info(f"New case detected: {case_id}")
                     new_cases.append(case_id)
                     
                     # Update case status as NEW
                     self.update_case_status(case_id, "NEW", folder_hash=current_hash)
                 else:
-                    logging.debug(f"Case already processed: {case_id}")
+                    self.logger.debug(f"Case already processed: {case_id}")
         
         except (OSError, IOError) as e:
-            logging.error(f"Error scanning directory: {e}")
+            self.logger.error(f"Error scanning directory: {e}")
         
-        logging.info(f"Case scan completed. Found {len(new_cases)} new cases")
+        self.logger.info(f"Case scan completed. Found {len(new_cases)} new cases")
         return new_cases
 
     def update_case_status(self, case_id: str, status: str, folder_hash: str = "", 
@@ -234,7 +234,6 @@ class CaseScanner:
 
     def archive_old_cases(self, days: int = 30) -> None:
         """Archive old completed or failed cases to a separate file."""
-        import logging
         if not self.case_status:
             return
 
@@ -267,16 +266,16 @@ class CaseScanner:
                 with open(archive_filepath, 'r', encoding='utf-8') as f:
                     archived_data = json.load(f)
             except (json.JSONDecodeError, FileNotFoundError):
-                logging.warning(f"Could not read existing archive file: {archive_filepath}")
+                self.logger.warning(f"Could not read existing archive file: {archive_filepath}")
 
         archived_data.update(cases_to_archive)
         
         try:
             with open(archive_filepath, 'w', encoding='utf-8') as f:
                 json.dump(archived_data, f, indent=2, ensure_ascii=False)
-            logging.info(f"Archived {len(cases_to_archive)} cases to {archive_filepath}")
+            self.logger.info(f"Archived {len(cases_to_archive)} cases to {archive_filepath}")
         except IOError as e:
-            logging.error(f"Failed to write to archive file: {e}")
+            self.logger.error(f"Failed to write to archive file: {e}")
             return
 
         for case_id in cases_to_archive:
@@ -284,7 +283,7 @@ class CaseScanner:
                 del self.case_status[case_id]
         
         self._save_case_status()
-        logging.info("Cleaned up archived cases from status file.")
+        self.logger.info("Cleaned up archived cases from status file.")
 
     def reset_case_status(self, case_id: str) -> bool:
         """Reset case status to allow reprocessing."""
@@ -328,10 +327,10 @@ class CaseScanner:
                     self.case_status[case_id]["retry_count"] = info.get("retry_count", 0) + 1
                     
                     recovered_cases.append(case_id)
-                    logging.warning(f"Recovered stale case {case_id} (processing for {max_processing_hours}+ hours)")
+                    self.logger.warning(f"Recovered stale case {case_id} (processing for {max_processing_hours}+ hours)")
             
             except (ValueError, TypeError) as e:
-                logging.error(f"Error parsing start_time for case {case_id}: {e}")
+                self.logger.error(f"Error parsing start_time for case {case_id}: {e}")
                 continue
         
         if recovered_cases:

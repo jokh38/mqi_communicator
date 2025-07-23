@@ -1,4 +1,3 @@
-import logging
 import time
 import traceback
 from datetime import datetime, timedelta
@@ -77,14 +76,14 @@ class ErrorHandler:
                 try:
                     self.error_callback(error, context)
                 except Exception as callback_error:
-                    logging.error(f"Error in error callback: {callback_error}")
+                    self.logger.error(f"Error in error callback: {callback_error}")
             
             # Handle critical errors
             if self.is_critical_error(error):
                 self._handle_critical_error(error, context)
                 
         except Exception as handler_error:
-            logging.error(f"Error in error handler: {handler_error}")
+            self.logger.error(f"Error in error handler: {handler_error}")
 
     def _classify_error(self, error: Exception) -> ErrorType:
         """Classify error type based on exception type and message."""
@@ -152,12 +151,12 @@ class ErrorHandler:
                     self.logger.error(message)
             else:
                 if error_record["is_critical"]:
-                    logging.critical(message)
+                    self.logger.critical(message)
                 else:
-                    logging.error(message)
+                    self.logger.error(message)
                 
         except Exception as log_error:
-            logging.error(f"Failed to log error: {log_error}")
+            self.logger.error(f"Failed to log error: {log_error}")
 
     def _handle_critical_error(self, error: Exception, context: Dict[str, Any]) -> None:
         """Handle critical errors that require immediate attention."""
@@ -169,7 +168,7 @@ class ErrorHandler:
                     "cleanup_initiated": True
                 })
             else:
-                logging.critical(f"Critical error detected: {error}")
+                self.logger.critical(f"Critical error detected: {error}")
             
             # Perform emergency cleanup
             self.cleanup_resources()
@@ -179,10 +178,10 @@ class ErrorHandler:
             if self.logger:
                 self.logger.critical("Emergency cleanup completed")
             else:
-                logging.critical("Emergency cleanup completed")
+                self.logger.critical("Emergency cleanup completed")
             
         except Exception as critical_error:
-            logging.error(f"Error handling critical error: {critical_error}")
+            self.logger.error(f"Error handling critical error: {critical_error}")
 
     def should_retry(self, error: Exception, attempt: int) -> bool:
         """Determine if an error should be retried."""
@@ -262,7 +261,7 @@ class ErrorHandler:
                             "operation": "retryable_operation"
                         })
                     else:
-                        logging.info(f"Retrying in {delay:.2f} seconds (attempt {attempt + 1}/{max_attempts})")
+                        self.logger.info(f"Retrying in {delay:.2f} seconds (attempt {attempt + 1}/{max_attempts})")
                     time.sleep(delay)
                     continue
                 else:
@@ -279,17 +278,17 @@ class ErrorHandler:
                 try:
                     cleanup_func()
                 except Exception as cleanup_error:
-                    logging.error(f"Error in cleanup function: {cleanup_error}")
+                    self.logger.error(f"Error in cleanup function: {cleanup_error}")
                     
         except Exception as cleanup_error:
-            logging.error(f"Error during resource cleanup: {cleanup_error}")
+            self.logger.error(f"Error during resource cleanup: {cleanup_error}")
 
     def register_cleanup_function(self, cleanup_func: Callable) -> None:
         """Register a cleanup function to be called on error."""
         try:
             self.cleanup_functions.append(cleanup_func)
         except Exception as register_error:
-            logging.error(f"Error registering cleanup function: {register_error}")
+            self.logger.error(f"Error registering cleanup function: {register_error}")
 
     def is_critical_error(self, error: Exception) -> bool:
         """Check if error is critical and requires immediate attention."""
@@ -347,7 +346,7 @@ class ErrorHandler:
             return stats
             
         except Exception as stats_error:
-            logging.error(f"Error getting statistics: {stats_error}")
+            self.logger.error(f"Error getting statistics: {stats_error}")
             return {"total_errors": 0}
 
     def get_recent_errors(self, limit: int = 10) -> List[Dict[str, Any]]:
@@ -369,16 +368,16 @@ class ErrorHandler:
             return recent_errors[::-1]
             
         except Exception as recent_error:
-            logging.error(f"Error getting recent errors: {recent_error}")
+            self.logger.error(f"Error getting recent errors: {recent_error}")
             return []
 
     def clear_error_history(self) -> None:
         """Clear error history."""
         try:
             self.error_history.clear()
-            logging.info("Error history cleared")
+            self.logger.info("Error history cleared")
         except Exception as clear_error:
-            logging.error(f"Error clearing history: {clear_error}")
+            self.logger.error(f"Error clearing history: {clear_error}")
 
     def create_error_report(self) -> Dict[str, Any]:
         """Create comprehensive error report."""
@@ -394,7 +393,7 @@ class ErrorHandler:
                 }
             }
         except Exception as report_error:
-            logging.error(f"Error creating error report: {report_error}")
+            self.logger.error(f"Error creating error report: {report_error}")
             return {"error": "Failed to generate report"}
 
     def set_error_callback(self, callback: Callable) -> None:
@@ -402,7 +401,7 @@ class ErrorHandler:
         try:
             self.error_callback = callback
         except Exception as callback_error:
-            logging.error(f"Error setting error callback: {callback_error}")
+            self.logger.error(f"Error setting error callback: {callback_error}")
 
     def reset(self) -> None:
         """Reset error handler state."""
@@ -410,9 +409,9 @@ class ErrorHandler:
             self.error_history.clear()
             self.cleanup_functions.clear()
             self.error_callback = None
-            logging.info("Error handler reset")
+            self.logger.info("Error handler reset")
         except Exception as reset_error:
-            logging.error(f"Error resetting error handler: {reset_error}")
+            self.logger.error(f"Error resetting error handler: {reset_error}")
 
     def __enter__(self):
         """Context manager entry."""
@@ -428,7 +427,7 @@ class ErrorHandler:
             self.cleanup_resources()
             
         except Exception as exit_error:
-            logging.error(f"Error in context manager exit: {exit_error}")
+            self.logger.error(f"Error in context manager exit: {exit_error}")
         
         # Don't suppress exceptions
         return False
@@ -437,25 +436,25 @@ class ErrorHandler:
         """Configure retry strategy for specific error type."""
         try:
             self.retry_strategies[error_type] = strategy
-            logging.info(f"Retry strategy for {error_type.value} set to {strategy.value}")
+            self.logger.info(f"Retry strategy for {error_type.value} set to {strategy.value}")
         except Exception as config_error:
-            logging.error(f"Error configuring retry strategy: {config_error}")
+            self.logger.error(f"Error configuring retry strategy: {config_error}")
 
     def add_retryable_error_type(self, error_type: ErrorType) -> None:
         """Add error type to retryable errors."""
         try:
             self.retryable_errors.add(error_type)
-            logging.info(f"Added {error_type.value} to retryable errors")
+            self.logger.info(f"Added {error_type.value} to retryable errors")
         except Exception as add_error:
-            logging.error(f"Error adding retryable error type: {add_error}")
+            self.logger.error(f"Error adding retryable error type: {add_error}")
 
     def remove_retryable_error_type(self, error_type: ErrorType) -> None:
         """Remove error type from retryable errors."""
         try:
             self.retryable_errors.discard(error_type)
-            logging.info(f"Removed {error_type.value} from retryable errors")
+            self.logger.info(f"Removed {error_type.value} from retryable errors")
         except Exception as remove_error:
-            logging.error(f"Error removing retryable error type: {remove_error}")
+            self.logger.error(f"Error removing retryable error type: {remove_error}")
 
     def get_error_trends(self, hours: int = 24) -> Dict[str, Any]:
         """Get error trends over specified time period."""
@@ -484,7 +483,7 @@ class ErrorHandler:
             return trends
             
         except Exception as trends_error:
-            logging.error(f"Error getting error trends: {trends_error}")
+            self.logger.error(f"Error getting error trends: {trends_error}")
             return {"error": "Failed to get trends"}
 
     def export_error_history(self, file_path: str) -> bool:
@@ -511,9 +510,9 @@ class ErrorHandler:
             with open(file_path, 'w') as f:
                 json.dump(export_data, f, indent=2)
             
-            logging.info(f"Error history exported to {file_path}")
+            self.logger.info(f"Error history exported to {file_path}")
             return True
             
         except Exception as export_error:
-            logging.error(f"Error exporting error history: {export_error}")
+            self.logger.error(f"Error exporting error history: {export_error}")
             return False

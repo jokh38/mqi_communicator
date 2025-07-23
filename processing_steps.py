@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
-import logging
 
 
 @dataclass
@@ -68,7 +67,7 @@ class CreateWorkspaceStep(ProcessingStep):
     def execute(self, context: ProcessingContext) -> bool:
         """Create workspace directories."""
         if not context.directory_manager.create_case_workspace(context.case_id):
-            logging.error(f"Failed to create workspace for case: {context.case_id}")
+            context.logger.error(f"Failed to create workspace for case: {context.case_id}")
             return False
         
         return True
@@ -91,7 +90,7 @@ class UploadDataStep(ProcessingStep):
             status_display=context.status_display,
             case_id=context.case_id
         ):
-            logging.error(f"Failed to upload data for case: {context.case_id}")
+            context.logger.error(f"Failed to upload data for case: {context.case_id}")
             return False
         
         # Save the remote path to the case status file
@@ -118,7 +117,7 @@ class RunInterpreterStep(ProcessingStep):
             context.case_id, 
             status_display=context.status_display
         ):
-            logging.error(f"Failed to run interpreter for case: {context.case_id}")
+            context.logger.error(f"Failed to run interpreter for case: {context.case_id}")
             return False
         
         return True
@@ -135,7 +134,7 @@ class ExecuteBeamCalculationsStep(ProcessingStep):
         # Get next job from scheduler
         job = context.job_scheduler.get_next_job()
         if not job:
-            logging.error(f"Failed to get job for case: {context.case_id}")
+            context.logger.error(f"Failed to get job for case: {context.case_id}")
             return False
         
         # Update context with GPU allocation
@@ -156,7 +155,7 @@ class ExecuteBeamCalculationsStep(ProcessingStep):
         context.job_scheduler.complete_job(context.case_id, success)
         
         if not success:
-            logging.error(f"Failed to execute beams for case: {context.case_id}")
+            context.logger.error(f"Failed to execute beams for case: {context.case_id}")
             return False
         
         return True
@@ -171,7 +170,7 @@ class RunConverterStep(ProcessingStep):
     def execute(self, context: ProcessingContext) -> bool:
         """Run raw to DICOM converter."""
         if not context.remote_executor.run_raw_to_dicom_converter(context.case_id, status_display=context.status_display):
-            logging.error(f"Failed to run converter for case: {context.case_id}")
+            context.logger.error(f"Failed to run converter for case: {context.case_id}")
             return False
         
         return True
@@ -186,7 +185,7 @@ class CreateOutputDirectoryStep(ProcessingStep):
     def execute(self, context: ProcessingContext) -> bool:
         """Create output directory."""
         if not context.directory_manager.create_output_directory(context.case_id):
-            logging.error(f"Failed to create output directory for case: {context.case_id}")
+            context.logger.error(f"Failed to create output directory for case: {context.case_id}")
             return False
         
         return True
@@ -206,7 +205,7 @@ class CheckDiskSpaceStep(ProcessingStep):
         if not local_space["sufficient"]:
             error_msg = (f"Insufficient local disk space for case {context.case_id}: "
                         f"need {estimated_download_size}GB, have {local_space['free_gb']}GB")
-            logging.error(error_msg)
+            context.logger.error(error_msg)
             raise Exception(error_msg)
         
         return True
@@ -228,7 +227,7 @@ class DownloadResultsStep(ProcessingStep):
             status_display=context.status_display,
             case_id=context.case_id
         ):
-            logging.error(f"Failed to download results for case: {context.case_id}")
+            context.logger.error(f"Failed to download results for case: {context.case_id}")
             return False
         
         return True
@@ -275,16 +274,16 @@ class WorkflowEngine:
         
         try:
             for step in steps:
-                logging.info(f"Executing step: {step.name} for case {context.case_id}")
+                context.logger.info(f"Executing step: {step.name} for case {context.case_id}")
                 
                 if not step.execute(context):
-                    logging.error(f"Step {step.name} failed for case {context.case_id}")
+                    context.logger.error(f"Step {step.name} failed for case {context.case_id}")
                     return False
             
             return True
             
         except Exception as e:
-            logging.error(f"Workflow execution failed for case {context.case_id}: {e}")
+            context.logger.error(f"Workflow execution failed for case {context.case_id}: {e}")
             return False
     
     def create_context(self, case_id: str, **resources) -> ProcessingContext:
