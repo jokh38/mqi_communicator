@@ -244,11 +244,11 @@ class MainController:
             self.logger = Logger(log_directory="logs", config=self.config.get("logging", {}), log_queue=self.log_queue)
             
             # Log session start with spacer
-            logging.info("=" * 80)
-            logging.info(f"{'=' * 20} START NEW SESSION {'=' * 20}")
-            logging.info(f"Session started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-            logging.info(f"Process ID: {os.getpid()}")
-            logging.info("=" * 80)
+            self.logger.info("=" * 80)
+            self.logger.info(f"{'=' * 20} START NEW SESSION {'=' * 20}")
+            self.logger.info(f"Session started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            self.logger.info(f"Process ID: {os.getpid()}")
+            self.logger.info("=" * 80)
 
             # Initialize error handler
             self.error_handler = ErrorHandler(logger=self.logger)
@@ -335,7 +335,6 @@ class MainController:
                 self.logger.critical(f"Failed to initialize components: {e}")
             else:
                 # Fallback to console when logger is not available
-                import logging
                 logging.error(f"Failed to initialize components: {e}")
             
             # Also update status display if available
@@ -896,7 +895,6 @@ class MainController:
             if hasattr(self, 'logger'):
                 self.logger.error(f"Error during shutdown: {e}")
             else:
-                import logging
                 logging.error(f"Error during shutdown: {e}")
             
             # Update status display if available
@@ -928,7 +926,6 @@ class MainController:
             if hasattr(self, 'logger'):
                 self.logger.error(f"Error during resource cleanup: {e}")
             else:
-                import logging
                 logging.error(f"Error during resource cleanup: {e}")
             
             # Update status display if available
