@@ -9,7 +9,7 @@
   },
   "paths": {
     "local_logdata": "C:\\moqui\\log_data",
-    "remote_workspace": "MOQUI_SMC/tps",
+    "remote_workspace": "/home/gpuadmin/MOQUI_SMC/tps",
     "local_output": "C:\\moqui\\dose_dcm",
     "linux_mqi_interpreter": "/home/gpuadmin/MOQUI_SMC/mqi_interpreter/main_cli.py",
     "linux_moqui_binary": "/home/gpuadmin/MOQUI_SMC/moqui/main",
@@ -45,6 +45,7 @@
     "console_output": false,
     "filter_sensitive": true,
     "quiet_file_transfers": true,
+    "summary_only_transfers": true,
     "format": "%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s"
   }
 }

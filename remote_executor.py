@@ -156,10 +156,11 @@ class RemoteExecutor(BaseSSHConnector):
         self.create_directory(self.moqui_outputs_path)
         
         # Enhanced command to capture all error output including Python tracebacks
-        command = (f"cd {shlex.quote(case_path)} && "
-                   f"{self.venv_python_path} -u {shlex.quote(self.mqi_interpreter_path)} "
+        # Use absolute paths instead of cd command for better reliability
+        command = (f"{self.venv_python_path} -u {shlex.quote(self.mqi_interpreter_path)} "
                    f"--logdir {shlex.quote(log_directory)} "
-                   f"--outputdir {shlex.quote(self.moqui_outputs_path)} 2>&1")
+                   f"--outputdir {shlex.quote(self.moqui_outputs_path)} "
+                   f"--workdir {shlex.quote(case_path)} 2>&1")
         
         # Log MOQUI interpreter execution start
         if self.logger:
@@ -263,7 +264,10 @@ class RemoteExecutor(BaseSSHConnector):
         """Run moqui beam calculation on specific GPU."""
         workspace_path = workspace_path or self.remote_workspace
         case_path = f"{workspace_path}/{case_id}"
-        command = f"cd {shlex.quote(case_path)} && CUDA_VISIBLE_DEVICES={gpu_id} {shlex.quote(self.moqui_binary_path)} --input_dir moqui_inputs --output_dir moqui_output"
+        # Use absolute paths instead of cd command for better reliability
+        input_dir = f"{case_path}/moqui_inputs"
+        output_dir = f"{case_path}/moqui_output"
+        command = f"CUDA_VISIBLE_DEVICES={gpu_id} {shlex.quote(self.moqui_binary_path)} --input_dir {shlex.quote(input_dir)} --output_dir {shlex.quote(output_dir)}"
         
         # Update status display - starting beam calculation
         if status_display:
@@ -318,7 +322,10 @@ class RemoteExecutor(BaseSSHConnector):
         """Run raw to DICOM converter."""
         workspace_path = workspace_path or self.remote_workspace
         case_path = f"{workspace_path}/{case_id}"
-        command = f"cd {shlex.quote(case_path)} && {self.venv_python_path} {shlex.quote(self.raw_to_dcm_path)} --input moqui_output/dose.raw --output moqui_output/RTDOSE.dcm"
+        # Use absolute paths instead of cd command for better reliability
+        input_file = f"{case_path}/moqui_output/dose.raw"
+        output_file = f"{case_path}/moqui_output/RTDOSE.dcm"
+        command = f"{self.venv_python_path} {shlex.quote(self.raw_to_dcm_path)} --input {shlex.quote(input_file)} --output {shlex.quote(output_file)}"
         
         # Update status display - starting conversion
         if status_display:

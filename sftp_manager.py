@@ -91,26 +91,13 @@ class SFTPManager(BaseSSHConnector):
             self.sftp.put(str(local_file), remote_path)
             upload_duration = time.time() - upload_start_time
             
-            # Log file upload completion with performance metrics (log file only, no console output)
-            if self.logger:
-                self.logger.log_network_activity({
-                    "action": "file_upload_completed",
-                    "local_path": str(local_file),
-                    "remote_path": remote_path,
-                    "file_size_bytes": local_size,
-                    "upload_duration_ms": round(upload_duration * 1000, 2),
-                    "transfer_rate_mbps": round((local_size / (1024 * 1024)) / upload_duration, 2) if upload_duration > 0 else 0
-                })
-                # No console output for file transfers - Rich display handles user feedback
+            # Individual file upload logging removed - summary logging handled at directory level
 
             # 4. Post-flight verification: Check existence and size
             try:
                 remote_stat = self.sftp.stat(remote_path)
                 if remote_stat.st_size == local_size:
-                    # File transfer verification logged to file only (no console output)
-                    if self.logger:
-                        self.logger.info(f"File transfer verified: {remote_path} (size: {remote_stat.st_size} bytes)", quiet_if_file_transfer=True)
-                        # No console output for verification - reduces log spam
+                    # File verification successful - no individual logging
                     return True
                 else:
                     error_msg = f"Size mismatch: local={local_size}, remote={remote_stat.st_size}"
@@ -156,10 +143,9 @@ class SFTPManager(BaseSSHConnector):
 
         try:
             # Step 1: Create all directories on the remote first.
-            # Directory upload start logged to file only (no console output)
+            # Log directory upload start (summary logging only)
             if self.logger:
-                self.logger.info(f"Starting directory upload: {local_path} -> {remote_path}", quiet_if_file_transfer=True)
-                # No console output for start - Rich display shows current operation
+                self.logger.info(f"Starting directory upload: {local_path} -> {remote_path}")
                 
             self.create_remote_directory(remote_path)
             dir_count = 0
@@ -174,7 +160,7 @@ class SFTPManager(BaseSSHConnector):
             all_files = [p for p in local_dir.rglob("*") if p.is_file()]
             total_files = len(all_files)
             
-            # Log upload operation details (log file only, no console output) 
+            # Log upload operation summary
             if self.logger:
                 self.logger.log_structured("INFO", "Directory upload started", {
                     "local_path": str(local_path),
@@ -183,7 +169,6 @@ class SFTPManager(BaseSSHConnector):
                     "directories_created": dir_count,
                     "case_id": case_id
                 })
-                # No console output for directory operations - Rich display shows progress
 
             for i, file_path in enumerate(all_files):
                 relative_path = file_path.relative_to(local_dir)
@@ -205,7 +190,7 @@ class SFTPManager(BaseSSHConnector):
                         transfer_info=transfer_info
                     )
             
-            # Log successful directory upload completion (log file only, no console output)
+            # Log successful directory upload completion
             if self.logger:
                 self.logger.log_structured("INFO", "Directory upload completed", {
                     "local_path": str(local_path),
@@ -215,7 +200,6 @@ class SFTPManager(BaseSSHConnector):
                     "case_id": case_id,
                     "success": True
                 })
-                # No console output for completion - Rich display shows final status
                 
             if status_display and case_id:
                 status_display.update_case_status(
