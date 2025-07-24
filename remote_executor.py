@@ -274,44 +274,50 @@ class RemoteExecutor(BaseSSHConnector):
             return False
 
 
-    def update_moqui_tps_in(self, case_id: str, tps_params: Dict[str, Any]) -> bool:
-        """Update moqui_tps.in configuration file for specific case."""
+    def update_moqui_tps_in(self, case_id: str, dynamic_params: Dict[str, Any]) -> bool:
+        """Update moqui_tps.in configuration file for specific case using config-based template."""
         try:
-            # Define paths
-            template_path = f"{self.working_directories.get('tps_env', '')}/moqui_tps.in"
-            case_workspace = f"{self.remote_workspace}/{case_id}"
-            target_path = f"{case_workspace}/moqui_tps.in"
+            # Get template from ConfigManager
+            config_manager = ConfigManager()
+            template_dict = config_manager.get_moqui_tps_template()
             
-            # Read template file content
-            read_result = self.execute_command(f"cat {shlex.quote(template_path)}")
-            if read_result["exit_code"] != 0:
-                self.logger.error(f"Failed to read template moqui_tps.in from {template_path}: {read_result['stderr']}")
+            if not template_dict:
+                self.logger.error(f"Failed to get moqui_tps template from configuration")
                 return False
             
-            template_content = read_result["stdout"]
+            # Merge template with dynamic parameters
+            merged_params = template_dict.copy()
+            merged_params.update(dynamic_params)
             
-            # Modify content in memory by replacing existing values or appending new ones
-            modified_content = template_content
-            for key, value in tps_params.items():
-                # Check if key already exists in template (moqui_tps.in format is "key value")
-                import re
-                key_pattern = rf'^{re.escape(key)}\s+'
-                
-                if re.search(key_pattern, modified_content, re.MULTILINE):
-                    # Replace existing value
-                    modified_content = re.sub(
-                        rf'^{re.escape(key)}\s+.*$',
-                        f'{key} {value}',
-                        modified_content,
-                        flags=re.MULTILINE
-                    )
-                else:
-                    # Append new key-value pair
-                    modified_content += f"\n{key} {value}"
+            # Generate absolute paths for path-related parameters
+            case_workspace = f"{self.remote_workspace}/{case_id}"
             
-            # Write modified content to target path using heredoc for stability
+            # Update path-related parameters with absolute paths
+            if 'ParentDir' in merged_params and not merged_params['ParentDir'].startswith('/'):
+                merged_params['ParentDir'] = f"{case_workspace}/{merged_params['ParentDir']}"
+            if 'DicomDir' in merged_params and not merged_params['DicomDir'].startswith('/'):
+                merged_params['DicomDir'] = f"{case_workspace}/{merged_params['DicomDir']}"
+            if 'logFilePath' in merged_params and not merged_params['logFilePath'].startswith('/'):
+                merged_params['logFilePath'] = f"{case_workspace}/{merged_params['logFilePath']}"
+            if 'OutputDir' in merged_params and not merged_params['OutputDir'].startswith('/'):
+                merged_params['OutputDir'] = f"{case_workspace}/{merged_params['OutputDir']}"
+            
+            # Convert dictionary to "Key Value" formatted string
+            tps_content_lines = []
+            for key, value in merged_params.items():
+                # Convert boolean values to lowercase strings as expected by MOQUI
+                if isinstance(value, bool):
+                    value = str(value).lower()
+                tps_content_lines.append(f"{key} {value}")
+            
+            tps_content = "\n".join(tps_content_lines)
+            
+            # Define target path
+            target_path = f"{case_workspace}/moqui_tps.in"
+            
+            # Write content to target path using heredoc for stability
             # Escape single quotes in content for heredoc
-            escaped_content = modified_content.replace("'", "'\"'\"'")
+            escaped_content = tps_content.replace("'", "'\"'\"'")
             write_command = f"cat <<'EOF' > {shlex.quote(target_path)}\n{escaped_content}\nEOF"
             
             write_result = self.execute_command(write_command)
@@ -319,7 +325,7 @@ class RemoteExecutor(BaseSSHConnector):
                 self.logger.error(f"Failed to write moqui_tps.in to {target_path}: {write_result['stderr']}")
                 return False
             
-            self.logger.info(f"Successfully updated moqui_tps.in for case {case_id}")
+            self.logger.info(f"Successfully generated moqui_tps.in for case {case_id} with {len(merged_params)} parameters")
             return True
             
         except Exception as e:

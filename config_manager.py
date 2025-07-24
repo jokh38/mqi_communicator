@@ -110,3 +110,14 @@ class ConfigManager:
         except Exception as e:
             print(f"Failed to retrieve moqui_tps.in parameters from configuration: {e}")
             return {}
+
+    def get_moqui_tps_template(self) -> Dict[str, Any]:
+        """Get moqui_tps template from configuration for generating moqui_tps.in files."""
+        try:
+            tps_template = self.config.get("moqui_tps_template", {})
+            if tps_template:
+                print(f"Successfully retrieved moqui_tps.in template from configuration: {len(tps_template)} parameters")
+            return tps_template
+        except Exception as e:
+            print(f"Failed to retrieve moqui_tps.in template from configuration: {e}")
+            return {}

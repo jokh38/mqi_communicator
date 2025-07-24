@@ -184,24 +184,14 @@ class ExecuteBeamCalculationsStep(ProcessingStep):
                 beam_info=f"Using GPUs: {gpu_allocation}"
             )
             
-            # Get parameters for moqui_tps.in from configuration
-            tps_params = context.remote_executor.config.get("moqui_tps_params", {})
-            if not tps_params:
-                context.logger.error(f"No moqui_tps_params found in configuration for case: {context.case_id}")
-                context.job_scheduler.complete_job(context.case_id, False)
-                return False
-            
             # Read gantry information from case_status.json
             gantry_info = self._read_gantry_info_from_status(context.case_id)
             
             # Prepare dynamic parameters including gantry information
             dynamic_params = self._prepare_dynamic_params(context, gantry_info)
             
-            # Merge config params with dynamic params
-            merged_params = {**tps_params, **dynamic_params}
-            
-            # Create the case-specific config file
-            if not context.remote_executor.update_moqui_tps_in(context.case_id, merged_params):
+            # Create the case-specific config file using template from config
+            if not context.remote_executor.update_moqui_tps_in(context.case_id, dynamic_params):
                 context.logger.error(f"Failed to update moqui_tps.in for case: {context.case_id}")
                 context.job_scheduler.complete_job(context.case_id, False)
                 return False
@@ -209,8 +199,14 @@ class ExecuteBeamCalculationsStep(ProcessingStep):
             # Log parameter generation success as specified in monitoring plan
             context.logger.info(f"Successfully generated moqui_tps.in file for case: {context.case_id}")
             
+            # Reconstruct merged parameters for archiving (template + dynamic)
+            from config_manager import ConfigManager
+            config_manager = ConfigManager()
+            template_params = config_manager.get_moqui_tps_template()
+            merged_params_for_archive = {**template_params, **dynamic_params}
+            
             # Archive the generated moqui_tps.in file locally for monitoring
-            self._archive_tps_parameters(context, merged_params)
+            self._archive_tps_parameters(context, merged_params_for_archive)
             
             # Check for beams data to determine how many beam calculations to run
             # For demonstration, assume we have beam information from the case
