@@ -187,45 +187,37 @@ class ExecuteBeamCalculationsStep(ProcessingStep):
             # Read gantry information from case_status.json
             gantry_info = self._read_gantry_info_from_status(context.case_id)
             
-            # Prepare dynamic parameters including gantry information
-            dynamic_params = self._prepare_dynamic_params(context, gantry_info)
-            
-            # Create the case-specific config file using template from config
-            if not context.remote_executor.update_moqui_tps_in(context.case_id, dynamic_params):
-                context.logger.error(f"Failed to update moqui_tps.in for case: {context.case_id}")
-                context.job_scheduler.complete_job(context.case_id, False)
-                return False
-            
-            # Log parameter generation success as specified in monitoring plan
-            context.logger.info(f"Successfully generated moqui_tps.in file for case: {context.case_id}")
-            
-            # Reconstruct merged parameters for archiving (template + dynamic)
-            from config_manager import ConfigManager
-            config_manager = ConfigManager()
-            template_params = config_manager.get_moqui_tps_template()
-            merged_params_for_archive = {**template_params, **dynamic_params}
-            
-            # Archive the generated moqui_tps.in file locally for monitoring
-            self._archive_tps_parameters(context, merged_params_for_archive)
-            
-            # Check for beams data to determine how many beam calculations to run
-            # For demonstration, assume we have beam information from the case
-            workspace_path = context.remote_executor.remote_workspace
-            case_path = f"{workspace_path}/{context.case_id}"
-            
-            # Check if moqui_inputs directory exists and get beam information
-            inputs_check = context.remote_executor.execute_command(f"ls {case_path}/moqui_inputs/")
-            if inputs_check["exit_code"] != 0:
-                context.logger.error(f"No moqui_inputs found for case: {context.case_id}")
-                context.job_scheduler.complete_job(context.case_id, False)
-                return False
-            
             # For demonstration, simulate multiple beams by iterating through available GPUs
             beam_results = []
             for i, gpu_id in enumerate(gpu_allocation):
                 beam_id = i + 1  # Start beam numbering from 1
                 
                 context.logger.info(f"Starting beam {beam_id} calculation for case {context.case_id} on GPU {gpu_id}")
+                
+                # Prepare dynamic parameters including gantry information with absolute paths for this specific beam
+                dynamic_params = self._prepare_dynamic_params(context, gantry_info, gpu_id, beam_id)
+                
+                # Define the target file path
+                case_remote_path = context.directory_manager.get_case_remote_path(context.case_id) 
+                target_path = f"{case_remote_path}/moqui_tps.in"
+                
+                # Create the case-specific config file using template from config
+                if not context.remote_executor.update_moqui_tps_in(target_path, dynamic_params):
+                    context.logger.error(f"Failed to update moqui_tps.in for case: {context.case_id}")
+                    context.job_scheduler.complete_job(context.case_id, False)
+                    return False
+            
+                # Log parameter generation success as specified in monitoring plan
+                context.logger.info(f"Successfully generated moqui_tps.in file for beam {beam_id} case: {context.case_id}")
+                
+                # Reconstruct merged parameters for archiving (template + dynamic)
+                from config_manager import ConfigManager
+                config_manager = ConfigManager()
+                template_params = config_manager.get_moqui_tps_template()
+                merged_params_for_archive = {**template_params, **dynamic_params}
+                
+                # Archive the generated moqui_tps.in file locally for monitoring
+                self._archive_tps_parameters(context, merged_params_for_archive, beam_id)
                 
                 # Run beam calculation
                 beam_result = context.remote_executor.run_moqui_beam(
@@ -243,6 +235,18 @@ class ExecuteBeamCalculationsStep(ProcessingStep):
                     return False
                 
                 context.logger.info(f"Beam {beam_id} calculation completed successfully for case: {context.case_id}")
+            
+            # Check for beams data to determine how many beam calculations to run
+            # For demonstration, assume we have beam information from the case
+            workspace_path = context.remote_executor.remote_workspace
+            case_path = f"{workspace_path}/{context.case_id}"
+            
+            # Check if moqui_inputs directory exists and get beam information
+            inputs_check = context.remote_executor.execute_command(f"ls {case_path}/moqui_inputs/")
+            if inputs_check["exit_code"] != 0:
+                context.logger.error(f"No moqui_inputs found for case: {context.case_id}")
+                context.job_scheduler.complete_job(context.case_id, False)
+                return False
             
             # Mark job as complete
             success = all(result.get("success", False) for result in beam_results)
@@ -285,21 +289,22 @@ class ExecuteBeamCalculationsStep(ProcessingStep):
             print(f"Error reading gantry info from case_status.json for case {case_id}: {e}")
             return {}
 
-    def _prepare_dynamic_params(self, context, gantry_info: Dict[str, Any]) -> Dict[str, Any]:
-        """Prepare dynamic parameters for moqui_tps.in."""
-        config = context.remote_executor.config
-        paths = config.get("paths", {})
-        
+    def _prepare_dynamic_params(self, context, gantry_info: Dict[str, Any], gpu_id: int, beam_id: int) -> Dict[str, Any]:
+        """Prepare dynamic parameters for moqui_tps.in with absolute paths."""
         dynamic_params = {}
         
-        # Directory paths from config
-        remote_workspace = paths.get("remote_workspace", "/home/gpuadmin/MOQUI_SMC/tps")
-        case_path = f"{remote_workspace}/{context.case_id}"
+        # Get the remote working directory path for the case
+        case_remote_path = context.directory_manager.get_case_remote_path(context.case_id)
         
-        dynamic_params["ParentDir"] = case_path
-        dynamic_params["DicomDir"] = "plan"  # Standard DICOM directory name
-        dynamic_params["logFilePath"] = "log"
-        dynamic_params["OutputDir"] = f"Output/{context.case_id}"
+        # Construct absolute paths for all path-related parameters
+        dynamic_params["ParentDir"] = f"{case_remote_path}/dcm"
+        dynamic_params["DicomDir"] = f"{case_remote_path}/dcm"
+        dynamic_params["logFilePath"] = f"{case_remote_path}/log"
+        dynamic_params["OutputDir"] = f"{case_remote_path}/output"
+        
+        # Set GPUID and BeamNumbers parameters using the gpu_id and beam_id received by the method
+        dynamic_params["GPUID"] = gpu_id
+        dynamic_params["BeamNumbers"] = beam_id
         
         # Gantry information from DICOM parsing
         if gantry_info:
@@ -316,7 +321,7 @@ class ExecuteBeamCalculationsStep(ProcessingStep):
         
         return dynamic_params
 
-    def _archive_tps_parameters(self, context, merged_params: Dict[str, Any]) -> None:
+    def _archive_tps_parameters(self, context, merged_params: Dict[str, Any], beam_id: int = None) -> None:
         """Archive the generated moqui_tps.in parameters locally for monitoring."""
         try:
             from datetime import datetime
@@ -328,7 +333,8 @@ class ExecuteBeamCalculationsStep(ProcessingStep):
             
             # Generate timestamp for filename
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            archived_filename = f"moqui_tps_{context.case_id}_{timestamp}.in"
+            beam_suffix = f"_beam{beam_id}" if beam_id is not None else ""
+            archived_filename = f"moqui_tps_{context.case_id}{beam_suffix}_{timestamp}.in"
             archived_path = archive_dir / archived_filename
             
             # Create the content in moqui_tps.in format (key value pairs)

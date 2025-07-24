@@ -274,8 +274,8 @@ class RemoteExecutor(BaseSSHConnector):
             return False
 
 
-    def update_moqui_tps_in(self, case_id: str, dynamic_params: Dict[str, Any]) -> bool:
-        """Update moqui_tps.in configuration file for specific case using config-based template."""
+    def update_moqui_tps_in(self, target_path: str, dynamic_params: Dict[str, Any]) -> bool:
+        """Update moqui_tps.in configuration file using config-based template."""
         try:
             # Get template from ConfigManager
             config_manager = ConfigManager()
@@ -289,19 +289,6 @@ class RemoteExecutor(BaseSSHConnector):
             merged_params = template_dict.copy()
             merged_params.update(dynamic_params)
             
-            # Generate absolute paths for path-related parameters
-            case_workspace = f"{self.remote_workspace}/{case_id}"
-            
-            # Update path-related parameters with absolute paths
-            if 'ParentDir' in merged_params and not merged_params['ParentDir'].startswith('/'):
-                merged_params['ParentDir'] = f"{case_workspace}/{merged_params['ParentDir']}"
-            if 'DicomDir' in merged_params and not merged_params['DicomDir'].startswith('/'):
-                merged_params['DicomDir'] = f"{case_workspace}/{merged_params['DicomDir']}"
-            if 'logFilePath' in merged_params and not merged_params['logFilePath'].startswith('/'):
-                merged_params['logFilePath'] = f"{case_workspace}/{merged_params['logFilePath']}"
-            if 'OutputDir' in merged_params and not merged_params['OutputDir'].startswith('/'):
-                merged_params['OutputDir'] = f"{case_workspace}/{merged_params['OutputDir']}"
-            
             # Convert dictionary to "Key Value" formatted string
             tps_content_lines = []
             for key, value in merged_params.items():
@@ -311,9 +298,6 @@ class RemoteExecutor(BaseSSHConnector):
                 tps_content_lines.append(f"{key} {value}")
             
             tps_content = "\n".join(tps_content_lines)
-            
-            # Define target path
-            target_path = f"{case_workspace}/moqui_tps.in"
             
             # Write content to target path using heredoc for stability
             # Escape single quotes in content for heredoc
@@ -325,11 +309,11 @@ class RemoteExecutor(BaseSSHConnector):
                 self.logger.error(f"Failed to write moqui_tps.in to {target_path}: {write_result['stderr']}")
                 return False
             
-            self.logger.info(f"Successfully generated moqui_tps.in for case {case_id} with {len(merged_params)} parameters")
+            self.logger.info(f"Successfully generated moqui_tps.in with {len(merged_params)} parameters")
             return True
             
         except Exception as e:
-            self.logger.error(f"Error updating moqui_tps.in for case {case_id}: {e}")
+            self.logger.error(f"Error updating moqui_tps.in: {e}")
             return False
 
     def run_moqui_interpreter(self, case_id: str, log_dir: str = None, workspace_path: str = None, status_display=None) -> Dict[str, Any]:
