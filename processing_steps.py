@@ -197,9 +197,9 @@ class ExecuteBeamCalculationsStep(ProcessingStep):
                 # Prepare dynamic parameters including gantry information with absolute paths for this specific beam
                 dynamic_params = self._prepare_dynamic_params(context, gantry_info, gpu_id, beam_id)
                 
-                # Define the target file path
-                case_remote_path = context.directory_manager.get_case_remote_path(context.case_id) 
-                target_path = f"{case_remote_path}/moqui_tps.in"
+                # Define the target file path - create in tps_env directory where MOQUI binary runs
+                tps_env_path = context.remote_executor.working_directories["tps_env"]
+                target_path = f"{tps_env_path}/moqui_tps.in"
                 
                 # Create the case-specific config file using template from config
                 if not context.remote_executor.update_moqui_tps_in(target_path, dynamic_params):
@@ -300,7 +300,9 @@ class ExecuteBeamCalculationsStep(ProcessingStep):
         dynamic_params["ParentDir"] = f"{case_remote_path}/dcm"
         dynamic_params["DicomDir"] = f"{case_remote_path}/dcm"
         dynamic_params["logFilePath"] = f"{case_remote_path}/log"
-        dynamic_params["OutputDir"] = f"{case_remote_path}/output"
+        
+        # Use configured MOQUI outputs directory for beam calculation results
+        dynamic_params["OutputDir"] = f"{context.remote_executor.moqui_outputs_path}/{context.case_id}"
         
         # Set GPUID and BeamNumbers parameters using the gpu_id and beam_id received by the method
         dynamic_params["GPUID"] = gpu_id
@@ -362,8 +364,7 @@ class RunConverterStep(ProcessingStep):
         """Run raw to DICOM converter (idempotent with output check)."""
         try:
             # Check if converter output already exists (for idempotency)
-            workspace_path = context.directory_manager.get_case_remote_path(context.case_id)
-            dicom_check = context.remote_executor.execute_command(f"test -f {workspace_path}/moqui_output/RTDOSE.dcm")
+            dicom_check = context.remote_executor.execute_command(f"test -f {context.remote_executor.moqui_outputs_path}/{context.case_id}/RTDOSE.dcm")
             
             if dicom_check["exit_code"] == 0:
                 context.logger.info(f"DICOM output already exists for case {context.case_id}, skipping")

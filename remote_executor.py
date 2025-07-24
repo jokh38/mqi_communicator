@@ -466,9 +466,14 @@ class RemoteExecutor(BaseSSHConnector):
         workspace_path = workspace_path or self.remote_workspace
         case_workspace_path = f"{workspace_path}/{case_id}"
         
-        # Run from the case-specific workspace directory to use the updated moqui_tps.in
-        # The moqui binary will automatically find moqui_tps.in in its current directory
-        command = f"cd {shlex.quote(case_workspace_path)} && CUDA_VISIBLE_DEVICES={gpu_id} nohup {self.moqui_binary_path}/main > moqui.log 2>&1 & echo $!"
+        # Ensure the case-specific output directory exists
+        case_output_dir = f"{self.moqui_outputs_path}/{case_id}"
+        self.create_directory(case_output_dir)
+        
+        # Run from the tps_env directory as specified in revision requirements  
+        # Use subshell to isolate directory change and prevent working directory side effects
+        tps_env_path = self.working_directories["tps_env"]
+        command = f"(cd {shlex.quote(tps_env_path)} && CUDA_VISIBLE_DEVICES={gpu_id} nohup {self.moqui_binary_path} > moqui.log 2>&1 & echo $!)"
         
         # Update status display - starting beam calculation
         if status_display:
@@ -512,13 +517,13 @@ class RemoteExecutor(BaseSSHConnector):
             check_result = self.execute_command(f"ps -p {remote_pid}")
             if check_result["exit_code"] != 0:
                 # Process has completed - capture stdout, stderr, and exit_code for enhanced monitoring
-                log_result = self.execute_command(f"cat {case_workspace_path}/moqui.log")
+                log_result = self.execute_command(f"cat {tps_env_path}/moqui.log")
                 stdout_output = log_result.get('stdout', '').strip() if log_result["exit_code"] == 0 else ''
                 stderr_output = log_result.get('stderr', '').strip() if log_result["exit_code"] != 0 else ''
                 
                 # Get the actual exit code from the completed process (since we can't get it from nohup)
                 # We'll determine success/failure based on output file existence and log content
-                output_check_result = self.execute_command(f"test -f {case_workspace_path}/moqui_output/dose.raw")
+                output_check_result = self.execute_command(f"test -f {self.moqui_outputs_path}/{case_id}/dose.raw")
                 execution_exit_code = 0 if output_check_result["exit_code"] == 0 else 1
                 
                 # Analyze the results as specified in monitoring plan
@@ -607,8 +612,8 @@ class RemoteExecutor(BaseSSHConnector):
         workspace_path = workspace_path or self.remote_workspace
         case_path = f"{workspace_path}/{case_id}"
         # Use working directory change to ensure proper module imports
-        input_file = f"{case_path}/moqui_output/dose.raw"
-        output_file = f"{case_path}/moqui_output/RTDOSE.dcm"
+        input_file = f"{self.moqui_outputs_path}/{case_id}/dose.raw"
+        output_file = f"{self.moqui_outputs_path}/{case_id}/RTDOSE.dcm"
         command = f"{self.venv_python_path} ./moqui_raw2dicom.py --input {shlex.quote(input_file)} --output {shlex.quote(output_file)}"
         
         # Update status display - starting conversion
