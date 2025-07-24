@@ -48,8 +48,10 @@ class RemoteExecutor(BaseSSHConnector):
         # Add a new variable for the interpreter's output path: "/home/gpuadmin/MOQUI_SMC/Outputs_csv"
         self.moqui_interpreter_outputs_path = self.paths.get("linux_moqui_interpreter_outputs_dir")
         self.venv_python_path = self.paths.get("linux_venv_python", "python3")  # Fallback to python3 if not configured
+        # Add path for MOQUI execution executable
+        self.moqui_execution_path = self.paths.get("linux_moqui_execution")
 
-        if not all([self.remote_workspace, self.mqi_interpreter_path, self.raw_to_dcm_path, self.moqui_outputs_path, self.moqui_interpreter_outputs_path, self.venv_python_path]):
+        if not all([self.remote_workspace, self.mqi_interpreter_path, self.raw_to_dcm_path, self.moqui_outputs_path, self.moqui_interpreter_outputs_path, self.venv_python_path, self.moqui_execution_path]):
             raise ValueError("One or more required paths are missing in the configuration file.")
 
         # Load program working directories from config
@@ -476,7 +478,7 @@ class RemoteExecutor(BaseSSHConnector):
         # Run from the tps_env directory as specified in revision requirements  
         # Use subshell to isolate directory change and prevent working directory side effects
         tps_env_path = self.working_directories["tps_env"]
-        command = f"(cd {shlex.quote(tps_env_path)} && CUDA_VISIBLE_DEVICES={gpu_id} nohup ./.tps_env > moqui.log 2>&1 & echo $!)"
+        command = f"(cd {shlex.quote(tps_env_path)} && CUDA_VISIBLE_DEVICES={gpu_id} nohup {shlex.quote(self.moqui_execution_path)} > moqui.log 2>&1 & echo $!)"
         
         # Update status display - starting beam calculation
         if status_display:

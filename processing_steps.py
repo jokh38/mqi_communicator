@@ -293,13 +293,14 @@ class ExecuteBeamCalculationsStep(ProcessingStep):
         """Prepare dynamic parameters for moqui_tps.in with absolute paths."""
         dynamic_params = {}
         
-        # Get the remote working directory path for the case
-        case_remote_path = context.directory_manager.get_case_remote_path(context.case_id)
+        # Update ParentDir path to use moqui_interpreter_outputs_path
+        dynamic_params["ParentDir"] = f"{context.remote_executor.moqui_interpreter_outputs_path}/{context.case_id}"
         
-        # Construct absolute paths for all path-related parameters
-        dynamic_params["ParentDir"] = f"{case_remote_path}/dcm"
-        dynamic_params["DicomDir"] = f"{case_remote_path}/dcm"
-        dynamic_params["logFilePath"] = f"{case_remote_path}/log"
+        # Update logFilePath to use moqui_interpreter_outputs_path
+        dynamic_params["logFilePath"] = f"{context.remote_executor.moqui_interpreter_outputs_path}/{context.case_id}/log"
+        
+        # Update DicomDir path to use directory_manager.get_case_remote_path
+        dynamic_params["DicomDir"] = context.directory_manager.get_case_remote_path(context.case_id)
         
         # Use configured MOQUI outputs directory for beam calculation results
         dynamic_params["OutputDir"] = f"{context.remote_executor.moqui_outputs_path}/{context.case_id}"
