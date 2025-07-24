@@ -8,12 +8,20 @@ from typing import Dict, List, Optional, Any
 
 
 class CaseScanner:
-    def __init__(self, base_path: str, status_file: str = "case_status.json", stability_period_seconds: int = 10, logger=None):
+    def __init__(self, base_path: str, status_file: str = "case_status.json", stability_period_seconds: int = 10, logger=None, config=None):
         self.base_path = Path(base_path)
         # status_file should be an absolute path or relative to current working directory (not base_path)
         self.status_file = Path(status_file) if Path(status_file).is_absolute() else Path.cwd() / status_file
         self.stability_period_seconds = stability_period_seconds
         self.logger = logger
+        self.config = config
+        
+        # Extract max_retries from config, defaulting to 3 if not specified
+        if config and config.get("error_handling"):
+            self.max_retries = config["error_handling"].get("max_retries", 3)
+        else:
+            self.max_retries = 3
+            
         self.case_status = self._load_case_status()
 
     def _load_case_status(self) -> Dict[str, Any]:
@@ -272,9 +280,17 @@ class CaseScanner:
                         else:
                             current_task = case_data.get("current_task")
                             self.logger.debug(f"Case still processing: {case_id} (task: {current_task})")
-                    elif status in ["COMPLETED", "FAILED"]:
-                        # Ignore completed/failed cases
-                        self.logger.debug(f"Case already {status.lower()}: {case_id}")
+                    elif status == "COMPLETED":
+                        # Ignore completed cases
+                        self.logger.debug(f"Case already completed: {case_id}")
+                    elif status == "FAILED":
+                        # Check retry count for failed cases
+                        retry_count = case_data.get("retry_count", 0)
+                        if retry_count < self.max_retries:
+                            self.logger.info(f"Failed case {case_id} being queued for retry (attempt {retry_count + 1}/{self.max_retries})")
+                            cases_to_process.append(case_id)
+                        else:
+                            self.logger.debug(f"Case {case_id} has exceeded retry limit ({retry_count}/{self.max_retries})")
                     else:
                         self.logger.warning(f"Unknown status '{status}' for case {case_id}")
         

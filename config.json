@@ -39,7 +39,8 @@
     "monitoring_interval_sec": 5
   },
   "error_handling": {
-    "max_network_retries": 3
+    "max_network_retries": 3,
+    "max_retries": 3
   },
   "backup": {
     "months_to_keep": 12

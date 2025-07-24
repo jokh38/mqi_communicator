@@ -123,8 +123,8 @@ class MainController:
         try:
             self.logger.info("Performing startup recovery checks")
             
-            # Recover stale cases with enhanced resource cleanup
-            recovery_result = self.case_scanner.recover_stale_jobs(max_processing_hours=self.stale_case_recovery_hours)
+            # Recover ALL cases left in PROCESSING state (regardless of duration)
+            recovery_result = self.case_scanner.recover_stale_jobs(max_processing_hours=0)
             
             if recovery_result["recovered_count"] > 0:
                 self.logger.warning(f"Recovered {recovery_result['recovered_count']} stale cases: {recovery_result['recovered_cases']}")
@@ -349,7 +349,8 @@ class MainController:
             self.case_scanner = CaseScanner(
                 base_path=self.config["paths"]["local_logdata"],
                 status_file=self.config["paths"]["status_file"],
-                logger=self.logger
+                logger=self.logger,
+                config=self.config
             )
 
             # Initialize job scheduler
@@ -568,33 +569,34 @@ class MainController:
         except Exception as e:
             # Always handle the error and update status
             self.error_handler.handle_error(e, {"operation": "case_processing", "case_id": case_id})
-            self.case_scanner.update_case_status(case_id, "FAILED")
-            self.logger.log_case_progress(case_id, "FAILED", 0.0, {"stage": "error", "error": str(e)})
-            self.status_display.update_case_status(case_id, "FAILED", 0.0, "Failed", error_message=str(e))
+            
+            # Get current retry count from case status
+            case_info = self.case_scanner.get_case_status(case_id)
+            current_retry_count = case_info.get("retry_count", 0) if case_info else 0
+            
+            # Check if we should retry (for ANY exception type)
+            if current_retry_count < self.case_scanner.max_retries:
+                self.logger.warning(f"Error processing case {case_id} (retry {current_retry_count + 1}/{self.case_scanner.max_retries}): {e}")
+                # Update case status with incremented retry count and reset to NEW for reprocessing
+                self.case_scanner.update_case_status(case_id, "NEW", retry_count=current_retry_count + 1)
+                return False # Indicate failure, but allow for retry
+            else:
+                # Exceeded retry limit - mark as permanently failed
+                self.logger.error(f"Case {case_id} failed after {current_retry_count} retries: {e}")
+                self.case_scanner.update_case_status(case_id, "FAILED", retry_count=current_retry_count)
+                self.logger.log_case_progress(case_id, "FAILED", 0.0, {"stage": "error", "error": str(e)})
+                self.status_display.update_case_status(case_id, "FAILED", 0.0, "Failed", error_message=str(e))
+                
+                # Clean up remote workspace on permanent failure
+                try:
+                    remote_path = self.directory_manager.get_case_remote_path(case_id)
+                    self.remote_executor.execute_command(f"rm -rf {shlex.quote(remote_path)}")
+                    self.logger.info(f"Cleaned up remote workspace for failed case: {case_id}")
+                except Exception as cleanup_error:
+                    self.logger.warning(f"Failed to clean up remote workspace for case {case_id}: {cleanup_error}")
+            
             with self.shared_state_lock:
                 self.shared_state['active_cases'].discard(case_id)
-
-            # Check if this is a network error that should be retried
-            if self._is_network_error(e):
-                # Get current retry count from case status
-                case_info = self.case_scanner.get_case_status(case_id)
-                current_retry_count = case_info.get("retry_count", 0) if case_info else 0
-                
-                if current_retry_count < self.max_network_retries:  # Max retries for network errors
-                    self.logger.warning(f"Network error processing case {case_id} (retry {current_retry_count + 1}/{self.max_network_retries}): {e}")
-                    # Update case status with incremented retry count and reset to NEW for reprocessing
-                    self.case_scanner.update_case_status(case_id, "NEW", retry_count=current_retry_count + 1)
-                    return False # Indicate failure, but allow for retry
-                else:
-                    self.logger.error(f"Case {case_id} failed after {current_retry_count} network retries: {e}")
-            
-            # Clean up remote workspace on non-retryable failure
-            try:
-                remote_path = self.directory_manager.get_case_remote_path(case_id)
-                self.remote_executor.execute_command(f"rm -rf {shlex.quote(remote_path)}")
-                self.logger.info(f"Cleaned up remote workspace for failed case: {case_id}")
-            except Exception as cleanup_error:
-                self.logger.warning(f"Failed to clean up remote workspace for case {case_id}: {cleanup_error}")
             
             return False
     
