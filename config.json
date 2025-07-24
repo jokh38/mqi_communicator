@@ -13,9 +13,10 @@
     "remote_workspace": "/home/gpuadmin/MOQUI_SMC/tps",
     "local_output": "C:\\moqui\\dose_dcm",
     "linux_mqi_interpreter": "/home/gpuadmin/MOQUI_SMC/mqi_interpreter/main_cli.py",
-    "linux_moqui_binary": "/home/gpuadmin/MOQUI_SMC/moqui/main",
+    "_linux_moqui_binary": "/home/gpuadmin/MOQUI_SMC/moqui/main",
     "linux_raw_to_dcm": "/home/gpuadmin/MOQUI_SMC/RawToDCM/moqui_raw2dicom.py",
-    "linux_moqui_outputs_dir": "/home/gpuadmin/MOQUI_SMC/Outputs",
+    "linux_moqui_interpreter_outputs_dir": "/home/gpuadmin/MOQUI_SMC/Outputs_csv",
+    "linux_moqui_outputs_dir": "/home/gpuadmin/MOQUI_SMC/Dose_raw",
     "linux_venv_python": "/opt/deepops/env/bin/python3.10"
   },
   "working_directories": {
