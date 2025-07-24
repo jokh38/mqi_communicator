@@ -86,6 +86,14 @@ class SFTPManager(BaseSSHConnector):
             
             local_size = local_file.stat().st_size
             
+            # Initialize transfer tracking for real-time updates
+            transfer_state = {
+                'start_time': time.time(),
+                'last_update_time': time.time(),
+                'last_bytes': 0,
+                'file_size': local_size
+            }
+            
             # Update rich display with current file transfer info
             if status_display and case_id:
                 if total_files > 0:
@@ -105,12 +113,39 @@ class SFTPManager(BaseSSHConnector):
             # The remote directory structure is assumed to be pre-created by `upload_directory`.
             # This function is now only responsible for the atomic upload operation.
             
-            # 3. Upload file
+            # 3. Upload file with real-time callback
+            def progress_callback(transferred, total):
+                current_time = time.time()
+                # Update every 0.5 seconds to avoid too frequent updates
+                if current_time - transfer_state['last_update_time'] >= 0.5:
+                    elapsed = current_time - transfer_state['start_time']
+                    if elapsed > 0:
+                        current_speed = transferred / elapsed / (1024 * 1024)  # MB/s
+                        
+                        # Update status display with real-time speed
+                        if status_display and case_id:
+                            if total_files > 0:
+                                detailed_progress = f"{current_file}/{total_files}"
+                                detailed_status = f"Uploading - {current_speed:.1f} MB/s"
+                            else:
+                                detailed_progress = ""
+                                detailed_status = f"Uploading - {current_speed:.1f} MB/s"
+                            
+                            status_display.update_case_status(
+                                case_id=case_id,
+                                status="PROCESSING",
+                                detailed_progress=detailed_progress,
+                                detailed_status=detailed_status
+                            )
+                    
+                    transfer_state['last_update_time'] = current_time
+                    transfer_state['last_bytes'] = transferred
+            
             upload_start_time = time.time()
-            self.sftp.put(str(local_file), remote_path)
+            self.sftp.put(str(local_file), remote_path, callback=progress_callback)
             upload_duration = time.time() - upload_start_time
             
-            # Calculate transfer speed
+            # Calculate final transfer speed
             if upload_duration > 0:
                 speed_bytes_per_sec = local_size / upload_duration
                 speed_mbps = speed_bytes_per_sec / (1024 * 1024)
@@ -118,22 +153,6 @@ class SFTPManager(BaseSSHConnector):
                 # Update transfer stats for directory-level tracking
                 self.transfer_stats['transferred_bytes'] += local_size
                 self.transfer_stats['current_speed'] = speed_mbps
-                
-                # Update status display with speed info
-                if status_display and case_id:
-                    if total_files > 0:
-                        detailed_progress = f"{current_file}/{total_files}"
-                        detailed_status = f"Uploading - {speed_mbps:.1f} MB/s"
-                    else:
-                        detailed_progress = ""
-                        detailed_status = f"Uploading - {speed_mbps:.1f} MB/s"
-                    
-                    status_display.update_case_status(
-                        case_id=case_id,
-                        status="PROCESSING",
-                        detailed_progress=detailed_progress,
-                        detailed_status=detailed_status
-                    )
             
             # Individual file upload logging removed - summary logging handled at directory level
 
@@ -268,12 +287,14 @@ class SFTPManager(BaseSSHConnector):
                     "success": True
                 })
                 
+            # Clear transfer details from display after completion
             if status_display and case_id:
                 status_display.update_case_status(
                     case_id=case_id, 
                     status="PROCESSING", 
                     stage="Upload Complete",
-                    detailed_status="All files uploaded successfully"
+                    detailed_progress="",  # Clear detailed progress
+                    detailed_status=""     # Clear detailed status
                 )
             return True
             
@@ -316,12 +337,47 @@ class SFTPManager(BaseSSHConnector):
             local_file = Path(local_path)
             local_file.parent.mkdir(parents=True, exist_ok=True)
             
-            # Download file with timing
+            # Initialize transfer tracking for real-time updates
+            transfer_state = {
+                'start_time': time.time(),
+                'last_update_time': time.time(),
+                'last_bytes': 0,
+                'file_size': file_size
+            }
+            
+            # Download file with real-time callback
+            def progress_callback(transferred, total):
+                current_time = time.time()
+                # Update every 0.5 seconds to avoid too frequent updates
+                if current_time - transfer_state['last_update_time'] >= 0.5:
+                    elapsed = current_time - transfer_state['start_time']
+                    if elapsed > 0:
+                        current_speed = transferred / elapsed / (1024 * 1024)  # MB/s
+                        
+                        # Update status display with real-time speed
+                        if status_display and case_id:
+                            if total_files > 0:
+                                detailed_progress = f"{current_file}/{total_files}"
+                                detailed_status = f"Downloading - {current_speed:.1f} MB/s"
+                            else:
+                                detailed_progress = ""
+                                detailed_status = f"Downloading - {current_speed:.1f} MB/s"
+                            
+                            status_display.update_case_status(
+                                case_id=case_id,
+                                status="PROCESSING",
+                                detailed_progress=detailed_progress,
+                                detailed_status=detailed_status
+                            )
+                    
+                    transfer_state['last_update_time'] = current_time
+                    transfer_state['last_bytes'] = transferred
+            
             download_start_time = time.time()
-            self.sftp.get(remote_path, str(local_file))
+            self.sftp.get(remote_path, str(local_file), callback=progress_callback)
             download_duration = time.time() - download_start_time
             
-            # Calculate transfer speed
+            # Calculate final transfer speed
             if download_duration > 0 and file_size > 0:
                 speed_bytes_per_sec = file_size / download_duration
                 speed_mbps = speed_bytes_per_sec / (1024 * 1024)
@@ -329,22 +385,6 @@ class SFTPManager(BaseSSHConnector):
                 # Update transfer stats for directory-level tracking
                 self.transfer_stats['transferred_bytes'] += file_size
                 self.transfer_stats['current_speed'] = speed_mbps
-                
-                # Update status display with speed info
-                if status_display and case_id:
-                    if total_files > 0:
-                        detailed_progress = f"{current_file}/{total_files}"
-                        detailed_status = f"Downloading - {speed_mbps:.1f} MB/s"
-                    else:
-                        detailed_progress = ""
-                        detailed_status = f"Downloading - {speed_mbps:.1f} MB/s"
-                    
-                    status_display.update_case_status(
-                        case_id=case_id,
-                        status="PROCESSING",
-                        detailed_progress=detailed_progress,
-                        detailed_status=detailed_status
-                    )
             
             return True
         
@@ -424,12 +464,14 @@ class SFTPManager(BaseSSHConnector):
                     )
             
             self.logger.info(f"Successfully downloaded all files to {local_path}")
+            # Clear transfer details from display after completion
             if status_display and case_id:
                 status_display.update_case_status(
                     case_id=case_id, 
                     status="PROCESSING", 
                     stage="Download Complete",
-                    detailed_status="All files downloaded successfully"
+                    detailed_progress="",  # Clear detailed progress
+                    detailed_status=""     # Clear detailed status
                 )
             return True
             

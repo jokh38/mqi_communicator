@@ -48,6 +48,7 @@ class StatusDisplay:
         self.update_interval = update_interval
         self.running = False
         self.display_thread: Optional[threading.Thread] = None
+        self.system_monitor_thread: Optional[threading.Thread] = None
         self.lock = threading.Lock()
         
         # Display data
@@ -80,21 +81,28 @@ class StatusDisplay:
             return 80  # Default fallback
     
     def start(self) -> None:
-        """Start the display thread."""
+        """Start the display and system monitoring threads."""
         if self.running:
             return
             
         self.running = True
         self.display_thread = threading.Thread(target=self._display_loop, daemon=True)
+        self.system_monitor_thread = threading.Thread(target=self._system_monitor_loop, daemon=True)
         self.display_thread.start()
+        self.system_monitor_thread.start()
     
     def stop(self) -> None:
-        """Stop the display thread."""
+        """Stop the display and system monitoring threads."""
         self.running = False
         if self.display_thread and self.display_thread.is_alive():
             self.display_thread.join(timeout=5)
             if self.display_thread.is_alive():
                 print("Warning: Display thread did not stop gracefully")
+        
+        if self.system_monitor_thread and self.system_monitor_thread.is_alive():
+            self.system_monitor_thread.join(timeout=5)
+            if self.system_monitor_thread.is_alive():
+                print("Warning: System monitor thread did not stop gracefully")
     
     def update_case_status(self, case_id: str, status: str = "", progress: float = 0.0, 
                           stage: str = "", gpu_allocation: List[int] = None, 
@@ -102,8 +110,8 @@ class StatusDisplay:
                           error_message: str = "",
                           # 새로운 매개변수들
                           current_task: str = "", current_step: int = 0,
-                          total_steps: int = 4, detailed_progress: str = "",
-                          detailed_status: str = "") -> None:
+                          total_steps: int = 4, detailed_progress: str = None,
+                          detailed_status: str = None) -> None:
         """Update case status information with enhanced display structure."""
         with self.lock:
             if case_id not in self.cases:
@@ -138,9 +146,10 @@ class StatusDisplay:
                     case_info.current_step = current_step
                 if total_steps > 0:
                     case_info.total_steps = total_steps
-                if detailed_progress:
+                # Always update detailed_progress and detailed_status, even if empty (for clearing)
+                if detailed_progress is not None:
                     case_info.detailed_progress = detailed_progress
-                if detailed_status:
+                if detailed_status is not None:
                     case_info.detailed_status = detailed_status
                 case_info.gpu_allocation = gpu_allocation or case_info.gpu_allocation
                 case_info.beam_info = beam_info
@@ -202,6 +211,99 @@ class StatusDisplay:
                     time.sleep(self.update_interval)
                 except KeyboardInterrupt:
                     break
+                    
+    def _system_monitor_loop(self) -> None:
+        """Background loop to continuously update system statistics."""
+        while self.running:
+            try:
+                # Update system statistics
+                self._update_system_stats()
+                # Update every 2 seconds
+                time.sleep(2)
+            except KeyboardInterrupt:
+                break
+            except Exception as e:
+                # Log error but continue monitoring
+                print(f"System monitor error: {e}")
+                time.sleep(2)
+                
+    def _update_system_stats(self) -> None:
+        """Update system statistics including CPU, memory, and GPU info."""
+        try:
+            import psutil
+            
+            # Get CPU and memory stats
+            cpu_percent = psutil.cpu_percent(interval=None)
+            memory_info = psutil.virtual_memory()
+            
+            # Initialize system info with basic stats
+            updated_info = {
+                'cpu_percent': cpu_percent,
+                'memory_percent': memory_info.percent,
+                'memory_used_gb': memory_info.used / (1024**3),
+                'memory_total_gb': memory_info.total / (1024**3)
+            }
+            
+            # Try to get GPU information if available
+            try:
+                gpu_info = self._get_gpu_info()
+                updated_info['gpu_status'] = gpu_info
+            except Exception:
+                # If GPU info not available, use placeholder
+                updated_info['gpu_status'] = {
+                    'available_gpus': 0,
+                    'total_gpus': 0,
+                    'gpu_details': []
+                }
+            
+            # Update system info thread-safely
+            with self.lock:
+                self.system_info.update(updated_info)
+                self.last_update = datetime.now()
+                
+        except ImportError:
+            # psutil not available, provide placeholder info
+            with self.lock:
+                self.system_info.update({
+                    'cpu_percent': 0.0,
+                    'memory_percent': 0.0,
+                    'gpu_status': {'available_gpus': 0, 'total_gpus': 0}
+                })
+        except Exception as e:
+            # Other errors, continue with existing info
+            pass
+            
+    def _get_gpu_info(self) -> Dict[str, Any]:
+        """Get GPU information using gpu_manager."""
+        try:
+            from gpu_manager import GPUManager
+            
+            # Create a temporary GPU manager instance for monitoring
+            gpu_manager = GPUManager()
+            gpu_status = gpu_manager.get_gpu_status_summary()
+            
+            # Convert to expected format
+            return {
+                'available_gpus': len(gpu_status.get('available_gpus', [])),
+                'total_gpus': gpu_status.get('total_gpus', 0),
+                'gpu_details': gpu_status.get('gpu_details', []),
+                'allocated_gpus': gpu_status.get('allocated_gpus', []),
+                'reserved_gpus': gpu_status.get('reserved_gpus', [])
+            }
+        except ImportError:
+            # gpu_manager not available
+            return {
+                'available_gpus': 0,
+                'total_gpus': 0,
+                'gpu_details': []
+            }
+        except Exception:
+            # Other errors, return safe defaults
+            return {
+                'available_gpus': 0,
+                'total_gpus': 0,
+                'gpu_details': []
+            }
 
     def _create_rich_layout(self):
         """Creates the entire rich layout object to be rendered."""
