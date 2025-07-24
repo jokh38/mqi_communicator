@@ -106,15 +106,64 @@ class CaseScanner:
         stored_hash = self.case_status[case_id].get("hash", "")
         return stored_hash != current_hash
 
+    def _read_case_status_file(self, case_id: str) -> Dict[str, Any]:
+        """Read the case_status.json file for a specific case."""
+        try:
+            case_dir = self.base_path / case_id
+            status_file = case_dir / "case_status.json"
+            
+            if not status_file.exists():
+                return {"status": "NEW"}
+            
+            with open(status_file, 'r') as f:
+                status_data = json.load(f)
+            
+            return status_data
+            
+        except Exception as e:
+            self.logger.error(f"Failed to read case status file for {case_id}: {e}")
+            return {"status": "NEW"}
+
+    def _is_case_stalled(self, case_id: str, stall_threshold_hours: int = 3) -> bool:
+        """Check if a case appears to be stalled based on last_updated timestamp."""
+        try:
+            status_data = self._read_case_status_file(case_id)
+            
+            if status_data.get("status") != "PROCESSING":
+                return False
+            
+            last_updated_str = status_data.get("last_updated")
+            if not last_updated_str:
+                return True  # No timestamp, consider stalled
+            
+            try:
+                last_updated = datetime.fromisoformat(last_updated_str.replace('Z', '+00:00'))
+                current_time = datetime.utcnow().replace(tzinfo=last_updated.tzinfo)
+                time_diff = current_time - last_updated
+                
+                is_stalled = time_diff.total_seconds() > (stall_threshold_hours * 3600)
+                if is_stalled:
+                    self.logger.warning(f"Case {case_id} appears stalled (last updated: {last_updated_str})")
+                
+                return is_stalled
+                
+            except ValueError as e:
+                self.logger.warning(f"Invalid timestamp format in case status for {case_id}: {e}")
+                return True  # Invalid timestamp, consider stalled
+                
+        except Exception as e:
+            self.logger.error(f"Error checking stalled case {case_id}: {e}")
+            return False
+
     def scan_for_new_cases(self) -> List[str]:
-        """Scan base directory for new or modified cases."""
-        new_cases = []
+        """Scan base directory for cases that need processing based on status_rev.md logic."""
+        cases_to_process = []
         
         self.logger.info(f"Scanning directory: {self.base_path}")
         
         if not self.base_path.exists():
             self.logger.warning(f"Base path does not exist: {self.base_path}")
-            return new_cases
+            return cases_to_process
         
         try:
             directories_found = list(self.base_path.iterdir())
@@ -126,37 +175,73 @@ class CaseScanner:
                     continue
                 
                 case_id = case_dir.name
-                self.logger.info(f"Processing case directory: {case_id}")
+                self.logger.debug(f"Processing case directory: {case_id}")
                 
                 # Validate case directory
                 if not self._validate_case_directory(case_id):
                     self.logger.warning(f"Case directory validation failed: {case_id}")
                     continue
                 
-                # Check for directory stability
+                # Check for directory stability (only for truly new cases)
                 last_mod_time = self._get_last_modified_time(case_dir)
                 if last_mod_time and (datetime.now().timestamp() - last_mod_time) < self.stability_period_seconds:
-                    self.logger.info(f"Case '{case_id}' is still being modified. Skipping for now.")
-                    continue
+                    # Only skip if no case_status.json exists (truly new case)
+                    status_file = case_dir / "case_status.json"
+                    if not status_file.exists():
+                        self.logger.info(f"Case '{case_id}' is still being modified. Skipping for now.")
+                        continue
 
-                # Calculate current hash
-                current_hash = self._calculate_folder_hash(case_dir)
+                # Read case status file to determine action
+                status_data = self._read_case_status_file(case_id)
+                status = status_data.get("status", "NEW")
                 
-                # Check if case is new or modified
-                if self._is_case_new(case_id, current_hash):
+                if status == "NEW":
+                    # New case - dispatch to start from beginning
                     self.logger.info(f"New case detected: {case_id}")
-                    new_cases.append(case_id)
+                    cases_to_process.append(case_id)
                     
-                    # Update case status as NEW
+                    # Update legacy case status tracking for compatibility
+                    current_hash = self._calculate_folder_hash(case_dir)
                     self.update_case_status(case_id, "NEW", folder_hash=current_hash)
+                    
+                elif status == "COMPLETED":
+                    # Completed case - ignore
+                    self.logger.debug(f"Case already completed: {case_id}")
+                    
+                elif status == "PROCESSING":
+                    # Check if case is stalled
+                    current_task = status_data.get("current_task")
+                    last_updated = status_data.get("last_updated")
+                    
+                    if self._is_case_stalled(case_id):
+                        # Stalled case - dispatch for resumption
+                        self.logger.warning(f"Stalled case detected for resumption: {case_id} (task: {current_task})")
+                        cases_to_process.append(case_id)
+                    else:
+                        self.logger.debug(f"Case still processing: {case_id} (task: {current_task})")
+                
                 else:
-                    self.logger.debug(f"Case already processed: {case_id}")
+                    self.logger.warning(f"Unknown status '{status}' for case {case_id}")
         
         except (OSError, IOError) as e:
             self.logger.error(f"Error scanning directory: {e}")
         
-        self.logger.info(f"Case scan completed. Found {len(new_cases)} new cases")
-        return new_cases
+        self.logger.info(f"Case scan completed. Found {len(cases_to_process)} cases to process")
+        return cases_to_process
+
+    def get_case_resumption_task(self, case_id: str) -> Optional[str]:
+        """Get the task that a PROCESSING case should resume from."""
+        try:
+            status_data = self._read_case_status_file(case_id)
+            
+            if status_data.get("status") == "PROCESSING":
+                return status_data.get("current_task")
+            
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"Error getting resumption task for case {case_id}: {e}")
+            return None
 
     def update_case_status(self, case_id: str, status: str, folder_hash: str = "", 
                           gpu_allocation: Optional[List[int]] = None, 

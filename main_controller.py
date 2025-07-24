@@ -7,6 +7,7 @@ import atexit
 import shutil
 import shlex
 import zipfile
+import json
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional
@@ -187,6 +188,80 @@ class MainController:
             
         except Exception as e:
             self.logger.error(f"Error cleaning up resources for stale case {case_id}: {e}")
+
+    def _get_case_status_file_path(self, case_id: str) -> Path:
+        """Get the path to the case_status.json file for a specific case."""
+        case_dir = Path(self.config["paths"]["local_logdata"]) / case_id
+        return case_dir / "case_status.json"
+
+    def _update_case_status_file(self, case_id: str, status: str, current_task: str = None) -> None:
+        """Update the case_status.json file with current status and task."""
+        try:
+            status_file = self._get_case_status_file_path(case_id)
+            status_file.parent.mkdir(parents=True, exist_ok=True)
+            
+            status_data = {
+                "status": status,
+                "last_updated": datetime.utcnow().isoformat() + "Z"
+            }
+            
+            if status == "PROCESSING" and current_task:
+                status_data["current_task"] = current_task
+            elif status == "COMPLETED":
+                # Remove current_task field for completed jobs
+                pass
+            
+            with open(status_file, 'w') as f:
+                json.dump(status_data, f, indent=2)
+            
+            self.logger.debug(f"Updated case status file for {case_id}: {status}")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to update case status file for {case_id}: {e}")
+
+    def _read_case_status_file(self, case_id: str) -> Dict[str, Any]:
+        """Read the case_status.json file for a specific case."""
+        try:
+            status_file = self._get_case_status_file_path(case_id)
+            
+            if not status_file.exists():
+                return {"status": "NEW"}
+            
+            with open(status_file, 'r') as f:
+                status_data = json.load(f)
+            
+            return status_data
+            
+        except Exception as e:
+            self.logger.error(f"Failed to read case status file for {case_id}: {e}")
+            return {"status": "NEW"}
+
+    def _check_stalled_case(self, case_id: str, stall_threshold_hours: int = 3) -> bool:
+        """Check if a case appears to be stalled based on last_updated timestamp."""
+        try:
+            status_data = self._read_case_status_file(case_id)
+            
+            if status_data.get("status") != "PROCESSING":
+                return False
+            
+            last_updated_str = status_data.get("last_updated")
+            if not last_updated_str:
+                return True  # No timestamp, consider stalled
+            
+            try:
+                last_updated = datetime.fromisoformat(last_updated_str.replace('Z', '+00:00'))
+                current_time = datetime.utcnow().replace(tzinfo=last_updated.tzinfo)
+                time_diff = current_time - last_updated
+                
+                return time_diff.total_seconds() > (stall_threshold_hours * 3600)
+                
+            except ValueError as e:
+                self.logger.warning(f"Invalid timestamp format in case status for {case_id}: {e}")
+                return True  # Invalid timestamp, consider stalled
+                
+        except Exception as e:
+            self.logger.error(f"Error checking stalled case {case_id}: {e}")
+            return False
 
     def _is_network_error(self, exception: Exception) -> bool:
         """Check if the exception is a network-related error."""
@@ -490,10 +565,15 @@ class MainController:
                 
                 # Schedule cases for processing
                 for case_id in cases_to_process:
-                    if self.job_scheduler.schedule_case(case_id):
-                        self.processing_queue.put(case_id)
+                    # Determine start task for resumption
+                    start_task = self.case_scanner.get_case_resumption_task(case_id)
+                    
+                    if self.job_scheduler.schedule_case(case_id, start_task=start_task):
+                        # Put job info in processing queue instead of just case_id
+                        job_info = {"case_id": case_id, "start_task": start_task}
+                        self.processing_queue.put(job_info)
                         self._remove_from_waiting_list(case_id)  # This is now thread-safe
-                        self.logger.info(f"Scheduled case for processing: {case_id}")
+                        self.logger.info(f"Scheduled case for processing: {case_id} (start_task: {start_task})")
                     else:
                         # Add to waiting list with exponential backoff instead of immediate retry
                         self._add_to_waiting_list(case_id) # This is now thread-safe
@@ -502,9 +582,23 @@ class MainController:
         except Exception as e:
             self.error_handler.handle_error(e, {"operation": "case_queue_processing"})
     
-    def _process_case(self, case_id: str) -> bool:
+    def _process_case(self, case_id: str, start_task: str = None) -> bool:
         """Process a single case through the complete workflow using WorkflowEngine."""
         try:
+            # Read current status to determine starting point
+            status_data = self._read_case_status_file(case_id)
+            
+            # Determine starting task
+            if start_task:
+                current_task = start_task
+            elif status_data.get("status") == "PROCESSING":
+                current_task = status_data.get("current_task", "setup")
+            else:
+                current_task = "setup"
+            
+            # Update status to PROCESSING at start
+            self._update_case_status_file(case_id, "PROCESSING", current_task)
+            
             # Create processing context
             context = self.workflow_engine.create_context(
                 case_id=case_id,
@@ -518,10 +612,17 @@ class MainController:
                 shared_state=self.shared_state
             )
             
+            # Add status update callback to workflow engine
+            context.status_update_callback = lambda task_name: self._update_case_status_file(case_id, "PROCESSING", task_name)
+            context.starting_task = current_task
+            
             # Execute the workflow
             success = self.workflow_engine.execute_workflow(context)
             
             if success:
+                # Update status to COMPLETED
+                self._update_case_status_file(case_id, "COMPLETED")
+                
                 # Move to completed queue
                 self.completed_queue.put(case_id)
                 
@@ -552,6 +653,8 @@ class MainController:
                     self.logger.warning(f"Network error processing case {case_id} (retry {current_retry_count + 1}/{self.max_network_retries}): {e}")
                     # Update case status with incremented retry count and reset to NEW for reprocessing
                     self.case_scanner.update_case_status(case_id, "NEW", retry_count=current_retry_count + 1)
+                    # Also reset the status file to NEW
+                    self._update_case_status_file(case_id, "NEW")
                     return False # Indicate failure, but allow for retry
                 else:
                     self.logger.error(f"Case {case_id} failed after {current_retry_count} network retries: {e}")
@@ -790,8 +893,10 @@ class MainController:
                 
                 # Process individual cases
                 try:
-                    case_id = self.processing_queue.get(timeout=5)
-                    self._process_case(case_id)
+                    job_info = self.processing_queue.get(timeout=5)
+                    case_id = job_info["case_id"]
+                    start_task = job_info["start_task"]
+                    self._process_case(case_id, start_task=start_task)
                 except queue.Empty:
                     continue
                 

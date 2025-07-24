@@ -295,8 +295,8 @@ class JobScheduler:
             self.logger.error(f"Error creating job for case {case_id}: {e}")
             return None
 
-    def schedule_case(self, case_id: str, priority: int = 0) -> bool:
-        """Schedule a case for processing."""
+    def schedule_case(self, case_id: str, priority: int = 0, start_task: str = None) -> bool:
+        """Schedule a case for processing with optional resumption task."""
         with self.lock:
             try:
                 # Check if case is already scheduled or processing
@@ -308,6 +308,16 @@ class JobScheduler:
                 if any(job["case_id"] == case_id for job in self.job_queue):
                     self.logger.warning(f"Case {case_id} is already in queue")
                     return False
+                
+                # Determine starting task if not provided
+                if start_task is None:
+                    # Check if this is a resumption case
+                    resumption_task = self.case_scanner.get_case_resumption_task(case_id)
+                    if resumption_task:
+                        start_task = resumption_task
+                        self.logger.info(f"Case {case_id} will resume from task: {start_task}")
+                    else:
+                        start_task = "setup"  # Default starting task
                 
                 # Analyze case
                 beam_count = self.analyze_case_beam_count(case_id)
@@ -327,13 +337,16 @@ class JobScheduler:
                 if not job:
                     return False
                 
+                # Add starting task to job
+                job["start_task"] = start_task
+                
                 # Add to queue
                 self.job_queue.append(job)
                 
                 # Sort queue by priority (higher priority first)
                 self.job_queue.sort(key=lambda x: x["priority"], reverse=True)
                 
-                self.logger.info(f"Case {case_id} scheduled successfully")
+                self.logger.info(f"Case {case_id} scheduled successfully (start_task: {start_task})")
                 return True
                 
             except Exception as e:
