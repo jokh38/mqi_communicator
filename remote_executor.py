@@ -133,6 +133,11 @@ class RemoteExecutor(BaseSSHConnector):
                 "exit_code": -1
             }
 
+    def execute_remote_command(self, command: str, timeout: Optional[int] = None) -> tuple:
+        """Execute remote command and return (stdout, stderr, exit_code) tuple for enhanced monitoring."""
+        result = self.execute_command(command, timeout)
+        return (result["stdout"], result["stderr"], result["exit_code"])
+
     def execute_command_with_workdir(self, command: str, working_dir: str, timeout: Optional[int] = None) -> Dict[str, Any]:
         """Execute command in specified working directory."""
         full_command = f"cd {shlex.quote(working_dir)} && {command}"
@@ -516,21 +521,39 @@ class RemoteExecutor(BaseSSHConnector):
             # Check if process is still running
             check_result = self.execute_command(f"ps -p {remote_pid}")
             if check_result["exit_code"] != 0:
-                # Process has completed, check if it succeeded
-                # Since we redirected output, we need another way to check success
-                # Check if expected output files exist
-                output_check_result = self.execute_command(f"test -f {case_workspace_path}/moqui_output/dose.raw")
+                # Process has completed - capture stdout, stderr, and exit_code for enhanced monitoring
+                log_result = self.execute_command(f"cat {case_workspace_path}/moqui.log")
+                stdout_output = log_result.get('stdout', '').strip() if log_result["exit_code"] == 0 else ''
+                stderr_output = log_result.get('stderr', '').strip() if log_result["exit_code"] != 0 else ''
                 
-                if output_check_result["exit_code"] == 0:
+                # Get the actual exit code from the completed process (since we can't get it from nohup)
+                # We'll determine success/failure based on output file existence and log content
+                output_check_result = self.execute_command(f"test -f {case_workspace_path}/moqui_output/dose.raw")
+                execution_exit_code = 0 if output_check_result["exit_code"] == 0 else 1
+                
+                # Analyze the results as specified in monitoring plan
+                if execution_exit_code == 0:
+                    # Success case - log detailed success information
                     if self.logger:
+                        self.logger.info(f"Remote execution successful (Exit Code: {execution_exit_code})")
+                        if stdout_output:
+                            self.logger.info(f"MOQUI execution output: {stdout_output[:200]}...")  # Log key info
+                        
+                        # Get archived input file name for reference
+                        archived_filename = self._get_archived_tps_filename(case_id)
+                        
                         self.logger.log_case_progress(case_id, "BEAM_COMPLETED", 1.0, {
                             "stage": "moqui_beam_processing",
                             "beam_id": beam_id,
                             "gpu_id": gpu_id,
-                            "remote_pid": remote_pid
+                            "remote_pid": remote_pid,
+                            "exit_code": execution_exit_code,
+                            "stdout_preview": stdout_output[:100] if stdout_output else "",
+                            "input_file_reference": archived_filename
                         })
                     else:
                         self.logger.info(f"MOQUI beam {beam_id} completed for case: {case_id} on GPU {gpu_id}")
+                    
                     if status_display:
                         status_display.update_case_status(
                             case_id=case_id,
@@ -540,28 +563,43 @@ class RemoteExecutor(BaseSSHConnector):
                             total_steps=4,
                             detailed_status=f"Beam {beam_id} completed on GPU {gpu_id}"
                         )
-                    return {"success": True, "remote_pid": remote_pid}
+                    return {"success": True, "remote_pid": remote_pid, "exit_code": execution_exit_code, "stdout": stdout_output}
                 else:
-                    error_msg = f"Beam calculation failed - no output file found"
+                    # Failure case - log detailed failure report for quick debugging
+                    # Get archived input file name for troubleshooting reference
+                    archived_filename = self._get_archived_tps_filename(case_id)
+                    
                     if self.logger:
+                        self.logger.error(f"Remote execution failed (Exit Code: {execution_exit_code})")
+                        self.logger.error(f"Error Details: {stderr_output if stderr_output else 'No stderr output'}")
+                        if stdout_output:
+                            self.logger.error(f"Stdout Details: {stdout_output}")
+                        self.logger.error(f"Input file for this failed run: {archived_filename}")
+                        
                         self.logger.log_case_progress(case_id, "BEAM_FAILED", 0.0, {
                             "stage": "moqui_beam_processing",
                             "beam_id": beam_id,
                             "gpu_id": gpu_id,
-                            "error": error_msg,
-                            "remote_pid": remote_pid
+                            "error": stderr_output or "Process failed without error output",
+                            "remote_pid": remote_pid,
+                            "exit_code": execution_exit_code,
+                            "stdout": stdout_output,
+                            "stderr": stderr_output,
+                            "input_file_reference": archived_filename
                         })
                     else:
-                        self.logger.error(f"MOQUI beam {beam_id} failed for case: {case_id}, Error: {error_msg}")
+                        self.logger.error(f"MOQUI beam {beam_id} failed for case: {case_id}, Error: {stderr_output}")
+                    
                     if status_display:
+                        error_preview = (stderr_output or stdout_output or "Unknown error")[:100]
                         status_display.update_case_status(
                             case_id=case_id,
                             status="PROCESSING",
                             stage="Beam Failed",
-                            error_message=f"Beam {beam_id} failed on GPU {gpu_id}: {error_msg}",
+                            error_message=f"Beam {beam_id} failed on GPU {gpu_id}: {error_preview}...",
                             transfer_info=""
                         )
-                    return {"success": False, "error": error_msg, "remote_pid": remote_pid}
+                    return {"success": False, "error": stderr_output or stdout_output, "remote_pid": remote_pid, "exit_code": execution_exit_code}
                     
             time.sleep(poll_interval)
             elapsed_time += poll_interval
@@ -793,6 +831,32 @@ class RemoteExecutor(BaseSSHConnector):
             gantry_info['beam_gantry_mapping'] = beam_gantry_map
         
         return gantry_info
+
+    def _get_archived_tps_filename(self, case_id: str) -> str:
+        """Get the most recent archived moqui_tps.in filename for a case."""
+        try:
+            from pathlib import Path
+            import glob
+            
+            archive_dir = Path("logs/archive")
+            if not archive_dir.exists():
+                return f"logs/archive/moqui_tps_{case_id}_[timestamp].in"
+            
+            # Find the most recent archived file for this case
+            pattern = f"moqui_tps_{case_id}_*.in"
+            archived_files = list(archive_dir.glob(pattern))
+            
+            if archived_files:
+                # Get the most recent file by modification time
+                latest_file = max(archived_files, key=lambda f: f.stat().st_mtime)
+                return str(latest_file)
+            else:
+                return f"logs/archive/moqui_tps_{case_id}_[not_found].in"
+                
+        except Exception as e:
+            if self.logger:
+                self.logger.warning(f"Failed to get archived TPS filename for case {case_id}: {e}")
+            return f"logs/archive/moqui_tps_{case_id}_[error].in"
 
     def _update_case_status_with_gantry(self, case_id: str, gantry_info: Dict[str, Any]):
         """Update case_status.json with gantry information."""

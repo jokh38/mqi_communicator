@@ -206,6 +206,12 @@ class ExecuteBeamCalculationsStep(ProcessingStep):
                 context.job_scheduler.complete_job(context.case_id, False)
                 return False
             
+            # Log parameter generation success as specified in monitoring plan
+            context.logger.info(f"Successfully generated moqui_tps.in file for case: {context.case_id}")
+            
+            # Archive the generated moqui_tps.in file locally for monitoring
+            self._archive_tps_parameters(context, merged_params)
+            
             # Check for beams data to determine how many beam calculations to run
             # For demonstration, assume we have beam information from the case
             workspace_path = context.remote_executor.remote_workspace
@@ -313,6 +319,35 @@ class ExecuteBeamCalculationsStep(ProcessingStep):
             dynamic_params["GantryNum"] = 0
         
         return dynamic_params
+
+    def _archive_tps_parameters(self, context, merged_params: Dict[str, Any]) -> None:
+        """Archive the generated moqui_tps.in parameters locally for monitoring."""
+        try:
+            from datetime import datetime
+            from pathlib import Path
+            
+            # Create archive directory if it doesn't exist
+            archive_dir = Path("logs/archive")
+            archive_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Generate timestamp for filename
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            archived_filename = f"moqui_tps_{context.case_id}_{timestamp}.in"
+            archived_path = archive_dir / archived_filename
+            
+            # Create the content in moqui_tps.in format (key value pairs)
+            content_lines = []
+            for key, value in merged_params.items():
+                content_lines.append(f"{key} {value}")
+            
+            # Write the parameters to the archive file
+            with open(archived_path, 'w', encoding='utf-8') as f:
+                f.write('\n'.join(content_lines) + '\n')
+            
+            context.logger.info(f"Input file archived locally as {archived_filename}")
+            
+        except Exception as e:
+            context.logger.error(f"Failed to archive moqui_tps.in parameters: {e}")
 
 
 class RunConverterStep(ProcessingStep):

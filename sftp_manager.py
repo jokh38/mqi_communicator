@@ -59,6 +59,17 @@ class SFTPManager(BaseSSHConnector):
             self.logger.error(f"Failed to create remote directory {remote_path}: {e}")
             return False
 
+    def upload_file_with_archival(self, local_path: str, remote_path: str, case_id: str = "", 
+                                  status_display=None, current_file: int = 0, total_files: int = 0, 
+                                  archive_locally: bool = False) -> bool:
+        """Upload single file with optional local archival for monitoring purposes."""
+        success = self.upload_file(local_path, remote_path, case_id, status_display, current_file, total_files)
+        
+        if success and archive_locally and local_path.endswith('moqui_tps.in'):
+            self._archive_moqui_tps_file(local_path, case_id)
+        
+        return success
+
     def upload_file(self, local_path: str, remote_path: str, case_id: str = "", 
                     status_display=None, current_file: int = 0, total_files: int = 0) -> bool:
         """Upload single file with pre-flight checks, post-flight verification, and network retry."""
@@ -541,6 +552,41 @@ class SFTPManager(BaseSSHConnector):
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit."""
         self.disconnect()
+
+    def _archive_moqui_tps_file(self, local_path: str, case_id: str = "") -> bool:
+        """Archive moqui_tps.in file locally with timestamp for monitoring purposes."""
+        try:
+            from datetime import datetime
+            from pathlib import Path
+            import shutil
+            
+            # Create archive directory if it doesn't exist
+            archive_dir = Path("logs/archive")
+            archive_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Generate timestamp for filename
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            
+            # Create archived filename with case_id if available
+            if case_id:
+                archived_filename = f"moqui_tps_{case_id}_{timestamp}.in"
+            else:
+                archived_filename = f"moqui_tps_{timestamp}.in"
+            
+            archived_path = archive_dir / archived_filename
+            
+            # Copy the file to archive
+            shutil.copy2(local_path, archived_path)
+            
+            if self.logger:
+                self.logger.info(f"Input file archived locally as {archived_filename}")
+            
+            return True
+            
+        except Exception as e:
+            if self.logger:
+                self.logger.error(f"Failed to archive moqui_tps.in file: {e}")
+            return False
 
     def __del__(self):
         """Destructor - ensure connections are closed."""

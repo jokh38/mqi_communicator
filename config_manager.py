@@ -98,3 +98,15 @@ class ConfigManager:
     def get_config(self) -> Dict[str, Any]:
         """Get complete configuration dictionary."""
         return self.config.copy()
+
+    def get_moqui_tps_params(self) -> Dict[str, Any]:
+        """Get moqui_tps parameters from configuration and log generation success."""
+        try:
+            tps_params = self.config.get("moqui_tps_params", {})
+            if tps_params:
+                # Log successful parameter retrieval as specified in monitoring plan
+                print(f"Successfully retrieved moqui_tps.in parameters from configuration: {len(tps_params)} parameters")
+            return tps_params
+        except Exception as e:
+            print(f"Failed to retrieve moqui_tps.in parameters from configuration: {e}")
+            return {}
