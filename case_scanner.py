@@ -10,7 +10,8 @@ from typing import Dict, List, Optional, Any
 class CaseScanner:
     def __init__(self, base_path: str, status_file: str = "case_status.json", stability_period_seconds: int = 10, logger=None):
         self.base_path = Path(base_path)
-        self.status_file = Path(status_file)
+        # status_file should be an absolute path or relative to current working directory (not base_path)
+        self.status_file = Path(status_file) if Path(status_file).is_absolute() else Path.cwd() / status_file
         self.stability_period_seconds = stability_period_seconds
         self.logger = logger
         self.case_status = self._load_case_status()
@@ -107,38 +108,90 @@ class CaseScanner:
         return stored_hash != current_hash
 
     def _read_case_status_file(self, case_id: str) -> Dict[str, Any]:
-        """Read the case_status.json file for a specific case."""
+        """Read case status from the central status dictionary."""
         try:
+            # Get case status from central dictionary instead of individual files
+            case_data = self.case_status.get(case_id, {"status": "NEW"})
+            
+            # For compatibility, check if case directory has individual status file
+            # This allows graceful migration from old approach
             case_dir = self.base_path / case_id
-            status_file = case_dir / "case_status.json"
+            individual_status_file = case_dir / "case_status.json"
             
-            if not status_file.exists():
-                return {"status": "NEW"}
+            if individual_status_file.exists() and case_id not in self.case_status:
+                # Migrate individual status file to central dictionary
+                try:
+                    with open(individual_status_file, 'r') as f:
+                        individual_data = json.load(f)
+                    
+                    # Update central dictionary with individual file data
+                    status = individual_data.get("status", "NEW")
+                    current_task = individual_data.get("current_task")
+                    last_updated = individual_data.get("last_updated")
+                    
+                    # Convert to central dictionary format
+                    self.case_status[case_id] = {
+                        "status": status,
+                        "current_task": current_task,
+                        "last_updated": last_updated,
+                        "start_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "end_time": "",
+                        "hash": "",
+                        "gpu_allocation": [],
+                        "retry_count": 0,
+                        "remote_path": "",
+                        "remote_pid": None,
+                        "locked_gpus": [],
+                        "last_completed_step": ""
+                    }
+                    
+                    self._save_case_status()
+                    self.logger.info(f"Migrated individual status file for case {case_id} to central dictionary")
+                    
+                    # Return the migrated data
+                    return {
+                        "status": status,
+                        "current_task": current_task,
+                        "last_updated": last_updated
+                    }
+                    
+                except Exception as migration_error:
+                    self.logger.warning(f"Failed to migrate individual status file for {case_id}: {migration_error}")
             
-            with open(status_file, 'r') as f:
-                status_data = json.load(f)
-            
-            return status_data
+            # Return data for compatibility with MainController expectations
+            return {
+                "status": case_data.get("status", "NEW"),
+                "current_task": case_data.get("current_task"),
+                "last_updated": case_data.get("last_updated")
+            }
             
         except Exception as e:
-            self.logger.error(f"Failed to read case status file for {case_id}: {e}")
+            self.logger.error(f"Failed to read case status for {case_id}: {e}")
             return {"status": "NEW"}
 
     def _is_case_stalled(self, case_id: str, stall_threshold_hours: int = 3) -> bool:
         """Check if a case appears to be stalled based on last_updated timestamp."""
         try:
-            status_data = self._read_case_status_file(case_id)
+            # Get case data from central dictionary
+            case_data = self.case_status.get(case_id, {})
             
-            if status_data.get("status") != "PROCESSING":
+            if case_data.get("status") != "PROCESSING":
                 return False
             
-            last_updated_str = status_data.get("last_updated")
+            last_updated_str = case_data.get("last_updated")
             if not last_updated_str:
                 return True  # No timestamp, consider stalled
             
             try:
-                last_updated = datetime.fromisoformat(last_updated_str.replace('Z', '+00:00'))
-                current_time = datetime.utcnow().replace(tzinfo=last_updated.tzinfo)
+                # Handle both ISO format and simple datetime format
+                if 'Z' in last_updated_str or '+' in last_updated_str:
+                    last_updated = datetime.fromisoformat(last_updated_str.replace('Z', '+00:00'))
+                    current_time = datetime.utcnow().replace(tzinfo=last_updated.tzinfo)
+                else:
+                    # Handle simple format like "2024-07-24 10:30:45"
+                    last_updated = datetime.strptime(last_updated_str, "%Y-%m-%d %H:%M:%S")
+                    current_time = datetime.now()
+                
                 time_diff = current_time - last_updated
                 
                 is_stalled = time_diff.total_seconds() > (stall_threshold_hours * 3600)
@@ -156,7 +209,7 @@ class CaseScanner:
             return False
 
     def scan_for_new_cases(self) -> List[str]:
-        """Scan base directory for cases that need processing based on status_rev.md logic."""
+        """Scan base directory for cases that need processing based on centralized status management."""
         cases_to_process = []
         
         self.logger.info(f"Scanning directory: {self.base_path}")
@@ -169,6 +222,7 @@ class CaseScanner:
             directories_found = list(self.base_path.iterdir())
             self.logger.info(f"Found {len(directories_found)} items in base path")
             
+            # Step 1: List all case directories from local_logdata path
             for case_dir in directories_found:
                 if not case_dir.is_dir():
                     self.logger.debug(f"Skipping non-directory: {case_dir}")
@@ -182,46 +236,47 @@ class CaseScanner:
                     self.logger.warning(f"Case directory validation failed: {case_id}")
                     continue
                 
-                # Check for directory stability (only for truly new cases)
-                last_mod_time = self._get_last_modified_time(case_dir)
-                if last_mod_time and (datetime.now().timestamp() - last_mod_time) < self.stability_period_seconds:
-                    # Only skip if no case_status.json exists (truly new case)
-                    status_file = case_dir / "case_status.json"
-                    if not status_file.exists():
-                        self.logger.info(f"Case '{case_id}' is still being modified. Skipping for now.")
+                # Step 2: Check if case_id exists in self.case_status (central dictionary)
+                if case_id not in self.case_status:
+                    # Step 3: New Case - treat as new case
+                    # Check for directory stability (only for truly new cases)
+                    last_mod_time = self._get_last_modified_time(case_dir)
+                    is_stable = not (last_mod_time and (datetime.now().timestamp() - last_mod_time) < self.stability_period_seconds)
+                    
+                    # Also check for individual status file for migration purposes
+                    individual_status_file = case_dir / "case_status.json"
+                    if not is_stable and not individual_status_file.exists():
+                        self.logger.info(f"Case '{case_id}' is unstable and has no status file. Skipping for now.")
                         continue
-
-                # Read case status file to determine action
-                status_data = self._read_case_status_file(case_id)
-                status = status_data.get("status", "NEW")
-                
-                if status == "NEW":
-                    # New case - dispatch to start from beginning
+                    
                     self.logger.info(f"New case detected: {case_id}")
                     cases_to_process.append(case_id)
                     
-                    # Update legacy case status tracking for compatibility
+                    # Add case to central dictionary with NEW status
                     current_hash = self._calculate_folder_hash(case_dir)
                     self.update_case_status(case_id, "NEW", folder_hash=current_hash)
                     
-                elif status == "COMPLETED":
-                    # Completed case - ignore
-                    self.logger.debug(f"Case already completed: {case_id}")
-                    
-                elif status == "PROCESSING":
-                    # Check if case is stalled
-                    current_task = status_data.get("current_task")
-                    last_updated = status_data.get("last_updated")
-                    
-                    if self._is_case_stalled(case_id):
-                        # Stalled case - dispatch for resumption
-                        self.logger.warning(f"Stalled case detected for resumption: {case_id} (task: {current_task})")
-                        cases_to_process.append(case_id)
-                    else:
-                        self.logger.debug(f"Case still processing: {case_id} (task: {current_task})")
-                
                 else:
-                    self.logger.warning(f"Unknown status '{status}' for case {case_id}")
+                    # Step 4: Existing Case - check status value in self.case_status[case_id]
+                    case_data = self.case_status[case_id]
+                    status = case_data.get("status", "NEW")
+                    
+                    self.logger.debug(f"Case '{case_id}' has status: {status}")
+                    
+                    if status == "PROCESSING":
+                        # Check if case is stalled
+                        if self._is_case_stalled(case_id):
+                            current_task = case_data.get("current_task")
+                            self.logger.warning(f"Stalled case detected for resumption: {case_id} (task: {current_task})")
+                            cases_to_process.append(case_id)
+                        else:
+                            current_task = case_data.get("current_task")
+                            self.logger.debug(f"Case still processing: {case_id} (task: {current_task})")
+                    elif status in ["COMPLETED", "FAILED"]:
+                        # Ignore completed/failed cases
+                        self.logger.debug(f"Case already {status.lower()}: {case_id}")
+                    else:
+                        self.logger.warning(f"Unknown status '{status}' for case {case_id}")
         
         except (OSError, IOError) as e:
             self.logger.error(f"Error scanning directory: {e}")
@@ -232,10 +287,11 @@ class CaseScanner:
     def get_case_resumption_task(self, case_id: str) -> Optional[str]:
         """Get the task that a PROCESSING case should resume from."""
         try:
-            status_data = self._read_case_status_file(case_id)
+            # Get case data from central dictionary
+            case_data = self.case_status.get(case_id, {})
             
-            if status_data.get("status") == "PROCESSING":
-                return status_data.get("current_task")
+            if case_data.get("status") == "PROCESSING":
+                return case_data.get("current_task")
             
             return None
             
@@ -249,7 +305,8 @@ class CaseScanner:
                           remote_path: Optional[str] = None,
                           remote_pid: Optional[int] = None,
                           locked_gpus: Optional[List[int]] = None,
-                          last_completed_step: Optional[str] = None) -> None:
+                          last_completed_step: Optional[str] = None,
+                          current_task: Optional[str] = None) -> None:
         """Update case status in memory and save to file."""
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
@@ -264,13 +321,16 @@ class CaseScanner:
                 "remote_path": remote_path or "",
                 "remote_pid": remote_pid,
                 "locked_gpus": locked_gpus or [],
-                "last_completed_step": last_completed_step or ""
+                "last_completed_step": last_completed_step or "",
+                "current_task": current_task,
+                "last_updated": current_time
             }
         else:
             # Update existing case
             self.case_status[case_id]["status"] = status
             self.case_status[case_id]["hash"] = folder_hash
             self.case_status[case_id]["retry_count"] = retry_count
+            self.case_status[case_id]["last_updated"] = current_time
             
             if gpu_allocation is not None:
                 self.case_status[case_id]["gpu_allocation"] = gpu_allocation
@@ -286,6 +346,13 @@ class CaseScanner:
                 
             if last_completed_step is not None:
                 self.case_status[case_id]["last_completed_step"] = last_completed_step
+            
+            # Handle current_task updates
+            if status == "PROCESSING" and current_task is not None:
+                self.case_status[case_id]["current_task"] = current_task
+            elif status in ["COMPLETED", "FAILED"]:
+                # Clear current_task for completed/failed cases
+                self.case_status[case_id]["current_task"] = None
 
             if status == "COMPLETED" or status == "FAILED":
                 self.case_status[case_id]["end_time"] = current_time

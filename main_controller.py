@@ -189,79 +189,9 @@ class MainController:
         except Exception as e:
             self.logger.error(f"Error cleaning up resources for stale case {case_id}: {e}")
 
-    def _get_case_status_file_path(self, case_id: str) -> Path:
-        """Get the path to the case_status.json file for a specific case."""
-        case_dir = Path(self.config["paths"]["local_logdata"]) / case_id
-        return case_dir / "case_status.json"
 
-    def _update_case_status_file(self, case_id: str, status: str, current_task: str = None) -> None:
-        """Update the case_status.json file with current status and task."""
-        try:
-            status_file = self._get_case_status_file_path(case_id)
-            status_file.parent.mkdir(parents=True, exist_ok=True)
-            
-            status_data = {
-                "status": status,
-                "last_updated": datetime.utcnow().isoformat() + "Z"
-            }
-            
-            if status == "PROCESSING" and current_task:
-                status_data["current_task"] = current_task
-            elif status == "COMPLETED":
-                # Remove current_task field for completed jobs
-                pass
-            
-            with open(status_file, 'w') as f:
-                json.dump(status_data, f, indent=2)
-            
-            self.logger.debug(f"Updated case status file for {case_id}: {status}")
-            
-        except Exception as e:
-            self.logger.error(f"Failed to update case status file for {case_id}: {e}")
 
-    def _read_case_status_file(self, case_id: str) -> Dict[str, Any]:
-        """Read the case_status.json file for a specific case."""
-        try:
-            status_file = self._get_case_status_file_path(case_id)
-            
-            if not status_file.exists():
-                return {"status": "NEW"}
-            
-            with open(status_file, 'r') as f:
-                status_data = json.load(f)
-            
-            return status_data
-            
-        except Exception as e:
-            self.logger.error(f"Failed to read case status file for {case_id}: {e}")
-            return {"status": "NEW"}
 
-    def _check_stalled_case(self, case_id: str, stall_threshold_hours: int = 3) -> bool:
-        """Check if a case appears to be stalled based on last_updated timestamp."""
-        try:
-            status_data = self._read_case_status_file(case_id)
-            
-            if status_data.get("status") != "PROCESSING":
-                return False
-            
-            last_updated_str = status_data.get("last_updated")
-            if not last_updated_str:
-                return True  # No timestamp, consider stalled
-            
-            try:
-                last_updated = datetime.fromisoformat(last_updated_str.replace('Z', '+00:00'))
-                current_time = datetime.utcnow().replace(tzinfo=last_updated.tzinfo)
-                time_diff = current_time - last_updated
-                
-                return time_diff.total_seconds() > (stall_threshold_hours * 3600)
-                
-            except ValueError as e:
-                self.logger.warning(f"Invalid timestamp format in case status for {case_id}: {e}")
-                return True  # Invalid timestamp, consider stalled
-                
-        except Exception as e:
-            self.logger.error(f"Error checking stalled case {case_id}: {e}")
-            return False
 
     def _is_network_error(self, exception: Exception) -> bool:
         """Check if the exception is a network-related error."""
@@ -415,9 +345,10 @@ class MainController:
                 logger=self.logger
             )
 
-            # Initialize case scanner
+            # Initialize case scanner with centralized status file
             self.case_scanner = CaseScanner(
                 base_path=self.config["paths"]["local_logdata"],
+                status_file=self.config["paths"]["status_file"],
                 logger=self.logger
             )
 
@@ -585,19 +516,19 @@ class MainController:
     def _process_case(self, case_id: str, start_task: str = None) -> bool:
         """Process a single case through the complete workflow using WorkflowEngine."""
         try:
-            # Read current status to determine starting point
-            status_data = self._read_case_status_file(case_id)
+            # Read current status from case scanner to determine starting point
+            case_data = self.case_scanner.get_case_status(case_id) or {}
             
             # Determine starting task
             if start_task:
                 current_task = start_task
-            elif status_data.get("status") == "PROCESSING":
-                current_task = status_data.get("current_task", "setup")
+            elif case_data.get("status") == "PROCESSING":
+                current_task = case_data.get("current_task", "setup")
             else:
                 current_task = "setup"
             
-            # Update status to PROCESSING at start
-            self._update_case_status_file(case_id, "PROCESSING", current_task)
+            # Update status to PROCESSING at start using case scanner
+            self.case_scanner.update_case_status(case_id, "PROCESSING", current_task=current_task)
             
             # Create processing context
             context = self.workflow_engine.create_context(
@@ -612,16 +543,16 @@ class MainController:
                 shared_state=self.shared_state
             )
             
-            # Add status update callback to workflow engine
-            context.status_update_callback = lambda task_name: self._update_case_status_file(case_id, "PROCESSING", task_name)
+            # Add status update callback to workflow engine that delegates to case scanner
+            context.status_update_callback = lambda task_name: self.case_scanner.update_case_status(case_id, "PROCESSING", current_task=task_name)
             context.starting_task = current_task
             
             # Execute the workflow
             success = self.workflow_engine.execute_workflow(context)
             
             if success:
-                # Update status to COMPLETED
-                self._update_case_status_file(case_id, "COMPLETED")
+                # Update status to COMPLETED using case scanner
+                self.case_scanner.update_case_status(case_id, "COMPLETED")
                 
                 # Move to completed queue
                 self.completed_queue.put(case_id)
@@ -653,8 +584,6 @@ class MainController:
                     self.logger.warning(f"Network error processing case {case_id} (retry {current_retry_count + 1}/{self.max_network_retries}): {e}")
                     # Update case status with incremented retry count and reset to NEW for reprocessing
                     self.case_scanner.update_case_status(case_id, "NEW", retry_count=current_retry_count + 1)
-                    # Also reset the status file to NEW
-                    self._update_case_status_file(case_id, "NEW")
                     return False # Indicate failure, but allow for retry
                 else:
                     self.logger.error(f"Case {case_id} failed after {current_retry_count} network retries: {e}")
@@ -909,6 +838,7 @@ class MainController:
         while self.running:
             try:
                 self._monitor_system_health()
+                self._update_status_display()  # Update display every monitoring cycle
                 time.sleep(self.monitoring_interval)
             except Exception as e:
                 self.error_handler.handle_error(e, {"operation": "background_system_monitoring"})
@@ -981,12 +911,14 @@ class MainController:
                     
                     # Wait until next scan time
                     while datetime.now() < next_scan_time and self.running:
-                        time.sleep(60)  # Check every minute
+                        time.sleep(10)  # Check every 10 seconds for more responsive display
+                        
+                        # Update status display frequently for real-time progress updates
+                        self._update_status_display()
                         
                         # Perform health checks while waiting
                         if datetime.now().minute % 5 == 0:  # Every 5 minutes
                             self._monitor_system_health()
-                            self._update_status_display()
                             
                         # Check for daily archive (once per day after 07:00)
                         current_time = datetime.now()
