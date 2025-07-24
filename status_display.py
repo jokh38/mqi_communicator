@@ -16,6 +16,7 @@ class CaseDisplayInfo:
     current_task: str = ""      # "MOQUI Interpreter", "Beam Calculation", "DICOM Conversion"
     current_step: int = 0       # 현재 단계 (1, 2, 3, 4)
     total_steps: int = 4        # 전체 단계 수
+    detailed_progress: str = "" # 상세 진행률 ("85/223", "2/5")
     detailed_status: str = ""   # 상세 상태 ("Parsing RTPLAN...", "Processing beam 2/5 on GPU 3")
     
     # 기존 필드들 (호환성 유지)
@@ -101,7 +102,8 @@ class StatusDisplay:
                           error_message: str = "",
                           # 새로운 매개변수들
                           current_task: str = "", current_step: int = 0,
-                          total_steps: int = 4, detailed_status: str = "") -> None:
+                          total_steps: int = 4, detailed_progress: str = "",
+                          detailed_status: str = "") -> None:
         """Update case status information with enhanced display structure."""
         with self.lock:
             if case_id not in self.cases:
@@ -119,6 +121,7 @@ class StatusDisplay:
                     current_task=current_task,
                     current_step=current_step,
                     total_steps=total_steps,
+                    detailed_progress=detailed_progress,
                     detailed_status=detailed_status
                 )
             else:
@@ -135,6 +138,8 @@ class StatusDisplay:
                     case_info.current_step = current_step
                 if total_steps > 0:
                     case_info.total_steps = total_steps
+                if detailed_progress:
+                    case_info.detailed_progress = detailed_progress
                 if detailed_status:
                     case_info.detailed_status = detailed_status
                 case_info.gpu_allocation = gpu_allocation or case_info.gpu_allocation
@@ -273,21 +278,41 @@ class StatusDisplay:
                     
                     gpu_str = ",".join(map(str, case_info.gpu_allocation)) if case_info.gpu_allocation else ""
                     
-                    # 새로운 구조화된 표시 (Rich와 동일한 로직)
-                    task_display = (case_info.current_task or case_info.stage or "Idle")[:15]
-                    progress_display = case_info.progress_display if case_info.current_step > 0 else "-"
+                    # Task Column: [Current Step]/[Total Steps] [Current Task Name]
+                    if case_info.current_task and case_info.current_step > 0:
+                        task_display = f"{case_info.progress_display} {case_info.current_task}"[:15]
+                    else:
+                        task_display = (case_info.current_task or case_info.stage or "Idle")[:15]
                     
-                    # 상세 정보 우선순위: detailed_status > error > transfer_info > beam_info
+                    # Progress Column: Use detailed_progress if available, otherwise extract from transfer_info
+                    progress_display = case_info.detailed_progress
+                    if not progress_display and case_info.transfer_info:
+                        # Extract progress from transfer_info like "Uploading (80/223)"
+                        if "(" in case_info.transfer_info and ")" in case_info.transfer_info:
+                            progress_display = case_info.transfer_info.split("(")[1].split(")")[0]
+                    if not progress_display:
+                        progress_display = "-"
+                    
+                    # Details Column: supplementary information
                     details = case_info.detailed_status
                     if not details:
                         if case_info.error_message:
                             details = f"Error: {case_info.error_message[:30]}..."
                         elif case_info.transfer_info:
-                            details = case_info.transfer_info[:35]
+                            # Extract only the status part (like "Uploading - 15.2 MB/s")
+                            if "(" in case_info.transfer_info and ")" in case_info.transfer_info:
+                                # Remove the progress part, keep status and speed
+                                before_paren = case_info.transfer_info.split("(")[0].strip()
+                                after_paren = case_info.transfer_info.split(")")[1].strip() if ")" in case_info.transfer_info else ""
+                                if after_paren.startswith("-"):
+                                    after_paren = after_paren[1:].strip()
+                                details = f"{before_paren} {after_paren}".strip()[:35]
+                            else:
+                                details = case_info.transfer_info[:35]
                         elif case_info.beam_info:
                             details = case_info.beam_info[:35]
                         else:
-                            details = case_info.stage[:35] if case_info.stage else ""
+                            details = ""
                     
                     print(f"{case_info.case_id[:15]:<15} {task_display:<15} {progress_display:<10} "
                           f"{details[:35]:<35} {gpu_str:<8} {runtime:<10}")
@@ -342,32 +367,41 @@ class StatusDisplay:
                 
                 gpu_str = ",".join(map(str, case_info.gpu_allocation)) if case_info.gpu_allocation else ""
                 
-                # 새로운 구조화된 표시
-                task_display = case_info.current_task or case_info.stage or "Idle"
-                progress_display = case_info.progress_display if case_info.current_step > 0 else "-"
+                # Task Column: [Current Step]/[Total Steps] [Current Task Name]
+                if case_info.current_task and case_info.current_step > 0:
+                    task_display = f"{case_info.progress_display} {case_info.current_task}"
+                else:
+                    task_display = case_info.current_task or case_info.stage or "Idle"
                 
-                # 상세 정보 우선순위: detailed_status > error > transfer_info > beam_info
+                # Progress Column: Use detailed_progress if available, otherwise extract from transfer_info
+                progress_display = case_info.detailed_progress
+                if not progress_display and case_info.transfer_info:
+                    # Extract progress from transfer_info like "Uploading (80/223)"
+                    if "(" in case_info.transfer_info and ")" in case_info.transfer_info:
+                        progress_display = case_info.transfer_info.split("(")[1].split(")")[0]
+                if not progress_display:
+                    progress_display = "-"
+                
+                # Details Column: supplementary information
                 details = case_info.detailed_status
                 if not details:
                     if case_info.error_message:
                         details = f"[bold red]Error: {case_info.error_message[:30]}...[/bold red]"
                     elif case_info.transfer_info:
-                        # Extract status and progress separately
-                        transfer_text = case_info.transfer_info
-                        if "(" in transfer_text and ")" in transfer_text:
-                            # Split "Uploading (80/223)" into "Uploading" and "80/223"
-                            status_part = transfer_text.split("(")[0].strip()
-                            progress_part = transfer_text.split("(")[1].split(")")[0]
-                            details = status_part[:35]
-                            # Update progress display with the count
-                            if progress_display == "-":
-                                progress_display = progress_part
+                        # Extract only the status part (like "Uploading - 15.2 MB/s")
+                        if "(" in case_info.transfer_info and ")" in case_info.transfer_info:
+                            # Remove the progress part, keep status and speed
+                            before_paren = case_info.transfer_info.split("(")[0].strip()
+                            after_paren = case_info.transfer_info.split(")")[1].strip() if ")" in case_info.transfer_info else ""
+                            if after_paren.startswith("-"):
+                                after_paren = after_paren[1:].strip()
+                            details = f"{before_paren} {after_paren}".strip()[:35]
                         else:
-                            details = transfer_text[:35]
+                            details = case_info.transfer_info[:35]
                     elif case_info.beam_info:
                         details = case_info.beam_info[:35]
                     else:
-                        details = case_info.stage[:35] if case_info.stage else ""
+                        details = ""
 
                 # Task 스타일링
                 task_style = "bold magenta" if case_info.status == "PROCESSING" else "dim"

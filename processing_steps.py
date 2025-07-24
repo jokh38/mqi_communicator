@@ -480,6 +480,15 @@ class WorkflowEngine:
                 step = steps[i]
                 context.logger.info(f"Executing step {i + 1}/{len(steps)}: {step.name} for case {context.case_id}")
                 
+                # Update status display with overall step progress at the beginning of each step
+                context.status_display.update_case_status(
+                    case_id=context.case_id,
+                    status="PROCESSING",
+                    current_task=step.name,
+                    current_step=i + 1,
+                    total_steps=len(steps)
+                )
+                
                 if not step.execute(context):
                     context.logger.error(f"Step {step.name} failed for case {context.case_id}")
                     return False
