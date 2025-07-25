@@ -10,6 +10,30 @@ from queue import Queue
 
 
 @dataclass
+class UpdateData:
+    """Encapsulates all possible fields for a case status update."""
+    case_id: str
+    status: Optional[str] = None
+    progress: float = 0.0
+    stage: Optional[str] = None
+    gpu_allocation: Optional[List[int]] = None
+    beam_info: Optional[str] = None
+    transfer_info: Optional[str] = None
+    error_message: Optional[str] = None
+    # New structured fields
+    current_task: Optional[str] = None
+    current_step: int = 0
+    total_steps: int = 4
+    detailed_progress: Optional[str] = None
+    detailed_status: Optional[str] = None
+    # Raw data fields for formatting
+    transfer_speed: Optional[float] = None  # MB/s
+    transfer_action: Optional[str] = None   # "Uploading", "Downloading"
+    current_file_index: Optional[int] = None
+    total_files: Optional[int] = None
+
+
+@dataclass
 class CaseDisplayInfo:
     case_id: str
     # 새로운 구조화된 필드들
@@ -104,60 +128,101 @@ class StatusDisplay:
             if self.system_monitor_thread.is_alive():
                 print("Warning: System monitor thread did not stop gracefully")
     
-    def update_case_status(self, case_id: str, status: str = "", progress: float = 0.0, 
-                          stage: str = "", gpu_allocation: List[int] = None, 
-                          beam_info: str = "", transfer_info: str = "", 
-                          error_message: str = "",
-                          # 새로운 매개변수들
-                          current_task: str = "", current_step: int = 0,
-                          total_steps: int = 4, detailed_progress: str = None,
-                          detailed_status: str = None) -> None:
-        """Update case status information with enhanced display structure."""
+    def update_case_status(self, data: UpdateData) -> None:
+        """Update case status information using structured UpdateData."""
         with self.lock:
-            if case_id not in self.cases:
-                self.cases[case_id] = CaseDisplayInfo(
-                    case_id=case_id,
-                    status=status or "PROCESSING",
-                    progress=progress,
-                    stage=stage,
-                    start_time=datetime.now() if status == "PROCESSING" else None,
-                    gpu_allocation=gpu_allocation or [],
-                    beam_info=beam_info,
-                    transfer_info=transfer_info,
-                    error_message=error_message,
-                    # 새로운 필드들
-                    current_task=current_task,
-                    current_step=current_step,
-                    total_steps=total_steps,
-                    detailed_progress=detailed_progress,
-                    detailed_status=detailed_status
+            if data.case_id not in self.cases:
+                self.cases[data.case_id] = CaseDisplayInfo(
+                    case_id=data.case_id,
+                    status=data.status or "PROCESSING",
+                    progress=data.progress,
+                    stage=data.stage or "",
+                    start_time=datetime.now() if data.status == "PROCESSING" else None,
+                    gpu_allocation=data.gpu_allocation or [],
+                    beam_info=data.beam_info or "",
+                    transfer_info=data.transfer_info or "",
+                    error_message=data.error_message or "",
+                    current_task=data.current_task or "",
+                    current_step=data.current_step,
+                    total_steps=data.total_steps,
+                    detailed_progress=self._format_detailed_progress(data),
+                    detailed_status=self._format_detailed_status(data)
                 )
             else:
-                case_info = self.cases[case_id]
-                if status:
-                    case_info.status = status
-                if progress > 0:
-                    case_info.progress = progress
-                if stage:
-                    case_info.stage = stage
-                if current_task:
-                    case_info.current_task = current_task
-                if current_step > 0:
-                    case_info.current_step = current_step
-                if total_steps > 0:
-                    case_info.total_steps = total_steps
-                # Always update detailed_progress and detailed_status, even if empty (for clearing)
-                if detailed_progress is not None:
-                    case_info.detailed_progress = detailed_progress
-                if detailed_status is not None:
-                    case_info.detailed_status = detailed_status
-                case_info.gpu_allocation = gpu_allocation or case_info.gpu_allocation
-                case_info.beam_info = beam_info
-                case_info.transfer_info = transfer_info
-                case_info.error_message = error_message
+                case_info = self.cases[data.case_id]
+                if data.status:
+                    case_info.status = data.status
+                if data.progress > 0:
+                    case_info.progress = data.progress
+                if data.stage:
+                    case_info.stage = data.stage
+                if data.current_task:
+                    case_info.current_task = data.current_task
+                if data.current_step > 0:
+                    case_info.current_step = data.current_step
+                if data.total_steps > 0:
+                    case_info.total_steps = data.total_steps
                 
-                if status == "PROCESSING" and case_info.start_time is None:
+                # Update formatted fields using centralized logic
+                case_info.detailed_progress = self._format_detailed_progress(data)
+                case_info.detailed_status = self._format_detailed_status(data)
+                
+                if data.gpu_allocation is not None:
+                    case_info.gpu_allocation = data.gpu_allocation
+                if data.beam_info is not None:
+                    case_info.beam_info = data.beam_info
+                if data.transfer_info is not None:
+                    case_info.transfer_info = data.transfer_info
+                if data.error_message is not None:
+                    case_info.error_message = data.error_message
+                
+                if data.status == "PROCESSING" and case_info.start_time is None:
                     case_info.start_time = datetime.now()
+    
+    def _format_detailed_progress(self, data: UpdateData) -> str:
+        """Format detailed progress from raw data."""
+        if data.detailed_progress is not None:
+            return data.detailed_progress
+        
+        if data.current_file_index is not None and data.total_files is not None:
+            return f"{data.current_file_index}/{data.total_files}"
+        
+        # Fallback to parsing transfer_info for backward compatibility
+        if data.transfer_info and "(" in data.transfer_info and ")" in data.transfer_info:
+            return data.transfer_info.split("(")[1].split(")")[0]
+        
+        return ""
+    
+    def _format_detailed_status(self, data: UpdateData) -> str:
+        """Format detailed status from raw data."""
+        if data.detailed_status is not None:
+            return data.detailed_status
+        
+        if data.error_message:
+            return f"Error: {data.error_message[:30]}..."
+        
+        if data.transfer_action and data.transfer_speed is not None:
+            return f"{data.transfer_action} - {data.transfer_speed:.1f} MB/s"
+        
+        if data.transfer_action:
+            return data.transfer_action
+        
+        # Fallback to beam_info or transfer_info for backward compatibility
+        if data.beam_info:
+            return data.beam_info[:35]
+        
+        if data.transfer_info:
+            # Extract status part from formatted transfer_info
+            if "(" in data.transfer_info and ")" in data.transfer_info:
+                before_paren = data.transfer_info.split("(")[0].strip()
+                after_paren = data.transfer_info.split(")")[1].strip() if ")" in data.transfer_info else ""
+                if after_paren.startswith("-"):
+                    after_paren = after_paren[1:].strip()
+                return f"{before_paren} {after_paren}".strip()[:35]
+            else:
+                return data.transfer_info[:35]
+        
+        return ""
     
     def remove_case(self, case_id: str) -> None:
         """Remove case from display."""
@@ -324,12 +389,6 @@ class StatusDisplay:
         
         return layout
 
-    def _display_rich(self) -> None:
-        """This method is now a legacy placeholder; logic is in _display_loop."""
-        # The main logic has been moved to _display_loop with the Live object.
-        # This method can be kept for compatibility or removed.
-        # For now, we'll just pass.
-        pass
     
     def _display_basic(self) -> None:
         """Basic console display without rich library."""
@@ -386,35 +445,11 @@ class StatusDisplay:
                     else:
                         task_display = (case_info.current_task or case_info.stage or "Idle")[:15]
                     
-                    # Progress Column: Use detailed_progress if available, otherwise extract from transfer_info
-                    progress_display = case_info.detailed_progress
-                    if not progress_display and case_info.transfer_info:
-                        # Extract progress from transfer_info like "Uploading (80/223)"
-                        if "(" in case_info.transfer_info and ")" in case_info.transfer_info:
-                            progress_display = case_info.transfer_info.split("(")[1].split(")")[0]
-                    if not progress_display:
-                        progress_display = "-"
+                    # Progress Column: Use centrally formatted detailed_progress
+                    progress_display = case_info.detailed_progress or "-"
                     
-                    # Details Column: supplementary information
+                    # Details Column: Use centrally formatted detailed_status
                     details = case_info.detailed_status
-                    if not details:
-                        if case_info.error_message:
-                            details = f"Error: {case_info.error_message[:30]}..."
-                        elif case_info.transfer_info:
-                            # Extract only the status part (like "Uploading - 15.2 MB/s")
-                            if "(" in case_info.transfer_info and ")" in case_info.transfer_info:
-                                # Remove the progress part, keep status and speed
-                                before_paren = case_info.transfer_info.split("(")[0].strip()
-                                after_paren = case_info.transfer_info.split(")")[1].strip() if ")" in case_info.transfer_info else ""
-                                if after_paren.startswith("-"):
-                                    after_paren = after_paren[1:].strip()
-                                details = f"{before_paren} {after_paren}".strip()[:35]
-                            else:
-                                details = case_info.transfer_info[:35]
-                        elif case_info.beam_info:
-                            details = case_info.beam_info[:35]
-                        else:
-                            details = ""
                     
                     print(f"{case_info.case_id[:15]:<15} {task_display:<15} {progress_display:<10} "
                           f"{details[:35]:<35} {gpu_str:<8} {runtime:<10}")
@@ -475,35 +510,13 @@ class StatusDisplay:
                 else:
                     task_display = case_info.current_task or case_info.stage or "Idle"
                 
-                # Progress Column: Use detailed_progress if available, otherwise extract from transfer_info
-                progress_display = case_info.detailed_progress
-                if not progress_display and case_info.transfer_info:
-                    # Extract progress from transfer_info like "Uploading (80/223)"
-                    if "(" in case_info.transfer_info and ")" in case_info.transfer_info:
-                        progress_display = case_info.transfer_info.split("(")[1].split(")")[0]
-                if not progress_display:
-                    progress_display = "-"
+                # Progress Column: Use centrally formatted detailed_progress
+                progress_display = case_info.detailed_progress or "-"
                 
-                # Details Column: supplementary information
+                # Details Column: Use centrally formatted detailed_status with rich formatting
                 details = case_info.detailed_status
-                if not details:
-                    if case_info.error_message:
-                        details = f"[bold red]Error: {case_info.error_message[:30]}...[/bold red]"
-                    elif case_info.transfer_info:
-                        # Extract only the status part (like "Uploading - 15.2 MB/s")
-                        if "(" in case_info.transfer_info and ")" in case_info.transfer_info:
-                            # Remove the progress part, keep status and speed
-                            before_paren = case_info.transfer_info.split("(")[0].strip()
-                            after_paren = case_info.transfer_info.split(")")[1].strip() if ")" in case_info.transfer_info else ""
-                            if after_paren.startswith("-"):
-                                after_paren = after_paren[1:].strip()
-                            details = f"{before_paren} {after_paren}".strip()[:35]
-                        else:
-                            details = case_info.transfer_info[:35]
-                    elif case_info.beam_info:
-                        details = case_info.beam_info[:35]
-                    else:
-                        details = ""
+                if case_info.error_message and details.startswith("Error:"):
+                    details = f"[bold red]{details}[/bold red]"
 
                 # Task 스타일링
                 task_style = "bold magenta" if case_info.status == "PROCESSING" else "dim"
@@ -581,10 +594,27 @@ def create_status_display(update_interval: int = 2, log_queue: Optional[Queue] =
 def update_case_progress(display: StatusDisplay, case_id: str, stage: str, 
                         progress: float, additional_info: str = "") -> None:
     """Convenience function to update case progress."""
-    display.update_case_status(
+    display.update_case_status(UpdateData(
         case_id=case_id,
         status="PROCESSING",
         progress=progress,
         stage=stage,
         beam_info=additional_info
-    )
+    ))
+
+
+def mark_case_complete(display: StatusDisplay, case_id: str) -> None:
+    """Convenience function to mark case as complete."""
+    display.update_case_status(UpdateData(
+        case_id=case_id,
+        status="COMPLETED"
+    ))
+
+
+def mark_case_failed(display: StatusDisplay, case_id: str, error_message: str) -> None:
+    """Convenience function to mark case as failed."""
+    display.update_case_status(UpdateData(
+        case_id=case_id,
+        status="FAILED",
+        error_message=error_message
+    ))

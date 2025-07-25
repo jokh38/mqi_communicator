@@ -6,6 +6,7 @@ import socket
 from pathlib import Path
 from typing import Optional, Callable, Dict, Any
 from base_ssh_connector import BaseSSHConnector
+from status_display import UpdateData
 
 
 class SFTPManager(BaseSSHConnector):
@@ -94,21 +95,15 @@ class SFTPManager(BaseSSHConnector):
                 'file_size': local_size
             }
             
-            # Update rich display with current file transfer info
+            # Update display with current file transfer info
             if status_display and case_id:
-                if total_files > 0:
-                    detailed_progress = f"{current_file}/{total_files}"
-                    detailed_status = "Uploading"
-                else:
-                    detailed_progress = ""
-                    detailed_status = "Uploading file..."
-                
-                status_display.update_case_status(
+                status_display.update_case_status(UpdateData(
                     case_id=case_id,
                     status="PROCESSING",
-                    detailed_progress=detailed_progress,
-                    detailed_status=detailed_status
-                )
+                    transfer_action="Uploading",
+                    current_file_index=current_file if total_files > 0 else None,
+                    total_files=total_files if total_files > 0 else None
+                ))
 
             # The remote directory structure is assumed to be pre-created by `upload_directory`.
             # This function is now only responsible for the atomic upload operation.
@@ -124,19 +119,14 @@ class SFTPManager(BaseSSHConnector):
                         
                         # Update status display with real-time speed
                         if status_display and case_id:
-                            if total_files > 0:
-                                detailed_progress = f"{current_file}/{total_files}"
-                                detailed_status = f"Uploading - {current_speed:.1f} MB/s"
-                            else:
-                                detailed_progress = ""
-                                detailed_status = f"Uploading - {current_speed:.1f} MB/s"
-                            
-                            status_display.update_case_status(
+                            status_display.update_case_status(UpdateData(
                                 case_id=case_id,
                                 status="PROCESSING",
-                                detailed_progress=detailed_progress,
-                                detailed_status=detailed_status
-                            )
+                                transfer_action="Uploading",
+                                transfer_speed=current_speed,
+                                current_file_index=current_file if total_files > 0 else None,
+                                total_files=total_files if total_files > 0 else None
+                            ))
                     
                     transfer_state['last_update_time'] = current_time
                     transfer_state['last_bytes'] = transferred
@@ -260,21 +250,20 @@ class SFTPManager(BaseSSHConnector):
                     
                     # Calculate overall average speed
                     elapsed_time = time.time() - self.transfer_stats['start_time']
-                    detailed_progress = f"{i+1}/{total_files}"
+                    avg_speed_mbps = 0
                     if elapsed_time > 0 and self.transfer_stats['transferred_bytes'] > 0:
                         avg_speed_mbps = (self.transfer_stats['transferred_bytes'] / elapsed_time) / (1024 * 1024)
-                        detailed_status = f"Uploading - {avg_speed_mbps:.1f} MB/s avg"
-                    else:
-                        detailed_status = "Uploading"
                     
-                    status_display.update_case_status(
+                    status_display.update_case_status(UpdateData(
                         case_id=case_id,
                         status="PROCESSING",
                         stage="Uploading Data",
                         progress=progress,
-                        detailed_progress=detailed_progress,
-                        detailed_status=detailed_status
-                    )
+                        transfer_action="Uploading",
+                        transfer_speed=avg_speed_mbps if avg_speed_mbps > 0 else None,
+                        current_file_index=i+1,
+                        total_files=total_files
+                    ))
             
             # Log successful directory upload completion
             if self.logger:
@@ -289,13 +278,13 @@ class SFTPManager(BaseSSHConnector):
                 
             # Clear transfer details from display after completion
             if status_display and case_id:
-                status_display.update_case_status(
+                status_display.update_case_status(UpdateData(
                     case_id=case_id, 
                     status="PROCESSING", 
                     stage="Upload Complete",
                     detailed_progress="",  # Clear detailed progress
                     detailed_status=""     # Clear detailed status
-                )
+                ))
             return True
             
         except Exception as e:
@@ -310,12 +299,12 @@ class SFTPManager(BaseSSHConnector):
             else:
                 self.logger.error(f"Failed to upload directory {local_path}: {e}")
             if status_display and case_id:
-                status_display.update_case_status(
+                status_display.update_case_status(UpdateData(
                     case_id=case_id,
                     status="PROCESSING",
                     stage="Upload Failed",
                     error_message=f"Upload failed: {str(e)}"
-                )
+                ))
             return False
 
     def download_file(self, remote_path: str, local_path: str, case_id: str = "", 
@@ -356,19 +345,14 @@ class SFTPManager(BaseSSHConnector):
                         
                         # Update status display with real-time speed
                         if status_display and case_id:
-                            if total_files > 0:
-                                detailed_progress = f"{current_file}/{total_files}"
-                                detailed_status = f"Downloading - {current_speed:.1f} MB/s"
-                            else:
-                                detailed_progress = ""
-                                detailed_status = f"Downloading - {current_speed:.1f} MB/s"
-                            
-                            status_display.update_case_status(
+                            status_display.update_case_status(UpdateData(
                                 case_id=case_id,
                                 status="PROCESSING",
-                                detailed_progress=detailed_progress,
-                                detailed_status=detailed_status
-                            )
+                                transfer_action="Downloading",
+                                transfer_speed=current_speed,
+                                current_file_index=current_file if total_files > 0 else None,
+                                total_files=total_files if total_files > 0 else None
+                            ))
                     
                     transfer_state['last_update_time'] = current_time
                     transfer_state['last_bytes'] = transferred
@@ -447,43 +431,42 @@ class SFTPManager(BaseSSHConnector):
                     
                     # Calculate overall average speed
                     elapsed_time = time.time() - self.transfer_stats['start_time']
-                    detailed_progress = f"{downloaded_count}/{total_files}"
+                    avg_speed_mbps = 0
                     if elapsed_time > 0 and self.transfer_stats['transferred_bytes'] > 0:
                         avg_speed_mbps = (self.transfer_stats['transferred_bytes'] / elapsed_time) / (1024 * 1024)
-                        detailed_status = f"Downloading - {avg_speed_mbps:.1f} MB/s avg"
-                    else:
-                        detailed_status = "Downloading"
                     
-                    status_display.update_case_status(
+                    status_display.update_case_status(UpdateData(
                         case_id=case_id,
                         status="PROCESSING",
                         stage="Downloading Results",
                         progress=progress,
-                        detailed_progress=detailed_progress,
-                        detailed_status=detailed_status
-                    )
+                        transfer_action="Downloading",
+                        transfer_speed=avg_speed_mbps if avg_speed_mbps > 0 else None,
+                        current_file_index=downloaded_count,
+                        total_files=total_files
+                    ))
             
             self.logger.info(f"Successfully downloaded all files to {local_path}")
             # Clear transfer details from display after completion
             if status_display and case_id:
-                status_display.update_case_status(
+                status_display.update_case_status(UpdateData(
                     case_id=case_id, 
                     status="PROCESSING", 
                     stage="Download Complete",
                     detailed_progress="",  # Clear detailed progress
                     detailed_status=""     # Clear detailed status
-                )
+                ))
             return True
             
         except Exception as e:
             self.logger.error(f"Failed to download directory {remote_path}: {e}")
             if status_display and case_id:
-                status_display.update_case_status(
+                status_display.update_case_status(UpdateData(
                     case_id=case_id,
                     status="PROCESSING",
                     stage="Download Failed",
                     error_message=f"Download failed: {str(e)}"
-                )
+                ))
             return False
 
     def file_exists(self, remote_path: str) -> bool:
