@@ -358,8 +358,6 @@ class RemoteExecutor(BaseSSHConnector):
                 case_id=case_id,
                 status="PROCESSING",
                 current_task="MOQUI Interpreter",
-                current_step=1,
-                total_steps=4,
                 detailed_status="Parsing RTPLAN and preparing inputs..."
             )
         
@@ -486,8 +484,6 @@ class RemoteExecutor(BaseSSHConnector):
                 case_id=case_id,
                 status="PROCESSING",
                 current_task="Beam Calculation",
-                current_step=3,
-                total_steps=4,
                 detailed_status=f"Processing beam {beam_id} on GPU {gpu_id}"
             )
         
@@ -539,8 +535,6 @@ class RemoteExecutor(BaseSSHConnector):
                         if stdout_output:
                             self.logger.info(f"MOQUI execution output: {stdout_output[:200]}...")  # Log key info
                         
-                        # Get archived input file name for reference
-                        archived_filename = self._get_archived_tps_filename(case_id)
                         
                         self.logger.log_case_progress(case_id, "BEAM_COMPLETED", 1.0, {
                             "stage": "moqui_beam_processing",
@@ -548,8 +542,7 @@ class RemoteExecutor(BaseSSHConnector):
                             "gpu_id": gpu_id,
                             "remote_pid": remote_pid,
                             "exit_code": execution_exit_code,
-                            "stdout_preview": stdout_output[:100] if stdout_output else "",
-                            "input_file_reference": archived_filename
+                            "stdout_preview": stdout_output[:100] if stdout_output else ""
                         })
                     else:
                         self.logger.info(f"MOQUI beam {beam_id} completed for case: {case_id} on GPU {gpu_id}")
@@ -559,22 +552,17 @@ class RemoteExecutor(BaseSSHConnector):
                             case_id=case_id,
                             status="PROCESSING",
                             current_task="Beam Calculation",
-                            current_step=3,
-                            total_steps=4,
                             detailed_status=f"Beam {beam_id} completed on GPU {gpu_id}"
                         )
                     return {"success": True, "remote_pid": remote_pid, "exit_code": execution_exit_code, "stdout": stdout_output}
                 else:
                     # Failure case - log detailed failure report for quick debugging
-                    # Get archived input file name for troubleshooting reference
-                    archived_filename = self._get_archived_tps_filename(case_id)
                     
                     if self.logger:
                         self.logger.error(f"Remote execution failed (Exit Code: {execution_exit_code})")
                         self.logger.error(f"Error Details: {stderr_output if stderr_output else 'No stderr output'}")
                         if stdout_output:
                             self.logger.error(f"Stdout Details: {stdout_output}")
-                        self.logger.error(f"Input file for this failed run: {archived_filename}")
                         
                         self.logger.log_case_progress(case_id, "BEAM_FAILED", 0.0, {
                             "stage": "moqui_beam_processing",
@@ -584,8 +572,7 @@ class RemoteExecutor(BaseSSHConnector):
                             "remote_pid": remote_pid,
                             "exit_code": execution_exit_code,
                             "stdout": stdout_output,
-                            "stderr": stderr_output,
-                            "input_file_reference": archived_filename
+                            "stderr": stderr_output
                         })
                     else:
                         self.logger.error(f"MOQUI beam {beam_id} failed for case: {case_id}, Error: {stderr_output}")
@@ -627,8 +614,6 @@ class RemoteExecutor(BaseSSHConnector):
                 case_id=case_id,
                 status="PROCESSING",
                 current_task="DICOM Conversion",
-                current_step=4,
-                total_steps=4,
                 detailed_status="Converting raw data to DICOM format..."
             )
         
@@ -647,8 +632,6 @@ class RemoteExecutor(BaseSSHConnector):
                     case_id=case_id,
                     status="COMPLETED",
                     current_task="DICOM Conversion",
-                    current_step=4,
-                    total_steps=4,
                     detailed_status="DICOM conversion completed successfully"
                 )
             return True
@@ -832,31 +815,6 @@ class RemoteExecutor(BaseSSHConnector):
         
         return gantry_info
 
-    def _get_archived_tps_filename(self, case_id: str) -> str:
-        """Get the most recent archived moqui_tps.in filename for a case."""
-        try:
-            from pathlib import Path
-            import glob
-            
-            archive_dir = Path("logs/archive")
-            if not archive_dir.exists():
-                return f"logs/archive/moqui_tps_{case_id}_[timestamp].in"
-            
-            # Find the most recent archived file for this case
-            pattern = f"moqui_tps_{case_id}_*.in"
-            archived_files = list(archive_dir.glob(pattern))
-            
-            if archived_files:
-                # Get the most recent file by modification time
-                latest_file = max(archived_files, key=lambda f: f.stat().st_mtime)
-                return str(latest_file)
-            else:
-                return f"logs/archive/moqui_tps_{case_id}_[not_found].in"
-                
-        except Exception as e:
-            if self.logger:
-                self.logger.warning(f"Failed to get archived TPS filename for case {case_id}: {e}")
-            return f"logs/archive/moqui_tps_{case_id}_[error].in"
 
     def _update_case_status_with_gantry(self, case_id: str, gantry_info: Dict[str, Any]):
         """Update case_status.json with gantry information."""
