@@ -328,16 +328,25 @@ class ExecuteBeamCalculationsStep(ProcessingStep):
 
     def _prepare_dynamic_params(self, context, gantry_info: Dict[str, Any], gpu_id: int, beam_id: int) -> Dict[str, Any]:
         """Prepare dynamic parameters for moqui_tps.in with absolute paths."""
+        import os
+        
         dynamic_params = {}
+        
+        # Get config dictionary for path construction
+        config = context.remote_executor.config
+        
+        # Construct absolute DicomDir path using remote_workspace + case_id
+        remote_dicom_base = config['paths'].get('remote_workspace', '/home/gpuadmin/MOQUI_SMC/tps')
+        dicom_dir_path = os.path.join(remote_dicom_base, context.case_id)
+        dynamic_params["DicomDir"] = dicom_dir_path
+        
+        # Construct absolute logFilePath using linux_moqui_interpreter_outputs_dir + case_id
+        remote_output_csv_base = config['paths'].get('linux_moqui_interpreter_outputs_dir', '/home/gpuadmin/MOQUI_SMC/Outputs_csv')
+        log_file_path = os.path.join(remote_output_csv_base, context.case_id)
+        dynamic_params["logFilePath"] = log_file_path
         
         # Update ParentDir path to use moqui_interpreter_outputs_path
         dynamic_params["ParentDir"] = f"{context.remote_executor.moqui_interpreter_outputs_path}/{context.case_id}"
-        
-        # Update logFilePath to use moqui_interpreter_outputs_path
-        dynamic_params["logFilePath"] = f"{context.remote_executor.moqui_interpreter_outputs_path}/{context.case_id}/log"
-        
-        # Update DicomDir path to use directory_manager.get_case_remote_path
-        dynamic_params["DicomDir"] = context.directory_manager.get_case_remote_path(context.case_id)
         
         # Use configured MOQUI outputs directory for beam calculation results
         dynamic_params["OutputDir"] = f"{context.remote_executor.moqui_outputs_path}/{context.case_id}"
