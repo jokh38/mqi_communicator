@@ -25,6 +25,7 @@ from error_handler import ErrorHandler
 from logger import Logger
 from status_display import StatusDisplay
 from processing_steps import WorkflowEngine, ProcessingContext
+from state_manager import StateManager
 
 
 class MainController:
@@ -42,10 +43,12 @@ class MainController:
         self.processing_queue = queue.Queue()
         self.completed_queue = queue.Queue()
         
-        # Shared state
+        # Initialize StateManager (will be properly initialized after config is loaded)
+        self.state_manager = None
+        
+        # Additional shared state (non-case related)
         self.shared_state = {
             'gpu_status': {},
-            'case_status': {},
             'system_health': {},
             'active_cases': set(),
             'last_scan_time': None,
@@ -157,7 +160,7 @@ class MainController:
     def _cleanup_stale_case_resources(self, case_id: str) -> None:
         """Clean up resources for a stale case."""
         try:
-            case_status = self.case_scanner.get_case_status(case_id)
+            case_status = self.state_manager.get_case_status(case_id)
             if not case_status:
                 return
             
@@ -315,6 +318,10 @@ class MainController:
 
             # Update logger with configuration
             self.logger.config = self.config.get("logging", {})
+            
+            # Initialize StateManager with proper status file path
+            status_file = self.config.get("paths", {}).get("status_file", "case_status.json")
+            self.state_manager = StateManager(status_file=status_file, logger=self.logger)
 
             # Extract configuration values using ConfigManager methods
             self.scan_interval = self.config_manager.get_scanning_interval()
@@ -393,10 +400,10 @@ class MainController:
             # Resolve auto GPU allocation if configured
             self._resolve_auto_gpu_allocation()
 
-            # Initialize case scanner with centralized status file
+            # Initialize case scanner with StateManager
             self.case_scanner = CaseScanner(
                 base_path=self.config_manager.get_local_logdata_path(),
-                status_file=self.config.get("paths", {}).get("status_file", "case_status.json"),
+                state_manager=self.state_manager,
                 logger=self.logger,
                 config=self.config
             )
@@ -565,8 +572,8 @@ class MainController:
     def _process_case(self, case_id: str, start_task: str = None) -> bool:
         """Process a single case through the complete workflow using WorkflowEngine."""
         try:
-            # Read current status from case scanner to determine starting point
-            case_data = self.case_scanner.get_case_status(case_id) or {}
+            # Read current status from state manager to determine starting point
+            case_data = self.state_manager.get_case_status(case_id) or {}
             
             # Determine starting task
             if start_task:
@@ -576,8 +583,8 @@ class MainController:
             else:
                 current_task = "setup"
             
-            # Update status to PROCESSING at start using case scanner
-            self.case_scanner.update_case_status(case_id, "PROCESSING", current_task=current_task)
+            # Update status to PROCESSING at start using state manager
+            self.state_manager.update_case_status(case_id, "PROCESSING", current_task=current_task)
             
             # Create processing context
             context = self.workflow_engine.create_context(
@@ -592,16 +599,16 @@ class MainController:
                 shared_state=self.shared_state
             )
             
-            # Add status update callback to workflow engine that delegates to case scanner
-            context.status_update_callback = lambda task_name: self.case_scanner.update_case_status(case_id, "PROCESSING", current_task=task_name)
+            # Add status update callback to workflow engine that delegates to state manager
+            context.status_update_callback = lambda task_name: self.state_manager.update_case_status(case_id, "PROCESSING", current_task=task_name)
             context.starting_task = current_task
             
             # Execute the workflow
             success = self.workflow_engine.execute_workflow(context)
             
             if success:
-                # Update status to COMPLETED using case scanner
-                self.case_scanner.update_case_status(case_id, "COMPLETED")
+                # Update status to COMPLETED using state manager
+                self.state_manager.update_case_status(case_id, "COMPLETED")
                 
                 # Move to completed queue
                 self.completed_queue.put(case_id)
@@ -619,19 +626,20 @@ class MainController:
             self.error_handler.handle_error(e, {"operation": "case_processing", "case_id": case_id})
             
             # Get current retry count from case status
-            case_info = self.case_scanner.get_case_status(case_id)
+            case_info = self.state_manager.get_case_status(case_id)
             current_retry_count = case_info.get("retry_count", 0) if case_info else 0
             
-            # Check if we should retry (for ANY exception type)
-            if current_retry_count < self.case_scanner.max_retries:
-                self.logger.warning(f"Error processing case {case_id} (retry {current_retry_count + 1}/{self.case_scanner.max_retries}): {e}")
+            # Check if we should retry (for ANY exception type) - get max_retries from config
+            max_retries = self.config.get("error_handling", {}).get("max_retries", 3)
+            if current_retry_count < max_retries:
+                self.logger.warning(f"Error processing case {case_id} (retry {current_retry_count + 1}/{max_retries}): {e}")
                 # Update case status with incremented retry count and reset to NEW for reprocessing
-                self.case_scanner.update_case_status(case_id, "NEW", retry_count=current_retry_count + 1)
+                self.state_manager.update_case_status(case_id, "NEW", retry_count=current_retry_count + 1)
                 return False # Indicate failure, but allow for retry
             else:
                 # Exceeded retry limit - mark as permanently failed
                 self.logger.error(f"Case {case_id} failed after {current_retry_count} retries: {e}")
-                self.case_scanner.update_case_status(case_id, "FAILED", retry_count=current_retry_count)
+                self.state_manager.update_case_status(case_id, "FAILED", retry_count=current_retry_count)
                 self.logger.log_case_progress(case_id, "FAILED", 0.0, {"stage": "error", "error": str(e)})
                 self.status_display.update_case_status(case_id, "FAILED", 0.0, "Failed", error_message=str(e))
                 
@@ -709,7 +717,7 @@ class MainController:
             
             # Update case information
             for case_id in active_cases_list:
-                case_status = self.case_scanner.get_case_status(case_id)
+                case_status = self.state_manager.get_case_status(case_id)
                 if case_status:
                     job_status = self.job_scheduler.get_job_status(case_id)
                     active_job = self.job_scheduler.active_jobs.get(case_id)
@@ -1052,14 +1060,14 @@ class MainController:
             if not hasattr(self, 'case_scanner') or not self.remote_executor:
                 return
                 
-            processing_cases = self.case_scanner.get_cases_by_status("PROCESSING")
+            processing_cases = self.state_manager.get_cases_by_status("PROCESSING")
             if not processing_cases:
                 return
                 
             self.logger.info(f"Cleaning up remote processes for {len(processing_cases)} active cases")
             
             for case_id in processing_cases:
-                case_status = self.case_scanner.get_case_status(case_id)
+                case_status = self.state_manager.get_case_status(case_id)
                 if not case_status:
                     continue
                     

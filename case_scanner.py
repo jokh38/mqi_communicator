@@ -1,17 +1,14 @@
 import json
 import hashlib
-import os
-import tempfile
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
 
 
 class CaseScanner:
-    def __init__(self, base_path: str, status_file: str = "case_status.json", stability_period_seconds: int = 10, logger=None, config=None):
+    def __init__(self, base_path: str, state_manager, stability_period_seconds: int = 10, logger=None, config=None):
         self.base_path = Path(base_path)
-        # status_file should be an absolute path or relative to current working directory (not base_path)
-        self.status_file = Path(status_file) if Path(status_file).is_absolute() else Path.cwd() / status_file
+        self.state_manager = state_manager
         self.stability_period_seconds = stability_period_seconds
         self.logger = logger
         self.config = config
@@ -21,52 +18,7 @@ class CaseScanner:
             self.max_retries = config["error_handling"].get("max_retries", 3)
         else:
             self.max_retries = 3
-            
-        self.case_status = self._load_case_status()
 
-    def _load_case_status(self) -> Dict[str, Any]:
-        """Load case status from JSON file."""
-        if not self.status_file.exists():
-            # Create empty status file
-            with open(self.status_file, 'w', encoding='utf-8') as f:
-                json.dump({}, f, indent=2)
-            return {}
-        
-        try:
-            with open(self.status_file, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except (json.JSONDecodeError, FileNotFoundError):
-            return {}
-
-    def _save_case_status(self) -> None:
-        """Save case status to JSON file using atomic write operation."""
-        try:
-            # Create temporary file in the same directory as the target file
-            temp_dir = self.status_file.parent
-            with tempfile.NamedTemporaryFile(
-                mode='w', 
-                encoding='utf-8', 
-                dir=temp_dir, 
-                suffix='.tmp', 
-                delete=False
-            ) as temp_file:
-                # Write data to temporary file
-                json.dump(self.case_status, temp_file, indent=2, ensure_ascii=False)
-                temp_file.flush()
-                os.fsync(temp_file.fileno())  # Force write to disk
-                temp_name = temp_file.name
-            
-            # Atomically replace the original file
-            os.replace(temp_name, str(self.status_file))
-            
-        except Exception as e:
-            # Clean up temporary file if it exists
-            try:
-                if 'temp_name' in locals() and os.path.exists(temp_name):
-                    os.unlink(temp_name)
-            except OSError:
-                pass
-            raise e
 
     def _get_last_modified_time(self, folder_path: Path) -> Optional[float]:
         """Get the last modification time of any file in the folder."""
@@ -116,45 +68,48 @@ class CaseScanner:
         return stored_hash != current_hash
 
     def _read_case_status_file(self, case_id: str) -> Dict[str, Any]:
-        """Read case status from the central status dictionary."""
+        """Read case status from StateManager."""
         try:
-            # Get case status from central dictionary instead of individual files
-            case_data = self.case_status.get(case_id, {"status": "NEW"})
+            # Get case status from StateManager
+            case_data = self.state_manager.get_case_status(case_id)
+            if case_data:
+                # Return data for compatibility with MainController expectations
+                return {
+                    "status": case_data.get("status", "NEW"),
+                    "current_task": case_data.get("current_task"),
+                    "last_updated": case_data.get("last_updated")
+                }
             
             # For compatibility, check if case directory has individual status file
             # This allows graceful migration from old approach
             case_dir = self.base_path / case_id
             individual_status_file = case_dir / "case_status.json"
             
-            if individual_status_file.exists() and case_id not in self.case_status:
-                # Migrate individual status file to central dictionary
+            if individual_status_file.exists():
+                # Migrate individual status file to StateManager
                 try:
                     with open(individual_status_file, 'r') as f:
                         individual_data = json.load(f)
                     
-                    # Update central dictionary with individual file data
+                    # Update StateManager with individual file data
                     status = individual_data.get("status", "NEW")
                     current_task = individual_data.get("current_task")
                     last_updated = individual_data.get("last_updated")
                     
-                    # Convert to central dictionary format
-                    self.case_status[case_id] = {
-                        "status": status,
-                        "current_task": current_task,
-                        "last_updated": last_updated,
-                        "start_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        "end_time": "",
-                        "hash": "",
-                        "gpu_allocation": [],
-                        "retry_count": 0,
-                        "remote_path": "",
-                        "remote_pid": None,
-                        "locked_gpus": [],
-                        "last_completed_step": ""
-                    }
+                    # Add to StateManager
+                    self.state_manager.update_case_status(
+                        case_id, status, 
+                        current_task=current_task,
+                        folder_hash="",
+                        gpu_allocation=[],
+                        retry_count=0,
+                        remote_path="",
+                        remote_pid=None,
+                        locked_gpus=[],
+                        last_completed_step=""
+                    )
                     
-                    self._save_case_status()
-                    self.logger.info(f"Migrated individual status file for case {case_id} to central dictionary")
+                    self.logger.info(f"Migrated individual status file for case {case_id} to StateManager")
                     
                     # Return the migrated data
                     return {
@@ -166,12 +121,8 @@ class CaseScanner:
                 except Exception as migration_error:
                     self.logger.warning(f"Failed to migrate individual status file for {case_id}: {migration_error}")
             
-            # Return data for compatibility with MainController expectations
-            return {
-                "status": case_data.get("status", "NEW"),
-                "current_task": case_data.get("current_task"),
-                "last_updated": case_data.get("last_updated")
-            }
+            # Default return for new cases
+            return {"status": "NEW"}
             
         except Exception as e:
             self.logger.error(f"Failed to read case status for {case_id}: {e}")
@@ -180,8 +131,8 @@ class CaseScanner:
     def _is_case_stalled(self, case_id: str, stall_threshold_hours: int = 3) -> bool:
         """Check if a case appears to be stalled based on last_updated timestamp."""
         try:
-            # Get case data from central dictionary
-            case_data = self.case_status.get(case_id, {})
+            # Get case data from StateManager
+            case_data = self.state_manager.get_case_status(case_id) or {}
             
             if case_data.get("status") != "PROCESSING":
                 return False
@@ -244,8 +195,8 @@ class CaseScanner:
                     self.logger.warning(f"Case directory validation failed: {case_id}")
                     continue
                 
-                # Step 2: Check if case_id exists in self.case_status (central dictionary)
-                if case_id not in self.case_status:
+                # Step 2: Check if case_id exists in StateManager
+                if not self.state_manager.case_exists(case_id):
                     # Step 3: New Case - treat as new case
                     # Check for directory stability (only for truly new cases)
                     last_mod_time = self._get_last_modified_time(case_dir)
@@ -260,13 +211,13 @@ class CaseScanner:
                     self.logger.info(f"New case detected: {case_id}")
                     cases_to_process.append(case_id)
                     
-                    # Add case to central dictionary with NEW status
+                    # Add case to StateManager with NEW status
                     current_hash = self._calculate_folder_hash(case_dir)
                     self.update_case_status(case_id, "NEW", folder_hash=current_hash)
                     
                 else:
-                    # Step 4: Existing Case - check status value in self.case_status[case_id]
-                    case_data = self.case_status[case_id]
+                    # Step 4: Existing Case - check status value in StateManager
+                    case_data = self.state_manager.get_case_status(case_id)
                     status = case_data.get("status", "NEW")
                     
                     self.logger.debug(f"Case '{case_id}' has status: {status}")
@@ -303,8 +254,8 @@ class CaseScanner:
     def get_case_resumption_task(self, case_id: str) -> Optional[str]:
         """Get the task that a PROCESSING case should resume from."""
         try:
-            # Get case data from central dictionary
-            case_data = self.case_status.get(case_id, {})
+            # Get case data from StateManager
+            case_data = self.state_manager.get_case_status(case_id) or {}
             
             if case_data.get("status") == "PROCESSING":
                 return case_data.get("current_task")
@@ -323,66 +274,27 @@ class CaseScanner:
                           locked_gpus: Optional[List[int]] = None,
                           last_completed_step: Optional[str] = None,
                           current_task: Optional[str] = None) -> None:
-        """Update case status in memory and save to file."""
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        if case_id not in self.case_status:
-            self.case_status[case_id] = {
-                "status": status,
-                "start_time": current_time,
-                "end_time": "",
-                "hash": folder_hash,
-                "gpu_allocation": gpu_allocation or [],
-                "retry_count": retry_count,
-                "remote_path": remote_path or "",
-                "remote_pid": remote_pid,
-                "locked_gpus": locked_gpus or [],
-                "last_completed_step": last_completed_step or "",
-                "current_task": current_task,
-                "last_updated": current_time
-            }
-        else:
-            # Update existing case
-            self.case_status[case_id]["status"] = status
-            self.case_status[case_id]["hash"] = folder_hash
-            self.case_status[case_id]["retry_count"] = retry_count
-            self.case_status[case_id]["last_updated"] = current_time
-            
-            if gpu_allocation is not None:
-                self.case_status[case_id]["gpu_allocation"] = gpu_allocation
-            
-            if remote_path is not None:
-                self.case_status[case_id]["remote_path"] = remote_path
-                
-            if remote_pid is not None:
-                self.case_status[case_id]["remote_pid"] = remote_pid
-                
-            if locked_gpus is not None:
-                self.case_status[case_id]["locked_gpus"] = locked_gpus
-                
-            if last_completed_step is not None:
-                self.case_status[case_id]["last_completed_step"] = last_completed_step
-            
-            # Handle current_task updates
-            if status == "PROCESSING" and current_task is not None:
-                self.case_status[case_id]["current_task"] = current_task
-            elif status in ["COMPLETED", "FAILED"]:
-                # Clear current_task for completed/failed cases
-                self.case_status[case_id]["current_task"] = None
-
-            if status == "COMPLETED" or status == "FAILED":
-                self.case_status[case_id]["end_time"] = current_time
-        
-        self._save_case_status()
+        """Update case status by delegating to StateManager."""
+        self.state_manager.update_case_status(
+            case_id=case_id,
+            status=status,
+            folder_hash=folder_hash,
+            gpu_allocation=gpu_allocation,
+            retry_count=retry_count,
+            remote_path=remote_path,
+            remote_pid=remote_pid,
+            locked_gpus=locked_gpus,
+            last_completed_step=last_completed_step,
+            current_task=current_task
+        )
 
     def get_case_status(self, case_id: str) -> Optional[Dict[str, Any]]:
         """Get status information for a specific case."""
-        return self.case_status.get(case_id)
+        return self.state_manager.get_case_status(case_id)
 
     def get_cases_by_status(self, status: str) -> List[str]:
         """Get list of case IDs with specified status."""
-        return [case_id for case_id, info in self.case_status.items() 
-                if info["status"] == status]
+        return self.state_manager.get_cases_by_status(status)
 
     def get_processing_cases(self) -> List[str]:
         """Get list of currently processing cases."""
@@ -393,31 +305,14 @@ class CaseScanner:
         return self.get_cases_by_status("FAILED")
 
     def cleanup_old_cases(self, days: int = 30) -> None:
-        """Remove old case entries from status file."""
-        if not self.case_status:
-            return
-        
+        """Remove old case entries from StateManager."""
         cutoff_time = datetime.now().timestamp() - (days * 24 * 3600)
-        cases_to_remove = []
-        
-        for case_id, info in self.case_status.items():
-            try:
-                if info.get("end_time"):
-                    end_time = datetime.strptime(info["end_time"], "%Y-%m-%d %H:%M:%S")
-                    if end_time.timestamp() < cutoff_time:
-                        cases_to_remove.append(case_id)
-            except (ValueError, TypeError):
-                continue
-        
-        for case_id in cases_to_remove:
-            del self.case_status[case_id]
-        
-        if cases_to_remove:
-            self._save_case_status()
+        self.state_manager.cleanup_old_cases(cutoff_time)
 
     def archive_old_cases(self, days: int = 30) -> None:
         """Archive old completed or failed cases to a separate file."""
-        if not self.case_status:
+        all_cases = self.state_manager.get_all_cases()
+        if not all_cases:
             return
 
         cutoff_date = datetime.now()
@@ -425,7 +320,7 @@ class CaseScanner:
         
         cases_to_archive = {}
         
-        for case_id, info in list(self.case_status.items()):
+        for case_id, info in all_cases.items():
             status = info.get("status", "")
             end_time_str = info.get("end_time", "")
             
@@ -441,7 +336,7 @@ class CaseScanner:
             return
             
         archive_filename = f"case_closed_{cutoff_date.strftime('%Y%m')}.json"
-        archive_filepath = self.status_file.parent / archive_filename
+        archive_filepath = Path.cwd() / archive_filename
         
         archived_data = {}
         if archive_filepath.exists():
@@ -461,30 +356,24 @@ class CaseScanner:
             self.logger.error(f"Failed to write to archive file: {e}")
             return
 
+        # Remove archived cases from StateManager
         for case_id in cases_to_archive:
-            if case_id in self.case_status:
-                del self.case_status[case_id]
+            self.state_manager.delete_case(case_id)
         
-        self._save_case_status()
-        self.logger.info("Cleaned up archived cases from status file.")
+        self.logger.info("Cleaned up archived cases from StateManager.")
 
     def reset_case_status(self, case_id: str) -> bool:
         """Reset case status to allow reprocessing."""
-        if case_id in self.case_status:
-            self.case_status[case_id]["status"] = "NEW"
-            self.case_status[case_id]["retry_count"] = 0
-            self.case_status[case_id]["end_time"] = ""
-            self._save_case_status()
-            return True
-        return False
+        return self.state_manager.reset_case_status(case_id)
 
     def get_all_case_status(self) -> Dict[str, Any]:
         """Get complete case status dictionary."""
-        return self.case_status.copy()
+        return self.state_manager.get_all_cases()
 
     def recover_stale_jobs(self, max_processing_hours: int = 1) -> Dict[str, Any]:
         """Recover cases that have been stuck in PROCESSING state for too long."""
-        if not self.case_status:
+        all_cases = self.state_manager.get_all_cases()
+        if not all_cases:
             return {
                 "recovered_cases": [],
                 "recovered_count": 0,
@@ -497,7 +386,7 @@ class CaseScanner:
         cutoff_time = current_time.timestamp() - (max_processing_hours * 3600)
         recovered_cases = []
         
-        for case_id, info in self.case_status.items():
+        for case_id, info in all_cases.items():
             if info.get("status") != "PROCESSING":
                 continue
             
@@ -510,13 +399,14 @@ class CaseScanner:
                 
                 # Check if case has been processing for too long
                 if start_time.timestamp() < cutoff_time:
-                    # Reset case to NEW status for reprocessing
-                    self.case_status[case_id]["status"] = "NEW"
-                    self.case_status[case_id]["end_time"] = ""
-                    self.case_status[case_id]["retry_count"] = info.get("retry_count", 0) + 1
-                    # Clear remote process and lock information for stale recovery
-                    self.case_status[case_id]["remote_pid"] = None
-                    self.case_status[case_id]["locked_gpus"] = []
+                    # Reset case to NEW status for reprocessing using StateManager
+                    retry_count = info.get("retry_count", 0) + 1
+                    self.state_manager.update_case_status(
+                        case_id, "NEW", 
+                        retry_count=retry_count,
+                        remote_pid=None,
+                        locked_gpus=[]
+                    )
                     
                     recovered_cases.append(case_id)
                     self.logger.warning(f"Recovered stale case {case_id} (processing for {max_processing_hours}+ hours)")
@@ -524,9 +414,6 @@ class CaseScanner:
             except (ValueError, TypeError) as e:
                 self.logger.error(f"Error parsing start_time for case {case_id}: {e}")
                 continue
-        
-        if recovered_cases:
-            self._save_case_status()
         
         # Get remaining processing cases after recovery
         processing_cases = self.get_cases_by_status("PROCESSING")

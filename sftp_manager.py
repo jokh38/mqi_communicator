@@ -7,11 +7,16 @@ from pathlib import Path
 from typing import Optional, Callable, Dict, Any
 from status_display import UpdateData
 
+# Security constants
+MAX_DEPTH = 20  # Maximum recursion depth to prevent infinite loops
+
 
 class SFTPManager:
     def __init__(self, ssh_connection_manager, logger=None):
         self.ssh_connection_manager = ssh_connection_manager
         self.logger = logger
+        self.sftp = None
+        self.transport = None
         self.transfer_stats = {
             'total_bytes': 0,
             'transferred_bytes': 0,
@@ -19,9 +24,67 @@ class SFTPManager:
             'current_speed': 0
         }
 
+    def _ensure_connected(self) -> bool:
+        """Ensure SFTP connection is established."""
+        try:
+            if not self.ssh_connection_manager.is_connected():
+                if not self.ssh_connection_manager.connect():
+                    return False
+            
+            if not self.sftp:
+                self.transport = self.ssh_connection_manager.get_transport()
+                if self.transport:
+                    self.sftp = paramiko.SFTPClient.from_transport(self.transport)
+                else:
+                    return False
+            
+            return True
+        except Exception as e:
+            if self.logger:
+                self.logger.error(f"Failed to establish SFTP connection: {e}")
+            return False
+    
+    def _retry_on_network_error(self, func, max_retries: int = 3):
+        """Retry function on network errors."""
+        import socket
+        
+        network_error_types = (
+            socket.error,
+            paramiko.SSHException,
+            paramiko.AuthenticationException,
+            paramiko.ChannelException,
+            OSError,
+            TimeoutError,
+            ConnectionError
+        )
+        
+        for attempt in range(max_retries):
+            try:
+                return func()
+            except network_error_types as e:
+                if attempt == max_retries - 1:
+                    raise e
+                if self.logger:
+                    self.logger.warning(f"Network error on attempt {attempt + 1}/{max_retries}: {e}. Retrying...")
+                # Reset connection on network error
+                self._reset_connection()
+                time.sleep(2 ** attempt)  # Exponential backoff
+        
+    def _reset_connection(self):
+        """Reset SFTP connection."""
+        try:
+            if self.sftp:
+                self.sftp.close()
+                self.sftp = None
+            if self.ssh_connection_manager:
+                self.ssh_connection_manager.disconnect()
+        except Exception:
+            pass
+    
     def _post_connect_setup(self) -> None:
         """Create SFTP client after SSH connection is established."""
-        self.sftp = paramiko.SFTPClient.from_transport(self.transport)
+        if self.transport:
+            self.sftp = paramiko.SFTPClient.from_transport(self.transport)
     
     def _pre_disconnect_cleanup(self) -> None:
         """Close SFTP client before SSH disconnection."""
@@ -208,20 +271,67 @@ class SFTPManager:
                 
             self.create_remote_directory(remote_path)
             dir_count = 0
-            for local_subdir in local_dir.rglob("*"):
-                if local_subdir.is_dir():
-                    relative_dir = local_subdir.relative_to(local_dir)
-                    remote_subdir_path = f"{remote_path.rstrip('/')}/{str(relative_dir).replace(chr(92), '/')}"
+            
+            # Use os.walk with followlinks=False to avoid following symbolic links
+            for root, dirs, files in os.walk(local_dir, followlinks=False):
+                root_path = Path(root)
+                relative_root = root_path.relative_to(local_dir)
+                
+                # Check recursion depth
+                depth = len(relative_root.parts)
+                if depth > MAX_DEPTH:
+                    self.logger.warning(f"Maximum recursion depth ({MAX_DEPTH}) exceeded at path: {root_path}. Skipping deeper levels.")
+                    dirs[:] = []  # Clear dirs list to prevent further recursion
+                    continue
+                
+                # Skip symbolic link directories
+                if root_path.is_symlink():
+                    self.logger.info(f"Skipping symbolic link directory: {root_path}")
+                    dirs[:] = []  # Clear dirs list to prevent recursion into symlink
+                    continue
+                
+                # Create remote directory if not root
+                if str(relative_root) != '.':
+                    remote_subdir_path = f"{remote_path.rstrip('/')}/{str(relative_root).replace(chr(92), '/')}"
                     self.create_remote_directory(remote_subdir_path)
                     dir_count += 1
 
             # Step 2: Upload all files now that directories are guaranteed to exist.
-            all_files = [p for p in local_dir.rglob("*") if p.is_file()]
+            all_files = []
+            
+            # Use os.walk again to collect files, respecting same constraints
+            for root, dirs, files in os.walk(local_dir, followlinks=False):
+                root_path = Path(root)
+                relative_root = root_path.relative_to(local_dir)
+                
+                # Check recursion depth
+                depth = len(relative_root.parts)
+                if depth > MAX_DEPTH:
+                    dirs[:] = []  # Clear dirs list to prevent further recursion
+                    continue
+                
+                # Skip symbolic link directories
+                if root_path.is_symlink():
+                    dirs[:] = []  # Clear dirs list
+                    continue
+                
+                # Add non-symlink files to upload list
+                for file_name in files:
+                    file_path = root_path / file_name
+                    if not file_path.is_symlink():
+                        all_files.append(file_path)
+                    else:
+                        self.logger.info(f"Skipping symbolic link file: {file_path}")
+            
             total_files = len(all_files)
             
             # Calculate total bytes for accurate progress tracking
             for file_path in all_files:
-                self.transfer_stats['total_bytes'] += file_path.stat().st_size
+                try:
+                    self.transfer_stats['total_bytes'] += file_path.stat().st_size
+                except OSError as e:
+                    self.logger.warning(f"Could not get size for file {file_path}: {e}")
+                    continue
             
             # Log upload operation summary
             if self.logger:
@@ -394,17 +504,37 @@ class SFTPManager:
             
             # Step 1: List all files to be downloaded to get a total count
             all_files = []
-            items_to_scan = [remote_path]
+            items_to_scan = [(remote_path, 0)]  # (path, depth)
+            
             while items_to_scan:
-                current_path = items_to_scan.pop()
-                for item in self.sftp.listdir_attr(current_path):
-                    item_full_path = f"{current_path.rstrip('/')}/{item.filename}"
-                    if stat.S_ISDIR(item.st_mode):
-                        items_to_scan.append(item_full_path)
-                    else:
-                        all_files.append(item_full_path)
-                        # Add file size to total bytes
-                        self.transfer_stats['total_bytes'] += item.st_size
+                current_path, depth = items_to_scan.pop()
+                
+                # Check recursion depth
+                if depth > MAX_DEPTH:
+                    self.logger.warning(f"Maximum recursion depth ({MAX_DEPTH}) exceeded at remote path: {current_path}. Skipping deeper levels.")
+                    continue
+                
+                try:
+                    for item in self.sftp.listdir_attr(current_path):
+                        item_full_path = f"{current_path.rstrip('/')}/{item.filename}"
+                        
+                        # Check if item is a symbolic link and skip it
+                        if stat.S_ISLNK(item.st_mode):
+                            self.logger.info(f"Skipping symbolic link: {item_full_path}")
+                            continue
+                        
+                        if stat.S_ISDIR(item.st_mode):
+                            items_to_scan.append((item_full_path, depth + 1))
+                        elif stat.S_ISREG(item.st_mode):  # Regular file
+                            all_files.append(item_full_path)
+                            # Add file size to total bytes
+                            self.transfer_stats['total_bytes'] += item.st_size
+                        else:
+                            self.logger.info(f"Skipping non-regular file: {item_full_path} (mode: {oct(item.st_mode)})")
+                            
+                except Exception as e:
+                    self.logger.error(f"Error listing directory {current_path}: {e}")
+                    continue
             
             total_files = len(all_files)
             self.logger.info(f"[SFTP] Found {total_files} file(s) to download from {remote_path}. Total size: {self.transfer_stats['total_bytes']} bytes")
@@ -518,9 +648,14 @@ class SFTPManager:
             self.logger.error(f"Error removing file {remote_path}: {e}")
             return False
 
-    def remove_directory(self, remote_path: str) -> bool:
-        """Remove remote directory recursively."""
+    def remove_directory(self, remote_path: str, depth: int = 0) -> bool:
+        """Remove remote directory recursively with depth limit."""
         if not self._ensure_connected():
+            return False
+        
+        # Check recursion depth
+        if depth > MAX_DEPTH:
+            self.logger.error(f"Maximum recursion depth ({MAX_DEPTH}) exceeded while removing: {remote_path}")
             return False
         
         try:
@@ -528,14 +663,21 @@ class SFTPManager:
             for item in self.sftp.listdir_attr(remote_path):
                 item_path = f"{remote_path.rstrip('/')}/{item.filename}"
                 
+                # Skip symbolic links
+                if stat.S_ISLNK(item.st_mode):
+                    self.logger.info(f"Skipping symbolic link during removal: {item_path}")
+                    continue
+                
                 if stat.S_ISDIR(item.st_mode):
                     # Recursively remove subdirectory
-                    if not self.remove_directory(item_path):
+                    if not self.remove_directory(item_path, depth + 1):
                         return False
-                else:
-                    # Remove file
+                elif stat.S_ISREG(item.st_mode):
+                    # Remove regular file
                     if not self.remove_file(item_path):
                         return False
+                else:
+                    self.logger.warning(f"Skipping non-regular file during removal: {item_path} (mode: {oct(item.st_mode)})")
             
             # Remove empty directory
             self.sftp.rmdir(remote_path)
