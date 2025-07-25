@@ -96,18 +96,26 @@ class CaseScanner:
                     current_task = individual_data.get("current_task")
                     last_updated = individual_data.get("last_updated")
                     
-                    # Add to StateManager
-                    self.state_manager.update_case_status(
-                        case_id, status, 
-                        current_task=current_task,
-                        folder_hash="",
-                        gpu_allocation=[],
-                        retry_count=0,
-                        remote_path="",
-                        remote_pid=None,
-                        locked_gpus=[],
-                        last_completed_step=""
-                    )
+                    # Add to StateManager using appropriate method based on status
+                    if status == "PROCESSING":
+                        self.state_manager.set_case_processing(case_id, current_task=current_task or "Starting processing")
+                    elif status == "COMPLETED":
+                        self.state_manager.set_case_completed(case_id)
+                    elif status == "FAILED":
+                        self.state_manager.set_case_failed(case_id, "Migrated from individual status file")
+                    else:
+                        # For NEW or other statuses, use the general method
+                        self.state_manager.update_case_status(
+                            case_id, status, 
+                            current_task=current_task,
+                            folder_hash="",
+                            gpu_allocation=[],
+                            retry_count=0,
+                            remote_path="",
+                            remote_pid=None,
+                            locked_gpus=[],
+                            last_completed_step=""
+                        )
                     
                     self.logger.info(f"Migrated individual status file for case {case_id} to StateManager")
                     

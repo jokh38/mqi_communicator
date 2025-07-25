@@ -7,10 +7,9 @@ import atexit
 import shutil
 import shlex
 import zipfile
-import json
 from pathlib import Path
 from datetime import datetime, timedelta
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any
 
 from config_manager import ConfigManager
 from case_scanner import CaseScanner
@@ -24,7 +23,7 @@ from directory_manager import DirectoryManager
 from error_handler import ErrorHandler
 from logger import Logger
 from status_display import StatusDisplay
-from processing_steps import WorkflowEngine, ProcessingContext
+from processing_steps import WorkflowEngine
 from state_manager import StateManager
 
 
@@ -212,7 +211,6 @@ class MainController:
     def _calculate_retry_delay(self, retry_count: int, base_delay: int = 60) -> int:
         """Calculate retry delay using exponential backoff with jitter."""
         import random
-        import math
         
         # Exponential backoff: base_delay * (2 ^ retry_count)
         delay = base_delay * (2 ** min(retry_count, 6))  # Cap at 6 to prevent extremely long delays
@@ -584,7 +582,7 @@ class MainController:
                 current_task = "setup"
             
             # Update status to PROCESSING at start using state manager
-            self.state_manager.update_case_status(case_id, "PROCESSING", current_task=current_task)
+            self.state_manager.set_case_processing(case_id, current_task=current_task)
             
             # Create processing context
             context = self.workflow_engine.create_context(
@@ -600,7 +598,7 @@ class MainController:
             )
             
             # Add status update callback to workflow engine that delegates to state manager
-            context.status_update_callback = lambda task_name: self.state_manager.update_case_status(case_id, "PROCESSING", current_task=task_name)
+            context.status_update_callback = lambda task_name: self.state_manager.set_case_processing(case_id, current_task=task_name)
             context.starting_task = current_task
             
             # Execute the workflow
@@ -608,7 +606,7 @@ class MainController:
             
             if success:
                 # Update status to COMPLETED using state manager
-                self.state_manager.update_case_status(case_id, "COMPLETED")
+                self.state_manager.set_case_completed(case_id)
                 
                 # Move to completed queue
                 self.completed_queue.put(case_id)
@@ -639,7 +637,7 @@ class MainController:
             else:
                 # Exceeded retry limit - mark as permanently failed
                 self.logger.error(f"Case {case_id} failed after {current_retry_count} retries: {e}")
-                self.state_manager.update_case_status(case_id, "FAILED", retry_count=current_retry_count)
+                self.state_manager.set_case_failed(case_id, str(e), retry_count=current_retry_count)
                 self.logger.log_case_progress(case_id, "FAILED", 0.0, {"stage": "error", "error": str(e)})
                 self.status_display.update_case_status(case_id, "FAILED", 0.0, "Failed", error_message=str(e))
                 

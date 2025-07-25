@@ -17,6 +17,9 @@ typing-extensions>=4.5.0
 # File locking for concurrent access
 filelock>=3.9.0
 
+# Code linting and formatting
+ruff>=0.1.0
+
 # Development and testing dependencies (uncomment for development)
 # pytest>=7.0.0
 # pytest-cov>=4.0.0

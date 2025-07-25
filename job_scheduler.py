@@ -1,5 +1,4 @@
 import shutil
-import time
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Any
@@ -432,9 +431,12 @@ class JobScheduler:
                 self.completed_jobs.append(job)
                 del self.active_jobs[case_id]
                 
-                # Update case status
-                status = "COMPLETED" if success else "FAILED"
-                self.case_scanner.update_case_status(case_id, status)
+                # Update case status using specific StateManager methods
+                if success:
+                    self.case_scanner.state_manager.set_case_completed(case_id)
+                else:
+                    error_msg = job.get("error_message", "Job processing failed")
+                    self.case_scanner.state_manager.set_case_failed(case_id, error_msg)
                 
                 return True
                 

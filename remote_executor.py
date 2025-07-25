@@ -3,8 +3,6 @@ import time
 import socket
 import shlex
 from typing import Dict, List, Optional, Any
-import threading
-import signal
 from datetime import datetime
 
 
@@ -49,6 +47,12 @@ class RemoteExecutor:
         self.working_directories = config.get("working_directories", {})
         if not self.working_directories:
             raise ValueError("Working directories not found in configuration file.")
+        
+        # Load shell commands from config
+        self.shell_commands = config.get("shell_commands", {})
+        
+        # Store host for error logging
+        self.host = config_manager.get_linux_gpu_ip()
 
     def _get_ssh_client(self) -> Optional[paramiko.SSHClient]:
         """Get SSH client from connection manager."""
@@ -57,6 +61,18 @@ class RemoteExecutor:
     def _ensure_ssh_connected(self) -> bool:
         """Ensure SSH client is available via connection manager."""
         return self.ssh_connection_manager._ensure_connected()
+    
+    def _get_shell_command(self, category: str, command_name: str, **kwargs) -> str:
+        """Get shell command from config with parameter substitution."""
+        try:
+            command_template = self.shell_commands.get(category, {}).get(command_name, "")
+            if not command_template:
+                self.logger.warning(f"Shell command not found: {category}.{command_name}")
+                return ""
+            return command_template.format(**kwargs)
+        except KeyError as e:
+            self.logger.error(f"Missing parameter for shell command {category}.{command_name}: {e}")
+            return ""
 
     def execute_command(self, command: str, timeout: Optional[int] = None) -> Dict[str, Any]:
         """Execute remote command and return result."""
@@ -83,24 +99,40 @@ class RemoteExecutor:
             }
             
         except socket.timeout:
+            if self.logger:
+                self.logger.warning(f"Network timeout after {timeout} seconds executing command: {command[:50]}...")
             return {
                 "stdout": "",
-                "stderr": f"Command timed out after {timeout} seconds",
-                "exit_code": -1
+                "stderr": f"Network timeout after {timeout} seconds",
+                "exit_code": -1,
+                "error_type": "network_timeout"
+            }
+        except (socket.error, paramiko.SSHException, paramiko.AuthenticationException, 
+                paramiko.ChannelException, OSError) as e:
+            # Network connection errors
+            self._connection_failures += 1
+            if self.logger:
+                self.logger.error(f"Network connection error during command execution: {e}")
+            return {
+                "stdout": "",
+                "stderr": f"Network connection error: {str(e)}",
+                "exit_code": -1,
+                "error_type": "network_connection"
             }
         except Exception as e:
+            # Remote command execution errors (non-network)
             if self.logger:
+                self.logger.error(f"Remote command execution failed: {e}")
                 self.logger.log_exception(e, {
                     "operation": "command_execution",
                     "command": command,
                     "host": self.host
                 })
-            else:
-                self.logger.error(f"Command execution failed: {e}")
             return {
                 "stdout": "",
-                "stderr": f"Execution error: {str(e)}",
-                "exit_code": -1
+                "stderr": f"Command execution error: {str(e)}",
+                "exit_code": -1,
+                "error_type": "command_execution"
             }
 
     def execute_remote_command(self, command: str, timeout: Optional[int] = None) -> tuple:
@@ -110,7 +142,7 @@ class RemoteExecutor:
 
     def execute_command_with_workdir(self, command: str, working_dir: str, timeout: Optional[int] = None) -> Dict[str, Any]:
         """Execute command in specified working directory."""
-        full_command = f"cd {shlex.quote(working_dir)} && {command}"
+        full_command = self._get_shell_command("shell_operators", "change_directory", working_dir=shlex.quote(working_dir), command=command)
         return self.execute_command(full_command, timeout)
 
     def execute_command_streaming(self, command: str, working_dir: str, case_id: str, 
@@ -126,7 +158,7 @@ class RemoteExecutor:
             }
         
         try:
-            full_command = f"cd {shlex.quote(working_dir)} && {command}"
+            full_command = self._get_shell_command("shell_operators", "change_directory", working_dir=shlex.quote(working_dir), command=command)
             stdin, stdout, stderr = ssh_client.exec_command(full_command, timeout=timeout)
             
             stdout_lines = []
@@ -166,24 +198,40 @@ class RemoteExecutor:
             }
             
         except socket.timeout:
+            if self.logger:
+                self.logger.warning(f"Network timeout after {timeout} seconds executing streaming command: {command[:50]}...")
             return {
                 "stdout": "\n".join(stdout_lines) if 'stdout_lines' in locals() else "",
-                "stderr": f"Command timed out after {timeout} seconds",
-                "exit_code": -1
+                "stderr": f"Network timeout after {timeout} seconds",
+                "exit_code": -1,
+                "error_type": "network_timeout"
+            }
+        except (socket.error, paramiko.SSHException, paramiko.AuthenticationException, 
+                paramiko.ChannelException, OSError) as e:
+            # Network connection errors
+            self._connection_failures += 1
+            if self.logger:
+                self.logger.error(f"Network connection error during streaming command execution: {e}")
+            return {
+                "stdout": "\n".join(stdout_lines) if 'stdout_lines' in locals() else "",
+                "stderr": f"Network connection error: {str(e)}",
+                "exit_code": -1,
+                "error_type": "network_connection"
             }
         except Exception as e:
+            # Remote command execution errors (non-network)
             if self.logger:
+                self.logger.error(f"Remote streaming command execution failed: {e}")
                 self.logger.log_exception(e, {
                     "operation": "streaming_command_execution",
                     "command": command,
                     "host": self.host
                 })
-            else:
-                self.logger.error(f"Streaming command execution failed: {e}")
             return {
                 "stdout": "\n".join(stdout_lines) if 'stdout_lines' in locals() else "",
-                "stderr": f"Execution error: {str(e)}",
-                "exit_code": -1
+                "stderr": f"Command execution error: {str(e)}",
+                "exit_code": -1,
+                "error_type": "command_execution"
             }
 
     def _update_interpreter_progress(self, case_id: str, output_line: str, status_display):
@@ -252,7 +300,7 @@ class RemoteExecutor:
             template_dict = self.config_manager.get_moqui_tps_template()
             
             if not template_dict:
-                self.logger.error(f"Failed to get moqui_tps template from configuration")
+                self.logger.error("Failed to get moqui_tps template from configuration")
                 return False
             
             # Merge template with dynamic parameters
@@ -347,14 +395,13 @@ class RemoteExecutor:
             self.logger.info(f"Started MOQUI interpreter for case {case_id} with PID {remote_pid}")
         
         # Wait for process to complete (poll periodically)
-        import time
         timeout_seconds = 1800  # 30 minute timeout for interpreter
         poll_interval = 10  # Check every 10 seconds
         elapsed_time = 0
         
         while elapsed_time < timeout_seconds:
             # Check if process is still running
-            check_result = self.execute_command(f"ps -p {remote_pid}")
+            check_result = self.execute_command(self._get_shell_command("process", "check_process_by_pid", pid=remote_pid))
             if check_result["exit_code"] != 0:
                 # Process has completed, check the log for results
                 log_result = self.execute_command_with_workdir("cat interpreter.log", self.working_directories["mqi_interpreter"])
@@ -394,7 +441,7 @@ class RemoteExecutor:
                     # Failure case - ensure ALL error information is captured
                     if self.logger:
                         self.logger.error(f"MOQUI interpreter FAILED for case {case_id}")
-                        self.logger.error(f"Full error output from GPU server:")
+                        self.logger.error("Full error output from GPU server:")
                         self.logger.error(f"{stdout_output}")
                         
                         self.logger.log_case_progress(case_id, "INTERPRETER_FAILED", 0.0, {
@@ -425,7 +472,7 @@ class RemoteExecutor:
         if self.logger:
             self.logger.error(error_msg)
         # Kill the timed-out process
-        self.execute_command(f"kill {remote_pid}")
+        self.execute_command(self._get_shell_command("process", "kill_process", pid=remote_pid))
         return {"success": False, "error": error_msg, "remote_pid": remote_pid}
 
     def run_moqui_beam(self, case_id: str, beam_id: int, gpu_id: int, 
@@ -473,23 +520,22 @@ class RemoteExecutor:
             self.logger.info(f"Started beam calculation for case {case_id} with PID {remote_pid}")
         
         # Wait for process to complete (poll periodically)
-        import time
         timeout_seconds = 3600  # 1 hour timeout
         poll_interval = 30  # Check every 30 seconds
         elapsed_time = 0
         
         while elapsed_time < timeout_seconds:
             # Check if process is still running
-            check_result = self.execute_command(f"ps -p {remote_pid}")
+            check_result = self.execute_command(self._get_shell_command("process", "check_process_by_pid", pid=remote_pid))
             if check_result["exit_code"] != 0:
                 # Process has completed - capture stdout, stderr, and exit_code for enhanced monitoring
-                log_result = self.execute_command(f"cat {tps_env_path}/moqui.log")
+                log_result = self.execute_command(self._get_shell_command("filesystem", "read_file", file_path=f"{tps_env_path}/moqui.log"))
                 stdout_output = log_result.get('stdout', '').strip() if log_result["exit_code"] == 0 else ''
                 stderr_output = log_result.get('stderr', '').strip() if log_result["exit_code"] != 0 else ''
                 
                 # Get the actual exit code from the completed process (since we can't get it from nohup)
                 # We'll determine success/failure based on output file existence and log content
-                output_check_result = self.execute_command(f"test -f {self.moqui_outputs_path}/{case_id}/dose.raw")
+                output_check_result = self.execute_command(self._get_shell_command("filesystem", "check_file_exists", file_path=f"{self.moqui_outputs_path}/{case_id}/dose.raw"))
                 execution_exit_code = 0 if output_check_result["exit_code"] == 0 else 1
                 
                 # Analyze the results as specified in monitoring plan
@@ -561,7 +607,7 @@ class RemoteExecutor:
         if self.logger:
             self.logger.error(error_msg)
         # Kill the timed-out process
-        self.execute_command(f"kill {remote_pid}")
+        self.execute_command(self._get_shell_command("process", "kill_process", pid=remote_pid))
         return {"success": False, "error": error_msg, "remote_pid": remote_pid}
 
     def run_raw_to_dicom_converter(self, case_id: str, workspace_path: str = None, status_display=None) -> bool:
@@ -655,7 +701,7 @@ class RemoteExecutor:
 
     def check_file_exists(self, file_path: str) -> bool:
         """Check if file exists on remote system."""
-        command = f"test -f {file_path}"
+        command = self._get_shell_command("filesystem", "check_file_exists", file_path=file_path)
         
         result = self.execute_command(command)
         return result["exit_code"] == 0
@@ -784,7 +830,6 @@ class RemoteExecutor:
     def _update_case_status_with_gantry(self, case_id: str, gantry_info: Dict[str, Any]):
         """Update case_status.json with gantry information."""
         import json
-        import os
         from pathlib import Path
         
         try:

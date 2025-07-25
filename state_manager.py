@@ -172,3 +172,42 @@ class StateManager:
                 self._save_state()
             
             return cases_to_remove
+    
+    def set_case_processing(self, case_id: str, **kwargs) -> None:
+        """Set case status to processing with standardized parameters."""
+        processing_kwargs = {
+            "current_task": kwargs.get("current_task", "Starting processing"),
+            "gpu_allocation": kwargs.get("gpu_allocation", []),
+            "remote_path": kwargs.get("remote_path", ""),
+            "remote_pid": kwargs.get("remote_pid"),
+            "locked_gpus": kwargs.get("locked_gpus", [])
+        }
+        self.update_case_status(case_id, "PROCESSING", **processing_kwargs)
+    
+    def set_case_completed(self, case_id: str, **kwargs) -> None:
+        """Set case status to completed with standardized parameters."""
+        completed_kwargs = {
+            "last_completed_step": kwargs.get("last_completed_step", "All steps completed"),
+            "current_task": None  # Clear current task on completion
+        }
+        # Preserve important fields from kwargs
+        for key in ["gpu_allocation", "remote_path", "locked_gpus"]:
+            if key in kwargs:
+                completed_kwargs[key] = kwargs[key]
+        
+        self.update_case_status(case_id, "COMPLETED", **completed_kwargs)
+    
+    def set_case_failed(self, case_id: str, error_message: str, **kwargs) -> None:
+        """Set case status to failed with error message and standardized parameters."""
+        failed_kwargs = {
+            "current_task": None,  # Clear current task on failure
+            "error_message": error_message,
+            "last_completed_step": kwargs.get("last_completed_step", ""),
+            "retry_count": kwargs.get("retry_count", 0)
+        }
+        # Preserve important fields from kwargs
+        for key in ["gpu_allocation", "remote_path", "locked_gpus"]:
+            if key in kwargs:
+                failed_kwargs[key] = kwargs[key]
+        
+        self.update_case_status(case_id, "FAILED", **failed_kwargs)

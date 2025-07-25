@@ -2,7 +2,7 @@ import paramiko
 import socket
 import time
 import threading
-from typing import Optional, Any, Dict, ClassVar
+from typing import Optional, Dict, ClassVar
 
 
 class SSHConnectionManager:
@@ -85,6 +85,8 @@ class SSHConnectionManager:
         max_attempts = 3
         
         for attempt in range(max_attempts):
+            sock = None
+            transport = None
             try:
                 # Clean up any existing transport
                 if self.transport:
@@ -92,7 +94,8 @@ class SSHConnectionManager:
                         self.transport.close()
                     except:
                         pass
-                    self.transport = None
+                    finally:
+                        self.transport = None
                 
                 # Add a small fixed delay between attempts
                 if attempt > 0:
@@ -104,10 +107,12 @@ class SSHConnectionManager:
                 
                 # Create a new transport and connect
                 sock = socket.create_connection((self.host, self.port), timeout=self.timeout)
-                self.transport = paramiko.Transport(sock)
+                transport = paramiko.Transport(sock)
                 
-                self.transport.connect(username=self.username, password=self.password)
+                transport.connect(username=self.username, password=self.password)
                 
+                # Only assign to self.transport after successful connection
+                self.transport = transport
                 self.connected = True
                 self.logger.info(f"Successfully connected to {self.host}:{self.port} on attempt {attempt + 1}")
                 
@@ -150,6 +155,19 @@ class SSHConnectionManager:
                 self.logger.error(f"SSH connection failed on attempt {attempt + 1}/{max_attempts}: {e}")
                 if attempt < max_attempts - 1:
                     continue
+            finally:
+                # Clean up resources on failure, but only if connection wasn't successful
+                if not self.connected:
+                    if transport and transport != self.transport:
+                        try:
+                            transport.close()
+                        except:
+                            pass
+                    if sock:
+                        try:
+                            sock.close()
+                        except:
+                            pass
         
         # All attempts failed
         self.connected = False
@@ -190,6 +208,7 @@ class SSHConnectionManager:
         if not self._ensure_connected():
             return None
         
+        ssh_client = None
         try:
             ssh_client = paramiko.SSHClient()
             ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -197,6 +216,12 @@ class SSHConnectionManager:
             return ssh_client
         except Exception as e:
             self.logger.error(f"Failed to create SSH client: {e}")
+            # Clean up partially created client
+            if ssh_client:
+                try:
+                    ssh_client.close()
+                except:
+                    pass
             return None
     
     def get_sftp_client(self) -> Optional[paramiko.SFTPClient]:
@@ -204,10 +229,18 @@ class SSHConnectionManager:
         if not self._ensure_connected():
             return None
         
+        sftp_client = None
         try:
-            return paramiko.SFTPClient.from_transport(self.transport)
+            sftp_client = paramiko.SFTPClient.from_transport(self.transport)
+            return sftp_client
         except Exception as e:
             self.logger.error(f"Failed to create SFTP client: {e}")
+            # Clean up partially created client
+            if sftp_client:
+                try:
+                    sftp_client.close()
+                except:
+                    pass
             return None
     
     def get_connection_info(self) -> dict:

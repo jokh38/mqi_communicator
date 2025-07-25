@@ -48,6 +48,42 @@
   "display": {
     "refresh_interval_seconds": 1
   },
+  "shell_commands": {
+    "process": {
+      "check_process_by_pid": "ps -p {pid}",
+      "kill_process": "kill {pid}",
+      "kill_process_signal": "kill -{signal} {pid}",
+      "check_process_by_name": "ps aux | grep {process_name} | grep -v grep",
+      "nohup_background": "nohup {command} > {output_file} 2>&1 & echo $!"
+    },
+    "filesystem": {
+      "write_file_heredoc": "cat <<'EOF' > {target_path}\n{content}\nEOF",
+      "read_file": "cat {file_path}",
+      "check_file_exists": "test -f {file_path}",
+      "check_dir_exists": "test -d {dir_path}",
+      "create_directory": "mkdir -p {dir_path}",
+      "tail_file": "tail -n {lines} {file_path}",
+      "cleanup_old_files": "find {directory} -type f -mtime +{days} -delete",
+      "remove_file": "rm {file_path}",
+      "remove_directory": "rm -rf {dir_path}"
+    },
+    "system_info": {
+      "hostname": "hostname",
+      "uptime": "uptime",
+      "memory": "free -h",
+      "disk_usage": "df -h",
+      "disk_usage_path": "df -h {path}",
+      "cpu_count": "nproc",
+      "load_average": "cat /proc/loadavg"
+    },
+    "shell_operators": {
+      "change_directory": "cd {working_dir} && {command}",
+      "background_job": "{command} &",
+      "get_process_id": "echo $!",
+      "redirect_output": "{command} > {output_file} 2>&1",
+      "pipe": "{command1} | {command2}"
+    }
+  },
   "logging": {
     "log_level": "INFO",
     "max_file_size": "10MB",
