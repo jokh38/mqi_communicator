@@ -346,33 +346,23 @@ class RemoteExecutor:
         # Ensure the output directory exists
         self.create_directory(self.moqui_interpreter_outputs_path)
         
+        # Create logs directory on remote server
+        logs_dir = "/tmp/mqi_logs"
+        self.create_directory(logs_dir)
+        
+        # Define case-specific log file path
+        case_log_file = f"{logs_dir}/{case_id}_interpreter.log"
+        
         # Enhanced command to capture all error output including Python tracebacks
         # Use working directory change to ensure config files are found
-        # Run in background to capture PID
+        # Redirect stdout and stderr to case-specific log file
         command = (f"nohup {self.venv_python_path} -u ./main_cli.py "
                    f"--logdir {shlex.quote(log_directory)} "
-                   f"--outputdir {shlex.quote(self.moqui_interpreter_outputs_path)} > interpreter.log 2>&1 & echo $!")
+                   f"--outputdir {shlex.quote(self.moqui_interpreter_outputs_path)} > {shlex.quote(case_log_file)} 2>&1 & echo $!")
         
-        # Log MOQUI interpreter execution start
+        # Log MOQUI interpreter execution start - concise logging
         if self.logger:
-            self.logger.log_structured("INFO", "MOQUI interpreter started with PID tracking", {
-                "case_id": case_id,
-                "command": command,
-                "log_dir": log_directory,
-                "case_path": case_path,
-                "output_dir": self.moqui_interpreter_outputs_path
-            })
-        else:
-            self.logger.info(f"Executing MOQUI interpreter for case {case_id} with command: {command}")
-
-        # Update status display - starting interpreter
-        if status_display:
-            status_display.update_case_status(
-                case_id=case_id,
-                status="PROCESSING",
-                current_task="MOQUI Interpreter",
-                detailed_status="Parsing RTPLAN and preparing inputs..."
-            )
+            self.logger.info(f"Starting interpreter for case {case_id}")
         
         # Get PID first
         pid_result = self.execute_command_with_workdir(command, self.working_directories["mqi_interpreter"], timeout=30)
@@ -403,8 +393,8 @@ class RemoteExecutor:
             # Check if process is still running
             check_result = self.execute_command(self._get_shell_command("process", "check_process_by_pid", pid=remote_pid))
             if check_result["exit_code"] != 0:
-                # Process has completed, check the log for results
-                log_result = self.execute_command_with_workdir("cat interpreter.log", self.working_directories["mqi_interpreter"])
+                # Process has completed, check the case-specific log for results
+                log_result = self.execute_command(f"cat {shlex.quote(case_log_file)}")
                 stdout_output = log_result.get('stdout', '').strip()
                 
                 # Extract error information for better visibility
@@ -420,15 +410,10 @@ class RemoteExecutor:
                     if gantry_info:
                         self._update_case_status_with_gantry(case_id, gantry_info)
                     
+                    # Concise success logging
                     if self.logger:
-                        self.logger.log_case_progress(case_id, "INTERPRETER_SUCCESS", 1.0, {
-                            "stage": "moqui_interpreter",
-                            "stdout": stdout_output,
-                            "remote_pid": remote_pid,
-                            "gantry_info": gantry_info
-                        })
-                    else:
-                        self.logger.info(f"MOQUI interpreter completed successfully for case {case_id}")
+                        self.logger.info(f"Interpreter for case {case_id} completed successfully")
+                    
                     if status_display:
                         status_display.update_case_status(
                             case_id=case_id,
@@ -438,19 +423,9 @@ class RemoteExecutor:
                         )
                     return {"success": True, "remote_pid": remote_pid, "gantry_info": gantry_info}
                 else:
-                    # Failure case - ensure ALL error information is captured
+                    # Failure case - concise error logging with reference to log file
                     if self.logger:
-                        self.logger.error(f"MOQUI interpreter FAILED for case {case_id}")
-                        self.logger.error("Full error output from GPU server:")
-                        self.logger.error(f"{stdout_output}")
-                        
-                        self.logger.log_case_progress(case_id, "INTERPRETER_FAILED", 0.0, {
-                            "stage": "moqui_interpreter",
-                            "error": stdout_output,
-                            "remote_pid": remote_pid
-                        })
-                    else:
-                        self.logger.error(f"MOQUI interpreter FAILED for case {case_id}")
+                        self.logger.error(f"Interpreter for case {case_id} failed. See log: {case_log_file}")
                         
                     if status_display:
                         # Show more error details in status display
@@ -479,7 +454,6 @@ class RemoteExecutor:
                       workspace_path: str = None, status_display=None) -> Dict[str, Any]:
         """Run moqui beam calculation on specific GPU and return PID information."""
         workspace_path = workspace_path or self.remote_workspace
-        case_workspace_path = f"{workspace_path}/{case_id}"
         
         # Ensure the case-specific output directory exists
         case_output_dir = f"{self.moqui_outputs_path}/{case_id}"
@@ -613,7 +587,6 @@ class RemoteExecutor:
     def run_raw_to_dicom_converter(self, case_id: str, workspace_path: str = None, status_display=None) -> bool:
         """Run raw to DICOM converter."""
         workspace_path = workspace_path or self.remote_workspace
-        case_path = f"{workspace_path}/{case_id}"
         # Use working directory change to ensure proper module imports
         input_file = f"{self.moqui_outputs_path}/{case_id}/dose.raw"
         output_file = f"{self.moqui_outputs_path}/{case_id}/RTDOSE.dcm"

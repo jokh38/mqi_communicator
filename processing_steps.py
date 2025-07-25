@@ -155,6 +155,19 @@ class RunInterpreterStep(ProcessingStep):
                     remote_pid=remote_pid
                 )
             
+            # Store gantry info in shared state for beam calculations
+            gantry_info = result.get("gantry_info")
+            if gantry_info:
+                context.shared_state[f"{context.case_id}_gantry_info"] = gantry_info
+            
+            # Mark interpreter step as completed in case status for proper workflow progression
+            context.case_scanner.update_case_status(
+                case_id=context.case_id,
+                status="PROCESSING",
+                interpreter_completed=True,
+                ready_for_beams=True
+            )
+            
             return True
         except Exception as e:
             context.logger.error(f"Error running interpreter for case {context.case_id}: {e}")
@@ -170,11 +183,24 @@ class ExecuteBeamCalculationsStep(ProcessingStep):
     def execute(self, context: ProcessingContext) -> bool:
         """Execute beam calculations."""
         try:
-            # Get next job from scheduler
-            job = context.job_scheduler.get_next_job()
-            if not job:
-                context.logger.error(f"Failed to get job for case: {context.case_id}")
+            # Check if case is ready for beam calculations
+            case_status = context.case_scanner.get_case_status(context.case_id)
+            if not case_status or not case_status.get('ready_for_beams', False):
+                context.logger.error(f"Case {context.case_id} is not ready for beam calculations")
                 return False
+            
+            # Get or create job for this specific case
+            job = context.job_scheduler.active_jobs.get(context.case_id)
+            if not job:
+                # Try to schedule the case for beam processing
+                if not context.job_scheduler.schedule_case(context.case_id, start_task="beams"):
+                    context.logger.error(f"Failed to schedule beam calculations for case: {context.case_id}")
+                    return False
+                # Get the newly scheduled job
+                job = context.job_scheduler.get_next_job()
+                if not job:
+                    context.logger.error(f"Failed to get scheduled job for case: {context.case_id}")
+                    return False
             
             # Update context with GPU allocation
             gpu_allocation = job.get('gpu_allocation', [])
@@ -275,7 +301,7 @@ class ExecuteBeamCalculationsStep(ProcessingStep):
             # Ensure job is marked as failed
             try:
                 context.job_scheduler.complete_job(context.case_id, False)
-            except:
+            except Exception:
                 pass  # Ignore errors in cleanup
             return False
 
@@ -296,9 +322,8 @@ class ExecuteBeamCalculationsStep(ProcessingStep):
             case_info = case_status.get(case_id, {})
             return case_info.get('gantry_info', {})
             
-        except Exception as e:
-            if hasattr(context, 'logger') and context.logger:
-                context.logger.error(f"Error reading gantry info from case_status.json for case {case_id}: {e}")
+        except Exception:
+            # Note: context is not available in this method, so we can't log the error
             return {}
 
     def _prepare_dynamic_params(self, context, gantry_info: Dict[str, Any], gpu_id: int, beam_id: int) -> Dict[str, Any]:
