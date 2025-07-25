@@ -14,8 +14,8 @@ typing-extensions>=4.5.0
 # JSON schema validation (uncomment if needed)
 # jsonschema>=4.17.0
 
-# File locking for concurrent access (uncomment if needed)
-# filelock>=3.9.0
+# File locking for concurrent access
+filelock>=3.9.0
 
 # Development and testing dependencies (uncomment for development)
 # pytest>=7.0.0

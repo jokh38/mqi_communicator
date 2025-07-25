@@ -1,5 +1,8 @@
 import subprocess
 import re
+import xml.etree.ElementTree as ET
+import time
+import filelock
 from typing import List, Dict, Optional, Any, TYPE_CHECKING
 from dataclasses import dataclass
 
@@ -26,71 +29,172 @@ class GPUManager:
         self.allocated_gpus: List[int] = []
         self.remote_executor = remote_executor
         self.logger = logger
-        self.lock_dir_base = "/var/lock/mqi_locks"
+        self.lock_dir_base = "/var/lock"
+        
+        # Store active file locks
+        self._gpu_locks: Dict[int, filelock.FileLock] = {}
+        
+        # XML cache for nvidia-smi optimization
+        self._gpu_xml_cache = None
+        self._cache_timestamp = 0
+        self._cache_ttl = 5  # Cache for 5 seconds
+
+    def _get_gpu_info_xml(self) -> Optional[ET.Element]:
+        """
+        Get GPU information in XML format from nvidia-smi with caching.
+        This single call replaces multiple nvidia-smi invocations.
+        """
+        current_time = time.time()
+        
+        # Return cached data if still valid
+        if (self._gpu_xml_cache is not None and 
+            (current_time - self._cache_timestamp) < self._cache_ttl):
+            return self._gpu_xml_cache
+        
+        try:
+            cmd = ['nvidia-smi', '-q', '-x']
+            
+            if self.remote_executor:
+                # Use remote executor for remote GPU server
+                result = self.remote_executor.execute_command(' '.join(cmd))
+                if result['exit_code'] != 0:
+                    if self.logger:
+                        self.logger.error(f"Remote nvidia-smi XML query failed: {result['stderr']}")
+                    return None
+                xml_output = result['stdout']
+            else:
+                # Use local subprocess for local execution
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+                if result.returncode != 0:
+                    if self.logger:
+                        self.logger.error(f"Local nvidia-smi XML query failed: {result.stderr}")
+                    return None
+                xml_output = result.stdout
+            
+            # Parse XML
+            root = ET.fromstring(xml_output)
+            
+            # Cache the result
+            self._gpu_xml_cache = root
+            self._cache_timestamp = current_time
+            
+            return root
+            
+        except (subprocess.TimeoutExpired, subprocess.CalledProcessError, 
+                ET.ParseError, Exception) as e:
+            if self.logger:
+                self.logger.error(f"Failed to get GPU XML info: {e}")
+            return None
 
     def get_gpu_info(self) -> List[Dict[str, Any]]:
-        """Get detailed GPU information using nvidia-smi."""
+        """Get detailed GPU information using cached XML data."""
         try:
-            cmd = [
-                'nvidia-smi',
-                '--query-gpu=index,memory.total,memory.used,name',
-                '--format=csv,noheader,nounits'
-            ]
-            
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-            
-            if result.returncode != 0:
+            root = self._get_gpu_info_xml()
+            if root is None:
                 return []
             
             gpu_info = []
-            for line in result.stdout.strip().split('\n'):
-                if line.strip():
-                    parts = [part.strip() for part in line.split(',')]
-                    if len(parts) >= 4:
-                        gpu_info.append({
-                            'gpu_id': int(parts[0]),
-                            'memory_total': int(parts[1]),
-                            'memory_used': int(parts[2]),
-                            'memory_free': int(parts[1]) - int(parts[2]),
-                            'gpu_name': parts[3],
-                            'processes': self._get_gpu_processes(int(parts[0]))
-                        })
+            
+            # Parse GPU information from XML
+            for gpu in root.findall('gpu'):
+                gpu_id_elem = gpu.find('minor_number')
+                if gpu_id_elem is None:
+                    continue
+                
+                gpu_id = int(gpu_id_elem.text)
+                
+                # Get memory information
+                memory = gpu.find('fb_memory_usage')
+                if memory is not None:
+                    total_elem = memory.find('total')
+                    used_elem = memory.find('used')
+                    
+                    if total_elem is not None and used_elem is not None:
+                        # Convert from MiB to MB for consistency
+                        memory_total = int(float(total_elem.text.split()[0]))
+                        memory_used = int(float(used_elem.text.split()[0]))
+                        memory_free = memory_total - memory_used
+                    else:
+                        memory_total = memory_used = memory_free = 0
+                else:
+                    memory_total = memory_used = memory_free = 0
+                
+                # Get GPU name
+                name_elem = gpu.find('product_name')
+                gpu_name = name_elem.text if name_elem is not None else "Unknown"
+                
+                # Get processes from cached XML
+                processes = self._get_gpu_processes_from_xml(gpu_id, gpu)
+                
+                gpu_info.append({
+                    'gpu_id': gpu_id,
+                    'memory_total': memory_total,
+                    'memory_used': memory_used,
+                    'memory_free': memory_free,
+                    'gpu_name': gpu_name,
+                    'processes': processes
+                })
             
             return gpu_info
             
-        except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError):
+        except Exception as e:
+            if self.logger:
+                self.logger.error(f"Error parsing GPU XML info: {e}")
             return []
 
-    def _get_gpu_processes(self, gpu_id: int) -> List[Dict[str, Any]]:
-        """Get processes running on specific GPU."""
+    def _get_gpu_processes_from_xml(self, gpu_id: int, gpu_elem: ET.Element) -> List[Dict[str, Any]]:
+        """Extract GPU processes from XML element."""
         try:
-            cmd = [
-                'nvidia-smi',
-                '--query-compute-apps=gpu_name,pid,process_name,used_memory',
-                '--format=csv,noheader,nounits',
-                f'--id={gpu_id}'
-            ]
-            
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
-            
-            if result.returncode != 0:
-                return []
-            
             processes = []
-            for line in result.stdout.strip().split('\n'):
-                if line.strip() and 'No running processes found' not in line:
-                    parts = [part.strip() for part in line.split(',')]
-                    if len(parts) >= 4:
+            processes_elem = gpu_elem.find('processes')
+            
+            if processes_elem is not None:
+                for process in processes_elem.findall('process_info'):
+                    pid_elem = process.find('pid')
+                    name_elem = process.find('process_name')
+                    memory_elem = process.find('used_memory')
+                    
+                    if pid_elem is not None and name_elem is not None:
+                        memory_used = 0
+                        if memory_elem is not None and memory_elem.text:
+                            try:
+                                # Parse memory usage (format: "X MiB")
+                                memory_used = int(float(memory_elem.text.split()[0]))
+                            except (ValueError, IndexError):
+                                memory_used = 0
+                        
                         processes.append({
-                            'gpu_name': parts[0],
-                            'pid': int(parts[1]),
-                            'process_name': parts[2],
-                            'used_memory': int(parts[3])
+                            'gpu_name': f"GPU {gpu_id}",
+                            'pid': int(pid_elem.text),
+                            'process_name': name_elem.text,
+                            'used_memory': memory_used
                         })
             
             return processes
             
-        except (subprocess.TimeoutExpired, subprocess.CalledProcessError, ValueError):
+        except Exception as e:
+            if self.logger:
+                self.logger.error(f"Error parsing GPU processes from XML: {e}")
+            return []
+
+    def _get_gpu_processes(self, gpu_id: int) -> List[Dict[str, Any]]:
+        """Get processes running on specific GPU using cached XML data."""
+        try:
+            root = self._get_gpu_info_xml()
+            if root is None:
+                return []
+            
+            # Find the specific GPU in the XML
+            for gpu in root.findall('gpu'):
+                gpu_id_elem = gpu.find('minor_number')
+                if gpu_id_elem is not None and int(gpu_id_elem.text) == gpu_id:
+                    return self._get_gpu_processes_from_xml(gpu_id, gpu)
+            
+            return []
+            
+        except Exception as e:
+            if self.logger:
+                self.logger.error(f"Error getting GPU processes for GPU {gpu_id}: {e}")
             return []
 
     def get_available_gpus(self) -> List[int]:
@@ -236,65 +340,84 @@ class GPUManager:
         return zombie_processes
 
     def acquire_gpu_lock(self, gpu_id: int) -> bool:
-        """Atomically acquire lock for a specific GPU using mkdir."""
-        if not self.remote_executor:
-            self.logger.error("Remote executor not available for GPU locking")
-            return False
-            
+        """Atomically acquire lock for a specific GPU using filelock."""
         try:
-            # Ensure lock directory base exists
-            result = self.remote_executor.execute_command(f"mkdir -p {self.lock_dir_base}")
-            if result["exit_code"] != 0:
-                self.logger.error(f"Failed to create lock directory base: {result['stderr']}")
-                return False
-            
-            # Try to atomically create GPU lock directory
-            lock_dir = f"{self.lock_dir_base}/gpu_{gpu_id}"
-            result = self.remote_executor.execute_command(f"mkdir {lock_dir}")
-            
-            if result["exit_code"] == 0:
-                self.logger.info(f"Successfully acquired lock for GPU {gpu_id}")
+            # If already locked by this instance, return True
+            if gpu_id in self._gpu_locks:
                 return True
-            else:
-                self.logger.debug(f"Failed to acquire lock for GPU {gpu_id} - already locked")
+            
+            lock_file_path = f"{self.lock_dir_base}/gpu_{gpu_id}.lock"
+            lock = filelock.FileLock(lock_file_path, timeout=0.1)
+            
+            try:
+                # Try to acquire lock with minimal timeout
+                lock.acquire(timeout=0.1)
+                
+                # Store the lock object for later release
+                self._gpu_locks[gpu_id] = lock
+                
+                if self.logger:
+                    self.logger.info(f"Successfully acquired atomic lock for GPU {gpu_id}")
+                return True
+                
+            except filelock.Timeout:
+                if self.logger:
+                    self.logger.debug(f"Failed to acquire lock for GPU {gpu_id} - already locked")
                 return False
                 
         except Exception as e:
-            self.logger.error(f"Error acquiring GPU lock for GPU {gpu_id}: {e}")
+            if self.logger:
+                self.logger.error(f"Error acquiring GPU lock for GPU {gpu_id}: {e}")
             return False
 
     def release_gpu_lock(self, gpu_id: int) -> bool:
-        """Release lock for a specific GPU."""
-        if not self.remote_executor:
-            self.logger.error("Remote executor not available for GPU unlocking")
-            return False
-            
+        """Release lock for a specific GPU using filelock."""
         try:
-            lock_dir = f"{self.lock_dir_base}/gpu_{gpu_id}"
-            result = self.remote_executor.execute_command(f"rmdir {lock_dir}")
-            
-            if result["exit_code"] == 0:
-                self.logger.info(f"Successfully released lock for GPU {gpu_id}")
+            # If not locked by this instance, return True (nothing to release)
+            if gpu_id not in self._gpu_locks:
+                if self.logger:
+                    self.logger.debug(f"No lock to release for GPU {gpu_id}")
                 return True
-            else:
-                self.logger.warning(f"Failed to release lock for GPU {gpu_id}: {result['stderr']}")
-                return False
+            
+            # Get the lock object and release it
+            lock = self._gpu_locks[gpu_id]
+            lock.release()
+            
+            # Remove from our tracking dict
+            del self._gpu_locks[gpu_id]
+            
+            if self.logger:
+                self.logger.info(f"Successfully released atomic lock for GPU {gpu_id}")
+            return True
                 
         except Exception as e:
-            self.logger.error(f"Error releasing GPU lock for GPU {gpu_id}: {e}")
+            if self.logger:
+                self.logger.error(f"Error releasing GPU lock for GPU {gpu_id}: {e}")
             return False
 
     def is_gpu_locked(self, gpu_id: int) -> bool:
-        """Check if a specific GPU is locked."""
-        if not self.remote_executor:
-            return False
-            
+        """Check if a specific GPU is locked using filelock."""
         try:
-            lock_dir = f"{self.lock_dir_base}/gpu_{gpu_id}"
-            result = self.remote_executor.execute_command(f"test -d {lock_dir}")
-            return result["exit_code"] == 0
+            # If we have this GPU locked, return True
+            if gpu_id in self._gpu_locks:
+                return True
+            
+            # Try to acquire lock briefly to test availability
+            lock_file_path = f"{self.lock_dir_base}/gpu_{gpu_id}.lock"
+            lock = filelock.FileLock(lock_file_path, timeout=0.01)
+            
+            try:
+                lock.acquire(timeout=0.01)
+                # If we can acquire it, it's not locked - release immediately
+                lock.release()
+                return False
+            except filelock.Timeout:
+                # If we can't acquire it, it's locked
+                return True
+                
         except Exception as e:
-            self.logger.error(f"Error checking GPU lock for GPU {gpu_id}: {e}")
+            if self.logger:
+                self.logger.error(f"Error checking GPU lock for GPU {gpu_id}: {e}")
             return True  # Assume locked if we can't check
 
     def get_available_gpus_with_locking(self) -> List[int]:
@@ -382,37 +505,46 @@ class GPUManager:
             return False
 
     def cleanup_stale_locks(self) -> List[int]:
-        """Clean up stale GPU locks (should only be called during recovery)."""
+        """Clean up stale GPU locks using filelock (should only be called during recovery)."""
         cleaned_gpus = []
         
-        if not self.remote_executor:
-            return cleaned_gpus
-            
         try:
-            # List all lock directories
-            result = self.remote_executor.execute_command(f"ls {self.lock_dir_base}")
-            if result["exit_code"] != 0:
-                return cleaned_gpus
+            import os
+            import glob
             
-            for line in result["stdout"].strip().split('\n'):
-                if line.startswith('gpu_'):
-                    try:
-                        gpu_id = int(line.split('_')[1])
-                        lock_dir = f"{self.lock_dir_base}/{line}"
-                        
-                        # Force remove the lock directory
-                        remove_result = self.remote_executor.execute_command(f"rmdir {lock_dir}")
-                        if remove_result["exit_code"] == 0:
+            # Find all GPU lock files
+            lock_pattern = f"{self.lock_dir_base}/gpu_*.lock"
+            lock_files = glob.glob(lock_pattern)
+            
+            for lock_file in lock_files:
+                try:
+                    # Extract GPU ID from filename
+                    filename = os.path.basename(lock_file)
+                    gpu_id = int(filename.replace('gpu_', '').replace('.lock', ''))
+                    
+                    # Try to force release the lock by removing the file
+                    if os.path.exists(lock_file):
+                        try:
+                            os.remove(lock_file)
                             cleaned_gpus.append(gpu_id)
-                            self.logger.info(f"Cleaned up stale lock for GPU {gpu_id}")
-                        else:
-                            self.logger.warning(f"Failed to clean up stale lock for GPU {gpu_id}")
+                            if self.logger:
+                                self.logger.info(f"Cleaned up stale lock file for GPU {gpu_id}")
+                        except OSError as e:
+                            if self.logger:
+                                self.logger.warning(f"Failed to clean up stale lock for GPU {gpu_id}: {e}")
+                    
+                    # Also remove from our internal tracking if present
+                    if gpu_id in self._gpu_locks:
+                        del self._gpu_locks[gpu_id]
                             
-                    except (ValueError, IndexError):
-                        continue
+                except (ValueError, IndexError) as e:
+                    if self.logger:
+                        self.logger.warning(f"Could not parse GPU ID from lock file {lock_file}: {e}")
+                    continue
                         
         except Exception as e:
-            self.logger.error(f"Error cleaning up stale locks: {e}")
+            if self.logger:
+                self.logger.error(f"Error cleaning up stale locks: {e}")
         
         return cleaned_gpus
 

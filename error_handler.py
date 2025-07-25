@@ -2,8 +2,9 @@ import time
 import traceback
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Dict, List, Any, Optional, Callable
+from typing import Dict, List, Any, Optional, Callable, Tuple, Union
 import random
+import functools
 
 
 class ErrorType(Enum):
@@ -516,3 +517,62 @@ class ErrorHandler:
         except Exception as export_error:
             self.logger.error(f"Error exporting error history: {export_error}")
             return False
+
+
+def retry_on_exception(max_retries: int = 3, delay_seconds: float = 1.0, 
+                      exceptions_to_catch: Union[Exception, Tuple[Exception, ...]] = Exception,
+                      backoff_strategy: str = "exponential", logger=None):
+    """
+    Decorator for retrying function execution on specific exceptions.
+    
+    Args:
+        max_retries: Maximum number of retry attempts
+        delay_seconds: Base delay between retries in seconds
+        exceptions_to_catch: Exception types to catch and retry on
+        backoff_strategy: 'linear', 'exponential', or 'fixed'
+        logger: Logger instance for retry notifications
+    """
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            last_exception = None
+            
+            for attempt in range(max_retries + 1):  # +1 for initial attempt
+                try:
+                    return func(*args, **kwargs)
+                except exceptions_to_catch as e:
+                    last_exception = e
+                    
+                    if attempt < max_retries:  # Not the final attempt
+                        # Calculate delay based on strategy
+                        if backoff_strategy == "exponential":
+                            delay = delay_seconds * (2 ** attempt)
+                        elif backoff_strategy == "linear":
+                            delay = delay_seconds * (attempt + 1)
+                        else:  # fixed
+                            delay = delay_seconds
+                        
+                        # Add jitter to prevent thundering herd
+                        jitter = random.uniform(0.1, 0.3) * delay
+                        actual_delay = delay + jitter
+                        
+                        if logger:
+                            logger.warning(f"Attempt {attempt + 1}/{max_retries + 1} failed for {func.__name__}: {e}. Retrying in {actual_delay:.2f}s")
+                        
+                        time.sleep(actual_delay)
+                    else:
+                        # Final attempt failed
+                        if logger:
+                            logger.error(f"All {max_retries + 1} attempts failed for {func.__name__}: {last_exception}")
+                        break
+                except Exception as e:
+                    # Exception not in our catch list, don't retry
+                    if logger:
+                        logger.error(f"Non-retryable exception in {func.__name__}: {e}")
+                    raise
+            
+            # All retries exhausted, raise the last exception
+            raise last_exception
+        
+        return wrapper
+    return decorator
