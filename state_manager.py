@@ -74,44 +74,35 @@ class StateManager:
         """Update case status with thread-safe operation."""
         with self._lock:
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            
+
             if case_id not in self._state:
                 self._state[case_id] = {
                     "status": status,
                     "start_time": current_time,
+                    "last_updated": current_time,
                     "end_time": "",
-                    "hash": kwargs.get("folder_hash", ""),
-                    "gpu_allocation": kwargs.get("gpu_allocation", []),
-                    "retry_count": kwargs.get("retry_count", 0),
-                    "remote_path": kwargs.get("remote_path", ""),
-                    "remote_pid": kwargs.get("remote_pid"),
-                    "locked_gpus": kwargs.get("locked_gpus", []),
-                    "last_completed_step": kwargs.get("last_completed_step", ""),
-                    "current_task": kwargs.get("current_task"),
-                    "last_updated": current_time
+                    "retry_count": 0,
                 }
+                # Initialize with default values from kwargs if creating a new case
+                self._state[case_id].update(kwargs)
+
             else:
                 # Update existing case
                 self._state[case_id]["status"] = status
                 self._state[case_id]["last_updated"] = current_time
                 
-                # Update specific fields if provided
-                for key, value in kwargs.items():
-                    if key == "folder_hash":
-                        self._state[case_id]["hash"] = value
-                    elif key in ["gpu_allocation", "retry_count", "remote_path", "remote_pid", 
-                               "locked_gpus", "last_completed_step"]:
-                        if value is not None:
-                            self._state[case_id][key] = value
-                    elif key == "current_task":
-                        if status == "PROCESSING" and value is not None:
-                            self._state[case_id]["current_task"] = value
-                        elif status in ["COMPLETED", "FAILED"]:
-                            self._state[case_id]["current_task"] = None
-                
+                # Merge all provided kwargs into the case's state
+                self._state[case_id].update(kwargs)
+
                 if status in ["COMPLETED", "FAILED"]:
                     self._state[case_id]["end_time"] = current_time
-            
+                
+                # Special handling for current_task on completion/failure
+                if status in ["COMPLETED", "FAILED"]:
+                    self._state[case_id]["current_task"] = None
+                elif "current_task" in kwargs and kwargs["current_task"] is not None:
+                     self._state[case_id]["current_task"] = kwargs["current_task"]
+
             self._save_state()
     
     def get_cases_by_status(self, status: str) -> list:
