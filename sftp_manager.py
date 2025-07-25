@@ -5,14 +5,12 @@ import time
 import socket
 from pathlib import Path
 from typing import Optional, Callable, Dict, Any
-from base_ssh_connector import BaseSSHConnector
 from status_display import UpdateData
 
 
-class SFTPManager(BaseSSHConnector):
-    def __init__(self, host: str, username: str, password: str, port: int = 22, timeout: int = 30, logger=None):
-        super().__init__(host, username, password, port, timeout)
-        self.sftp: Optional[paramiko.SFTPClient] = None
+class SFTPManager:
+    def __init__(self, ssh_connection_manager, logger=None):
+        self.ssh_connection_manager = ssh_connection_manager
         self.logger = logger
         self.transfer_stats = {
             'total_bytes': 0,
@@ -560,23 +558,15 @@ class SFTPManager(BaseSSHConnector):
 
     def get_connection_info(self) -> Dict[str, Any]:
         """Get connection information."""
-        return {
-            "host": self.host,
-            "port": self.port,
-            "username": self.username,
-            "connected": self.connected,
-            "transport_active": self.transport.is_active() if self.transport else False
-        }
+        return self.ssh_connection_manager.get_connection_info()
 
     def __enter__(self):
         """Context manager entry."""
-        if not self.connect():
-            raise ConnectionError("Failed to establish SFTP connection")
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit."""
-        self.disconnect()
+        pass  # Connection cleanup handled by SSH connection manager
 
     def _archive_moqui_tps_file(self, local_path: str, case_id: str = "") -> bool:
         """Archive moqui_tps.in file locally with timestamp for monitoring purposes."""
@@ -614,5 +604,5 @@ class SFTPManager(BaseSSHConnector):
             return False
 
     def __del__(self):
-        """Destructor - ensure connections are closed."""
-        self.disconnect()
+        """Destructor - connections are managed by SSH connection manager."""
+        pass

@@ -4,8 +4,9 @@ from typing import Dict, List, Any
 
 
 class ConfigManager:
-    def __init__(self, config_path: str = "config.json"):
+    def __init__(self, config_path: str = "config.json", logger=None):
         self.config_path = Path(config_path)
+        self.logger = logger
         self.config = self._load_config()
 
     def _load_config(self) -> Dict[str, Any]:
@@ -105,10 +106,12 @@ class ConfigManager:
             tps_params = self.config.get("moqui_tps_params", {})
             if tps_params:
                 # Log successful parameter retrieval as specified in monitoring plan
-                print(f"Successfully retrieved moqui_tps.in parameters from configuration: {len(tps_params)} parameters")
+                if self.logger:
+                    self.logger.info(f"Successfully retrieved moqui_tps.in parameters from configuration: {len(tps_params)} parameters")
             return tps_params
         except Exception as e:
-            print(f"Failed to retrieve moqui_tps.in parameters from configuration: {e}")
+            if self.logger:
+                self.logger.error(f"Failed to retrieve moqui_tps.in parameters from configuration: {e}")
             return {}
 
     def get_moqui_tps_template(self) -> Dict[str, Any]:
@@ -116,8 +119,10 @@ class ConfigManager:
         try:
             tps_template = self.config.get("moqui_tps_template", {})
             if tps_template:
-                print(f"Successfully retrieved moqui_tps.in template from configuration: {len(tps_template)} parameters")
+                if self.logger:
+                    self.logger.info(f"Successfully retrieved moqui_tps.in template from configuration: {len(tps_template)} parameters")
             return tps_template
         except Exception as e:
-            print(f"Failed to retrieve moqui_tps.in template from configuration: {e}")
+            if self.logger:
+                self.logger.error(f"Failed to retrieve moqui_tps.in template from configuration: {e}")
             return {}

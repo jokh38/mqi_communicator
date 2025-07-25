@@ -6,40 +6,31 @@ from typing import Dict, List, Optional, Any
 import threading
 import signal
 from datetime import datetime
-from base_ssh_connector import BaseSSHConnector
-from config_manager import ConfigManager
 
 
-class RemoteExecutor(BaseSSHConnector):
-    def __init__(self, config: Dict[str, Any], logger=None, **kwargs):
+class RemoteExecutor:
+    def __init__(self, ssh_connection_manager, config_manager, logger=None, **kwargs):
         """
         Initialize RemoteExecutor.
         
         Args:
-            config (Dict[str, Any]): Configuration dictionary.
+            ssh_connection_manager: SSHConnectionManager instance for connection management
+            config_manager: ConfigManager instance for configuration access
+            logger: Logger instance for logging
             **kwargs: Additional keyword arguments (e.g., status_display).
         """
-        # Extract connection details from config
-        host = config.get("servers", {}).get("linux_gpu")
-        username = config.get("credentials", {}).get("username")
-        password = config.get("credentials", {}).get("password")
-        port = config.get("servers", {}).get("ssh_port", 22)
-        timeout = config.get("servers", {}).get("ssh_timeout", 30)
-
-        if not all([host, username, password]):
-            raise ValueError("Host, username, or password not found in configuration.")
-
-        # Initialize parent class with connection details
-        super().__init__(host, username, password, port, timeout)
-        
-        self.ssh: Optional[paramiko.SSHClient] = None
-        self.config = config
+        self.ssh_connection_manager = ssh_connection_manager
+        self.config_manager = config_manager
         self.logger = logger
         self._connection_failures = 0
         
-        # Extract paths from config
-        self.paths = self.config.get("paths", {})
-        self.remote_workspace = self.paths.get("remote_workspace")
+        # Get config dictionary for backward compatibility
+        self.config = config_manager.get_config()
+        
+        # Extract paths from config using config manager
+        config = self.config_manager.get_config()
+        self.paths = config.get("paths", {})
+        self.remote_workspace = self.config_manager.get_remote_workspace_path()
         self.mqi_interpreter_path = self.paths.get("linux_mqi_interpreter")
         # self.moqui_binary_path = self.paths.get("linux_moqui_binary")  # Removed per revision plan
         self.raw_to_dcm_path = self.paths.get("linux_raw_to_dcm")
@@ -55,48 +46,22 @@ class RemoteExecutor(BaseSSHConnector):
             raise ValueError("One or more required paths are missing in the configuration file.")
 
         # Load program working directories from config
-        self.working_directories = self.config.get("working_directories", {})
+        self.working_directories = config.get("working_directories", {})
         if not self.working_directories:
             raise ValueError("Working directories not found in configuration file.")
 
-    def _post_connect_setup(self) -> None:
-        """Create SSH client after connection is established."""
-        self.ssh = paramiko.SSHClient()
-        self.ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        # Use the existing transport to create the client
-        self.ssh._transport = self.transport
-        
-        # Reset failure counter on successful connection
-        self._connection_failures = 0
-    
-    def _pre_disconnect_cleanup(self) -> None:
-        """Close SSH client before disconnection."""
-        if self.ssh:
-            try:
-                self.ssh.close()
-            except Exception:
-                pass  # Ignore errors during cleanup
-            self.ssh = None
+    def _get_ssh_client(self) -> Optional[paramiko.SSHClient]:
+        """Get SSH client from connection manager."""
+        return self.ssh_connection_manager.get_ssh_client()
 
     def _ensure_ssh_connected(self) -> bool:
-        """Ensure SSH client is available, reconnect if necessary."""
-        # First check if we have a valid connection
-        if self.connected and self.ssh is not None:
-            # Test if the connection is still alive with a simple command
-            try:
-                self.ssh.exec_command("echo test", timeout=5)
-                return True
-            except Exception as e:
-                self.logger.warning(f"SSH connection test failed, reconnecting: {e}")
-                self.connected = False
-                self.ssh = None
-        
-        # If no valid connection, try to establish one
-        return self._ensure_connected() and self.ssh is not None
+        """Ensure SSH client is available via connection manager."""
+        return self.ssh_connection_manager._ensure_connected()
 
     def execute_command(self, command: str, timeout: Optional[int] = None) -> Dict[str, Any]:
         """Execute remote command and return result."""
-        if not self._ensure_ssh_connected():
+        ssh_client = self._get_ssh_client()
+        if not ssh_client:
             self._connection_failures += 1
             return {
                 "stdout": "",
@@ -105,7 +70,7 @@ class RemoteExecutor(BaseSSHConnector):
             }
         
         try:
-            stdin, stdout, stderr = self.ssh.exec_command(command, timeout=timeout)
+            stdin, stdout, stderr = ssh_client.exec_command(command, timeout=timeout)
             
             stdout_data = stdout.read().decode('utf-8')
             stderr_data = stderr.read().decode('utf-8')
@@ -151,7 +116,8 @@ class RemoteExecutor(BaseSSHConnector):
     def execute_command_streaming(self, command: str, working_dir: str, case_id: str, 
                                  status_display=None, timeout: Optional[int] = None) -> Dict[str, Any]:
         """Execute command with real-time output streaming for progress updates."""
-        if not self._ensure_ssh_connected():
+        ssh_client = self._get_ssh_client()
+        if not ssh_client:
             self._connection_failures += 1
             return {
                 "stdout": "",
@@ -161,7 +127,7 @@ class RemoteExecutor(BaseSSHConnector):
         
         try:
             full_command = f"cd {shlex.quote(working_dir)} && {command}"
-            stdin, stdout, stderr = self.ssh.exec_command(full_command, timeout=timeout)
+            stdin, stdout, stderr = ssh_client.exec_command(full_command, timeout=timeout)
             
             stdout_lines = []
             stderr_lines = []
@@ -283,8 +249,7 @@ class RemoteExecutor(BaseSSHConnector):
         """Update moqui_tps.in configuration file using config-based template."""
         try:
             # Get template from ConfigManager
-            config_manager = ConfigManager()
-            template_dict = config_manager.get_moqui_tps_template()
+            template_dict = self.config_manager.get_moqui_tps_template()
             
             if not template_dict:
                 self.logger.error(f"Failed to get moqui_tps template from configuration")
@@ -856,50 +821,34 @@ class RemoteExecutor(BaseSSHConnector):
 
     def get_connection_info(self) -> Dict[str, Any]:
         """Get connection information."""
-        return {
-            "host": self.host,
-            "port": self.port,
-            "username": self.username,
-            "connected": self.connected
-        }
+        return self.ssh_connection_manager.get_connection_info()
 
     def __enter__(self):
         """Context manager entry."""
-        if not self.connect():
-            raise ConnectionError("Failed to establish SSH connection")
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit."""
-        self.disconnect()
+        pass  # Connection cleanup handled by SSH connection manager
 
     
 
 # Example usage
 if __name__ == '__main__':
-    import os
-    from dotenv import load_dotenv
-
-    # Load environment variables
-    load_dotenv()
-
-    # ConfigManager is now used inside RemoteExecutor, but we still need credentials and host
-    config_manager = ConfigManager(config_path='config.json')
-    config = config_manager.get_config()
-
-    # Get credentials from environment variables or config
-    username = os.getenv("LINUX_USERNAME", config.get("credentials", {}).get("username"))
-    password = os.getenv("LINUX_PASSWORD", config.get("credentials", {}).get("password"))
-    host = config.get("servers", {}).get("linux_gpu")
-
-    if not all([host, username, password]):
-        print("Error: Missing host, username, or password in config or environment variables.")
-        exit(1)
+    from config_manager import ConfigManager
+    from ssh_connection_manager import SSHConnectionManager
+    from logger import Logger
 
     try:
-        # RemoteExecutor now loads its own config.
-        with RemoteExecutor(host, username, password) as executor:
-            print(f"Successfully connected to {host}")
+        # Initialize components
+        config_manager = ConfigManager(config_path='config.json')
+        logger = Logger(log_directory="logs")
+        ssh_connection_manager = SSHConnectionManager(config_manager=config_manager, logger=logger)
+        
+        # Create RemoteExecutor with dependency injection
+        with RemoteExecutor(ssh_connection_manager, config_manager, logger) as executor:
+            connection_info = executor.get_connection_info()
+            print(f"Successfully connected to {connection_info['host']}")
 
             # Example 1: Execute a simple command
             print("\n--- Testing simple command ---")

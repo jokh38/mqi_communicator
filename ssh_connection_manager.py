@@ -3,31 +3,46 @@ import socket
 import time
 import threading
 from typing import Optional, Any, Dict, ClassVar
-from abc import ABC, abstractmethod
 
 
-class BaseSSHConnector(ABC):
-    """Base class for SSH/SFTP connections with common functionality."""
+class SSHConnectionManager:
+    """Centralized SSH connection manager with unified transport and client management."""
     
     # Class-level connection rate limiter
     _connection_locks: ClassVar[Dict[str, threading.Lock]] = {}
     _last_connection_times: ClassVar[Dict[str, float]] = {}
     _global_lock: ClassVar[threading.Lock] = threading.Lock()
     
-    def __init__(self, host: str, username: str, password: str, port: int = 22, timeout: int = 30, logger=None):
-        self.host = host
-        self.username = username
-        self.password = password
-        self.port = port
-        self.timeout = timeout
+    def __init__(self, config_manager=None, logger=None):
+        """
+        Initialize SSH connection manager.
+        
+        Args:
+            config_manager: ConfigManager instance for connection details
+            logger: Logger instance for logging
+        """
+        self.config_manager = config_manager
         self.logger = logger
+        
+        # Extract connection details from config
+        if config_manager:
+            credentials = config_manager.get_credentials()
+            self.host = config_manager.get_linux_gpu_ip()
+            self.username = credentials["username"]
+            self.password = credentials["password"]
+            self.port = config_manager.get_config().get("servers", {}).get("ssh_port", 22)
+            self.timeout = config_manager.get_config().get("servers", {}).get("ssh_timeout", 30)
+        else:
+            raise ValueError("ConfigManager is required for SSH connection initialization")
+        
+        # Connection state
         self.transport: Optional[paramiko.Transport] = None
         self.connected = False
         
-        # Gentle retry configuration
-        self.max_retries = 10  # Max retries set to 10
-        self.retry_delay = 2   # Initial delay reduced to 2 seconds
-        self.min_connection_interval = 1.0 # Reduced to 1 second for faster retries in a controlled test
+        # Retry configuration
+        self.max_retries = 10
+        self.retry_delay = 2
+        self.min_connection_interval = 1.0
         self.network_error_types = (
             socket.error,
             paramiko.SSHException,
@@ -65,79 +80,6 @@ class BaseSSHConnector(ABC):
             # Update last connection time
             self._last_connection_times[host_key] = time.time()
     
-    def _retry_on_network_error(self, func, *args, **kwargs):
-        """Retry function execution on network errors with exponential backoff."""
-        last_exception = None
-        
-        for attempt in range(self.max_retries + 1):  # +1 for initial attempt
-            try:
-                return func(*args, **kwargs)
-            except Exception as e:
-                last_exception = e
-                
-                # Explicitly check for FileNotFoundError and do not retry
-                if isinstance(e, FileNotFoundError):
-                    self.logger.error(f"Local file not found: {e}. This is not a network error and will not be retried.")
-                    raise e
-
-                if not self._is_network_error(e):
-                    # Not a network error, don't retry
-                    raise e
-                
-                if attempt < self.max_retries:
-                    # Use a fixed delay instead of exponential backoff
-                    delay = self.retry_delay
-                    self.logger.warning(f"Network error on attempt {attempt + 1}/{self.max_retries + 1}: {e}. "
-                                  f"Retrying in {delay} seconds...")
-                    time.sleep(delay)
-                    
-                    # Try to reconnect if connection was lost
-                    if not self.connected:
-                        self.connect()
-                else:
-                    self.logger.error(f"Failed after {self.max_retries + 1} attempts. Last error: {e}")
-        
-        # If we get here, all retries failed
-        raise last_exception
-    
-    def _create_transport(self):
-        """Create and configure a Paramiko transport object with socket validation."""
-        try:
-            # Create transport with socket validation
-            transport = paramiko.Transport((self.host, self.port))
-            
-            # Validate socket is properly created
-            if not hasattr(transport, 'sock') or not transport.sock:
-                raise paramiko.SSHException("Transport socket was not created properly")
-            
-            # Check socket file descriptor
-            try:
-                fd = transport.sock.fileno()
-                if fd == -1:
-                    raise paramiko.SSHException("Transport socket has invalid file descriptor")
-            except (OSError, AttributeError) as e:
-                raise paramiko.SSHException(f"Transport socket validation failed: {e}")
-            
-            # Very gentle timeouts to give server maximum time
-            transport.banner_timeout = 120  # 2 minutes - very patient
-            transport.auth_timeout = 120    # 2 minutes for auth
-            transport.handshake_timeout = 120  # 2 minutes for handshake
-            
-            # Gentle keepalive settings
-            transport.set_keepalive(60)  # Even less frequent keepalives
-            
-            # Conservative transport configuration
-            transport.use_compression(False)  # Disable compression for stability
-            transport.window_size = 65536      # Smaller window size
-            transport.max_packet_size = 32768  # Smaller packet size
-            
-            return transport
-        except paramiko.SSHException as e:
-            # This helps catch issues even before the banner is read
-            raise paramiko.SSHException(f"Failed to create transport: {e}")
-        except Exception as e:
-            raise paramiko.SSHException(f"Unexpected error creating transport: {e}")
-
     def connect(self) -> bool:
         """Establish SSH connection with improved timeout and retry logic."""
         max_attempts = 3
@@ -168,22 +110,12 @@ class BaseSSHConnector(ABC):
                 
                 self.connected = True
                 self.logger.info(f"Successfully connected to {self.host}:{self.port} on attempt {attempt + 1}")
-                self._post_connect_setup()
                 
                 return True
                 
             except paramiko.SSHException as e:
                 error_msg = str(e)
                 
-                # Log the raw banner if it's a banner error
-                if "banner" in error_msg.lower():
-                    try:
-                        # Attempt to read raw data from the socket for logging
-                        raw_banner_data = self.transport.sock.recv(1024) if self.transport and self.transport.sock else b''
-                        self.logger.error(f"Raw data received from server on banner error: {raw_banner_data!r}")
-                    except Exception as sock_err:
-                        self.logger.error(f"Could not retrieve raw banner data from socket: {sock_err}")
-
                 # Comprehensive list of retryable SSH errors
                 retryable_errors = [
                     "Invalid packet blocking", 
@@ -204,47 +136,37 @@ class BaseSSHConnector(ABC):
                 if any(keyword in error_msg for keyword in retryable_errors):
                     self.logger.warning(f"SSH connection error on attempt {attempt + 1}/{max_attempts}: {error_msg}")
                     if attempt < max_attempts - 1:
-                        # Use a fixed delay for retrying
                         total_delay = self.retry_delay
                         self.logger.info(f"Retrying SSH connection in {total_delay} seconds (attempt {attempt + 2}/{max_attempts})")
                         time.sleep(total_delay)
-                        continue  # Retry on all retryable errors
+                        continue
                     else:
                         self.logger.error(f"SSH connection failed after {max_attempts} attempts due to persistent errors")
                 else:
                     self.logger.error(f"SSH connection failed with non-retryable error: {error_msg}")
-                    break  # Don't retry on authentication errors, etc.
+                    break
                 
             except Exception as e:
                 self.logger.error(f"SSH connection failed on attempt {attempt + 1}/{max_attempts}: {e}")
                 if attempt < max_attempts - 1:
-                    continue  # Retry on general errors
+                    continue
         
         # All attempts failed
         self.connected = False
         return False
     
-    @abstractmethod
-    def _post_connect_setup(self) -> None:
-        """Subclass-specific setup after connection is established."""
-        pass
-    
     def disconnect(self) -> None:
-        """Close SSH connection and perform aggressive cleanup."""
+        """Close SSH connection and perform cleanup."""
         self.logger.info(f"Disconnecting from {self.host}:{self.port}...")
         try:
-            self._pre_disconnect_cleanup()
-            
             if self.transport:
                 try:
-                    # Check if transport is still connected before closing
                     if self.transport.is_active():
                         self.transport.close()
                         self.logger.info("Transport closed successfully.")
                 except Exception as e:
                     self.logger.warning(f"Error while closing transport: {e}")
                 finally:
-                    # Aggressively clean up transport and its socket
                     self.transport.sock = None
                     self.transport = None
             
@@ -254,20 +176,39 @@ class BaseSSHConnector(ABC):
         except Exception as e:
             self.logger.error(f"Error during disconnect: {e}")
         finally:
-            # Ensure all resources are released
             self.transport = None
             self.connected = False
-    
-    @abstractmethod
-    def _pre_disconnect_cleanup(self) -> None:
-        """Subclass-specific cleanup before disconnection."""
-        pass
     
     def _ensure_connected(self) -> bool:
         """Ensure connection is active, reconnect if necessary."""
         if not self.connected or not self.transport or not self.transport.is_active():
             return self.connect()
         return True
+    
+    def get_ssh_client(self) -> Optional[paramiko.SSHClient]:
+        """Get SSH client using the managed transport."""
+        if not self._ensure_connected():
+            return None
+        
+        try:
+            ssh_client = paramiko.SSHClient()
+            ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            ssh_client._transport = self.transport
+            return ssh_client
+        except Exception as e:
+            self.logger.error(f"Failed to create SSH client: {e}")
+            return None
+    
+    def get_sftp_client(self) -> Optional[paramiko.SFTPClient]:
+        """Get SFTP client using the managed transport."""
+        if not self._ensure_connected():
+            return None
+        
+        try:
+            return paramiko.SFTPClient.from_transport(self.transport)
+        except Exception as e:
+            self.logger.error(f"Failed to create SFTP client: {e}")
+            return None
     
     def get_connection_info(self) -> dict:
         """Get connection information."""
@@ -311,4 +252,4 @@ class BaseSSHConnector(ABC):
         try:
             self.disconnect()
         except Exception:
-            pass  # Ignore errors during cleanup
+            pass

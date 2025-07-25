@@ -297,7 +297,8 @@ class ExecuteBeamCalculationsStep(ProcessingStep):
             return case_info.get('gantry_info', {})
             
         except Exception as e:
-            print(f"Error reading gantry info from case_status.json for case {case_id}: {e}")
+            if hasattr(context, 'logger') and context.logger:
+                context.logger.error(f"Error reading gantry info from case_status.json for case {case_id}: {e}")
             return {}
 
     def _prepare_dynamic_params(self, context, gantry_info: Dict[str, Any], gpu_id: int, beam_id: int) -> Dict[str, Any]:

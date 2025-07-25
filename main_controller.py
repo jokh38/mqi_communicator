@@ -17,6 +17,7 @@ from case_scanner import CaseScanner
 from gpu_manager import GPUManager
 from sftp_manager import SFTPManager
 from remote_executor import RemoteExecutor
+from ssh_connection_manager import SSHConnectionManager
 from job_scheduler import JobScheduler
 from process_monitor import ProcessMonitor
 from directory_manager import DirectoryManager
@@ -305,28 +306,30 @@ class MainController:
     def _initialize_components(self) -> None:
         """Initialize all system components."""
         try:
-            # Initialize configuration manager
-            self.config_manager = ConfigManager(config_path=self.config_file)
+            # Initialize logger first (without configuration)
+            self.logger = Logger(log_directory="logs", log_queue=self.log_queue)
+            
+            # Initialize configuration manager with logger
+            self.config_manager = ConfigManager(config_path=self.config_file, logger=self.logger)
             self.config = self.config_manager.get_config()
 
-            # Extract configuration values
-            scanning_config = self.config.get("scanning", {})
-            gpu_config = self.config.get("gpu_management", {})
-            error_config = self.config.get("error_handling", {})
-            backup_config = self.config.get("backup", {})
+            # Update logger with configuration
+            self.logger.config = self.config.get("logging", {})
 
-            self.scan_interval = scanning_config.get("interval_minutes", 30)
-            self.max_concurrent_cases = scanning_config.get("max_concurrent_cases", 2)
+            # Extract configuration values using ConfigManager methods
+            self.scan_interval = self.config_manager.get_scanning_interval()
+            self.max_concurrent_cases = self.config_manager.get_max_concurrent_cases()
+            
+            scanning_config = self.config.get("scanning", {})
             self.stale_case_recovery_hours = scanning_config.get("stale_case_recovery_hours", 1)
             
-            self.monitoring_interval = gpu_config.get("monitoring_interval_sec", 5)
+            self.monitoring_interval = self.config_manager.get_monitoring_interval()
             
+            error_config = self.config.get("error_handling", {})
             self.max_network_retries = error_config.get("max_network_retries", 3)
             
+            backup_config = self.config.get("backup", {})
             self.backup_months_to_keep = backup_config.get("months_to_keep", 12)
-
-            # Initialize logger first
-            self.logger = Logger(log_directory="logs", config=self.config.get("logging", {}), log_queue=self.log_queue)
             
             # Log session start with spacer
             self.logger.info("=" * 80)
@@ -340,17 +343,21 @@ class MainController:
 
             # Initialize directory manager
             self.directory_manager = DirectoryManager(
-                local_base=self.config["paths"]["local_logdata"],
-                remote_base=self.config["paths"]["remote_workspace"],
-                output_base=self.config["paths"]["local_output"],
+                local_base=self.config_manager.get_local_logdata_path(),
+                remote_base=self.config_manager.get_remote_workspace_path(),
+                output_base=self.config_manager.get_local_output_path(),
                 logger=self.logger
             )
 
-            # Initialize SFTP manager
+            # Initialize SSH connection manager
+            self.ssh_connection_manager = SSHConnectionManager(
+                config_manager=self.config_manager,
+                logger=self.logger
+            )
+            
+            # Initialize SFTP manager with SSH connection manager
             self.sftp_manager = SFTPManager(
-                host=self.config["servers"]["linux_gpu"],
-                username=self.config["credentials"]["username"],
-                password=self.config["credentials"]["password"],
+                ssh_connection_manager=self.ssh_connection_manager,
                 logger=self.logger
             )
             
@@ -360,8 +367,12 @@ class MainController:
                     "sftp_connection": "INITIALIZED"
                 })
 
-            # Initialize remote executor
-            self.remote_executor = RemoteExecutor(config=self.config, logger=self.logger)
+            # Initialize remote executor with SSH connection manager
+            self.remote_executor = RemoteExecutor(
+                ssh_connection_manager=self.ssh_connection_manager,
+                config_manager=self.config_manager,
+                logger=self.logger
+            )
             
             # Update status display with remote executor
             if hasattr(self, 'status_display'):
@@ -372,9 +383,9 @@ class MainController:
 
             # Initialize GPU manager with remote executor
             self.gpu_manager = GPUManager(
-                total_gpus=self.config["gpu_management"]["total_gpus"],
-                reserved_gpus=self.config["gpu_management"]["reserved_gpus"],
-                memory_threshold=self.config["gpu_management"]["memory_threshold_mb"],
+                total_gpus=self.config_manager.get_total_gpus(),
+                reserved_gpus=self.config_manager.get_reserved_gpus(),
+                memory_threshold=self.config_manager.get_memory_threshold(),
                 remote_executor=self.remote_executor,
                 logger=self.logger
             )
@@ -384,8 +395,8 @@ class MainController:
 
             # Initialize case scanner with centralized status file
             self.case_scanner = CaseScanner(
-                base_path=self.config["paths"]["local_logdata"],
-                status_file=self.config["paths"]["status_file"],
+                base_path=self.config_manager.get_local_logdata_path(),
+                status_file=self.config.get("paths", {}).get("status_file", "case_status.json"),
                 logger=self.logger,
                 config=self.config
             )
@@ -1081,13 +1092,9 @@ class MainController:
     def cleanup_resources(self) -> None:
         """Clean up all resources."""
         try:
-            # Close SFTP connections
-            if hasattr(self, 'sftp_manager'):
-                self.sftp_manager.disconnect()
-            
-            # Close remote executor connections
-            if hasattr(self, 'remote_executor'):
-                self.remote_executor.disconnect()
+            # Close SSH connection manager (which manages both SFTP and SSH connections)
+            if hasattr(self, 'ssh_connection_manager'):
+                self.ssh_connection_manager.disconnect()
             
             # Stop process monitor
             if hasattr(self, 'process_monitor'):
