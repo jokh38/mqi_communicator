@@ -215,7 +215,8 @@ class GPUManager:
             # Check if GPU has free memory above threshold
             if gpu['memory_free'] >= self.memory_threshold:
                 # Check if GPU has no or minimal processes
-                if len(gpu['processes']) == 0:
+                process_memory = sum(p.get('used_memory', 0) for p in gpu['processes'])
+                if process_memory < 100:  # Allow up to 100MB of existing process memory
                     available_gpus.append(gpu_id)
         
         return sorted(available_gpus)
@@ -250,8 +251,9 @@ class GPUManager:
         gpu_info = self.get_gpu_info()
         for gpu in gpu_info:
             if gpu['gpu_id'] == gpu_id:
+                process_memory = sum(p.get('used_memory', 0) for p in gpu['processes'])
                 return (gpu['memory_free'] >= self.memory_threshold and 
-                        len(gpu['processes']) == 0)
+                        process_memory < 100)  # Allow up to 100MB of existing process memory
         
         return False
 
@@ -442,7 +444,8 @@ class GPUManager:
             # Check if GPU has free memory above threshold
             if gpu['memory_free'] >= self.memory_threshold:
                 # Check if GPU has no or minimal processes
-                if len(gpu['processes']) == 0:
+                process_memory = sum(p.get('used_memory', 0) for p in gpu['processes'])
+                if process_memory < 100:  # Allow up to 100MB of existing process memory
                     available_gpus.append(gpu_id)
         
         return sorted(available_gpus)
