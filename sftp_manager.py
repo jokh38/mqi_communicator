@@ -4,7 +4,7 @@ import stat
 import time
 import socket
 from pathlib import Path
-from typing import Optional, Callable, Dict, Any
+from typing import Optional, Dict, Any
 from status_display import UpdateData
 
 # Security constants
@@ -27,12 +27,14 @@ class SFTPManager:
     def _ensure_connected(self) -> bool:
         """Ensure SFTP connection is established."""
         try:
-            if not self.ssh_connection_manager.is_connected():
+            # Check connection status using correct attributes
+            if not self.ssh_connection_manager.connected or not (self.ssh_connection_manager.transport and self.ssh_connection_manager.transport.is_active()):
                 if not self.ssh_connection_manager.connect():
                     return False
             
             if not self.sftp:
-                self.transport = self.ssh_connection_manager.get_transport()
+                # Access transport directly from ssh_connection_manager
+                self.transport = self.ssh_connection_manager.transport
                 if self.transport:
                     self.sftp = paramiko.SFTPClient.from_transport(self.transport)
                 else:
@@ -46,7 +48,6 @@ class SFTPManager:
     
     def _retry_on_network_error(self, func, max_retries: int = 3):
         """Retry function on network errors."""
-        import socket
         
         network_error_types = (
             socket.error,
