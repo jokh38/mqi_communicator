@@ -416,6 +416,83 @@ class GPUManager:
         
         return cleaned_gpus
 
+    def find_idle_gpu(self) -> int:
+        """Find an idle GPU based on utilization and memory usage criteria.
+        
+        Returns:
+            int: GPU ID of the selected idle GPU
+            
+        Raises:
+            RuntimeError: If no idle GPU is available
+        """
+        try:
+            # Execute nvidia-smi command to get GPU utilization and memory info
+            cmd = [
+                'nvidia-smi',
+                '--query-gpu=index,utilization.gpu,memory.used,memory.total',
+                '--format=csv,noheader,nounits'
+            ]
+            
+            if self.remote_executor:
+                # Use remote executor for remote GPU server
+                result = self.remote_executor.execute_command(' '.join(cmd))
+                if result['exit_code'] != 0:
+                    raise RuntimeError(f"Failed to execute nvidia-smi on remote server: {result['stderr']}")
+                output = result['stdout']
+            else:
+                # Use local subprocess for local execution
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+                if result.returncode != 0:
+                    raise RuntimeError(f"Failed to execute nvidia-smi locally: {result.stderr}")
+                output = result.stdout
+            
+            # Parse CSV output
+            idle_gpus = []
+            for line in output.strip().split('\n'):
+                if line.strip():
+                    parts = [part.strip() for part in line.split(',')]
+                    if len(parts) >= 4:
+                        try:
+                            gpu_id = int(parts[0])
+                            gpu_utilization = float(parts[1])
+                            memory_used = int(parts[2])
+                            memory_total = int(parts[3])
+                            
+                            # Skip reserved GPUs
+                            if gpu_id in self.reserved_gpus:
+                                continue
+                            
+                            # Check idle criteria: GPU utilization < 10% and memory usage < 20%
+                            memory_usage_percent = (memory_used / memory_total) * 100
+                            
+                            if gpu_utilization < 10.0 and memory_usage_percent < 20.0:
+                                idle_gpus.append({
+                                    'gpu_id': gpu_id,
+                                    'memory_used': memory_used,
+                                    'gpu_utilization': gpu_utilization,
+                                    'memory_usage_percent': memory_usage_percent
+                                })
+                        except (ValueError, IndexError):
+                            continue
+            
+            if not idle_gpus:
+                raise RuntimeError("No idle GPU available.")
+            
+            # Select GPU with minimum memory usage
+            selected_gpu = min(idle_gpus, key=lambda x: x['memory_used'])
+            
+            if self.logger:
+                self.logger.info(f"Selected idle GPU {selected_gpu['gpu_id']} (utilization: {selected_gpu['gpu_utilization']}%, memory usage: {selected_gpu['memory_usage_percent']:.1f}%)")
+            
+            return selected_gpu['gpu_id']
+            
+        except subprocess.TimeoutExpired:
+            raise RuntimeError("nvidia-smi command timed out")
+        except Exception as e:
+            if "No idle GPU available" in str(e):
+                raise
+            raise RuntimeError(f"Error finding idle GPU: {e}")
+
     def get_gpu_status_summary(self) -> Dict[str, Any]:
         """Get comprehensive GPU status summary."""
         gpu_info = self.get_gpu_info()

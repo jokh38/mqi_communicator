@@ -66,6 +66,7 @@
     "GantryNum": 0
   },
   "moqui_tps_template": {
+    "GPUID": "auto",
     "RandomSeed": -1932780356,
     "UseAbsolutePath": true,
     "Verbosity": 0,

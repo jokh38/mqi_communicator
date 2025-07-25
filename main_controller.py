@@ -264,6 +264,44 @@ class MainController:
                 del self.shared_state['waiting_cases'][case_id]
                 self.logger.debug(f"Removed case {case_id} from waiting list")
     
+    def _resolve_auto_gpu_allocation(self) -> None:
+        """Resolve auto GPU allocation by finding an idle GPU and updating configuration."""
+        try:
+            # Check if moqui_tps_template has GPUID set to "auto"
+            moqui_template = self.config.get("moqui_tps_template", {})
+            gpu_id = moqui_template.get("GPUID")
+            
+            if gpu_id == "auto":
+                self.logger.info("Auto GPU allocation detected, finding idle GPU...")
+                
+                try:
+                    # Find idle GPU using gpu_manager
+                    selected_gpu_id = self.gpu_manager.find_idle_gpu()
+                    
+                    # Update the configuration with the resolved GPU ID
+                    self.config["moqui_tps_template"]["GPUID"] = selected_gpu_id
+                    
+                    # Update the config manager as well to persist the change during this session
+                    self.config_manager.config["moqui_tps_template"]["GPUID"] = selected_gpu_id
+                    
+                    self.logger.info(f"Auto GPU allocation resolved: Selected GPU {selected_gpu_id}")
+                    
+                except RuntimeError as e:
+                    # Log critical error and exit the application as specified
+                    self.logger.critical(f"Failed to find idle GPU for auto allocation: {e}")
+                    raise RuntimeError(f"Auto GPU allocation failed: {e}")
+                    
+            elif isinstance(gpu_id, (int, str)) and str(gpu_id).isdigit():
+                # GPU ID is already a number, no action needed
+                self.logger.info(f"Using configured GPU ID: {gpu_id}")
+            else:
+                # Invalid GPU ID configuration
+                self.logger.warning(f"Invalid GPUID configuration: {gpu_id}. Using default behavior.")
+                
+        except Exception as e:
+            self.logger.error(f"Error during auto GPU allocation resolution: {e}")
+            raise
+
     def _initialize_components(self) -> None:
         """Initialize all system components."""
         try:
@@ -340,6 +378,9 @@ class MainController:
                 remote_executor=self.remote_executor,
                 logger=self.logger
             )
+
+            # Resolve auto GPU allocation if configured
+            self._resolve_auto_gpu_allocation()
 
             # Initialize case scanner with centralized status file
             self.case_scanner = CaseScanner(
