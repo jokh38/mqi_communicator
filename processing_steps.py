@@ -183,9 +183,7 @@ class ExecuteBeamCalculationsStep(ProcessingStep):
                 status="PROCESSING",
                 stage="Calculating beams",
                 gpu_allocation=gpu_allocation,
-                beam_info=f"Using GPUs: {gpu_allocation}",
-                current_step=context.current_step,
-                total_steps=context.total_workflow_steps
+                beam_info=f"Using GPUs: {gpu_allocation}"
             )
             
             # Read gantry information from case_status.json
