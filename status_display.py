@@ -128,8 +128,40 @@ class StatusDisplay:
             if self.system_monitor_thread.is_alive():
                 print("Warning: System monitor thread did not stop gracefully")
     
-    def update_case_status(self, data: UpdateData) -> None:
-        """Update case status information using structured UpdateData."""
+    def update_case_status(self, data=None, case_id: str = None, status: str = "", progress: float = 0.0, 
+                          stage: str = "", gpu_allocation: List[int] = None, 
+                          beam_info: str = "", transfer_info: str = "", 
+                          error_message: str = "",
+                          # 새로운 매개변수들
+                          current_task: str = "", current_step: int = 0,
+                          total_steps: int = 4, detailed_progress: str = None,
+                          detailed_status: str = None, **kwargs) -> None:
+        """Update case status information using structured UpdateData or legacy parameters."""
+        # Handle backward compatibility
+        if data is None:
+            if case_id is None:
+                raise ValueError("Either 'data' (UpdateData) or 'case_id' must be provided")
+            
+            # Convert legacy parameters to UpdateData
+            data = UpdateData(
+                case_id=case_id,
+                status=status,
+                progress=progress,
+                stage=stage,
+                gpu_allocation=gpu_allocation,
+                beam_info=beam_info,
+                transfer_info=transfer_info,
+                error_message=error_message,
+                current_task=current_task,
+                current_step=current_step,
+                total_steps=total_steps,
+                detailed_progress=detailed_progress,
+                detailed_status=detailed_status
+            )
+        elif not isinstance(data, UpdateData):
+            raise TypeError("First argument must be an UpdateData instance")
+        
+        # Use the structured UpdateData from here on
         with self.lock:
             if data.case_id not in self.cases:
                 self.cases[data.case_id] = CaseDisplayInfo(
