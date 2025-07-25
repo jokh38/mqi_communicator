@@ -17,7 +17,7 @@
     "linux_moqui_interpreter_outputs_dir": "/home/gpuadmin/MOQUI_SMC/Outputs_csv",
     "linux_moqui_outputs_dir": "/home/gpuadmin/MOQUI_SMC/Dose_raw",
     "linux_venv_python": "/opt/deepops/env/bin/python3.10",
-    "linux_moqui_execution": "/home/gpuadmin/MOQUI_SMC/tps_env/.tps_env"
+    "linux_moqui_execution": "/home/gpuadmin/MOQUI_SMC/tps_env/tps_env"
   },
   "working_directories": {
     "mqi_interpreter": "/home/gpuadmin/MOQUI_SMC/mqi_interpreter",

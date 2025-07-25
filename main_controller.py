@@ -189,10 +189,6 @@ class MainController:
         except Exception as e:
             self.logger.error(f"Error cleaning up resources for stale case {case_id}: {e}")
 
-
-
-
-
     def _is_network_error(self, exception: Exception) -> bool:
         """Check if the exception is a network-related error."""
         import socket
