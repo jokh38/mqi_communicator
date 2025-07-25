@@ -1,5 +1,4 @@
 import subprocess
-import re
 import xml.etree.ElementTree as ET
 import time
 import filelock
@@ -321,14 +320,14 @@ class GPUManager:
                 pid = process['pid']
                 result = self.remote_executor.execute_command(f"ps -p {pid}")
                 
-                if not result.success or result.exit_code != 0:
+                if result['exit_code'] != 0:
                     # Process not found on remote server, might be zombie
                     zombie_processes.append(process)
                     
                     # Optionally try to kill zombie process
                     try:
                         kill_result = self.remote_executor.execute_command(f"kill -9 {pid}")
-                        if kill_result.success:
+                        if kill_result['exit_code'] == 0:
                             self.logger.info(f"Successfully killed zombie process {pid} on remote server")
                     except Exception as e:
                         self.logger.error(f"Failed to kill zombie process {pid}: {e}")
