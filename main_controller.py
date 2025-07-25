@@ -39,7 +39,6 @@ class MainController:
         
         # Initialize queues
         self.scan_queue = queue.Queue()
-        self.processing_queue = queue.Queue()
         self.completed_queue = queue.Queue()
         
         # Initialize StateManager (will be properly initialized after config is loaded)
@@ -57,7 +56,6 @@ class MainController:
         
         # Thread control
         self.scan_lock = threading.Lock()
-        self.processing_lock = threading.Lock()
         self.shared_state_lock = threading.Lock()
         
         # Register cleanup function
@@ -514,58 +512,6 @@ class MainController:
         except Exception as e:
             self.error_handler.handle_error(e, {"operation": "case_scanning"})
     
-    def _process_case_queue(self) -> None:
-        """Process cases from the queue with exponential backoff for failures."""
-        try:
-            with self.processing_lock:
-                # Check if we have reached max concurrent cases under lock
-                with self.shared_state_lock:
-                    active_case_count = len(self.shared_state['active_cases'])
-                
-                if active_case_count >= self.max_concurrent_cases:
-                    return
-                
-                # First, check if any waiting cases are ready for retry
-                ready_cases = self._check_waiting_cases()
-                for case_id in ready_cases:
-                    self.scan_queue.put(case_id)
-                
-                # Get available GPUs
-                available_gpus = self.gpu_manager.get_available_gpus()
-                if not available_gpus:
-                    self.logger.debug("No GPUs available for processing")
-                    return
-                
-                # Process cases from queue
-                cases_to_process = []
-                while (not self.scan_queue.empty() and 
-                       len(cases_to_process) < self.max_concurrent_cases and
-                       len(cases_to_process) < len(available_gpus)):
-                    
-                    try:
-                        case_id = self.scan_queue.get_nowait()
-                        cases_to_process.append(case_id)
-                    except queue.Empty:
-                        break
-                
-                # Schedule cases for processing
-                for case_id in cases_to_process:
-                    # Determine start task for resumption
-                    start_task = self.case_scanner.get_case_resumption_task(case_id)
-                    
-                    if self.job_scheduler.schedule_case(case_id, start_task=start_task):
-                        # Put job info in processing queue instead of just case_id
-                        job_info = {"case_id": case_id, "start_task": start_task}
-                        self.processing_queue.put(job_info)
-                        self._remove_from_waiting_list(case_id)  # This is now thread-safe
-                        self.logger.info(f"Scheduled case for processing: {case_id} (start_task: {start_task})")
-                    else:
-                        # Add to waiting list with exponential backoff instead of immediate retry
-                        self._add_to_waiting_list(case_id) # This is now thread-safe
-                        self.logger.warning(f"Failed to schedule case {case_id} - added to waiting list")
-                
-        except Exception as e:
-            self.error_handler.handle_error(e, {"operation": "case_queue_processing"})
     
     def _process_case(self, case_id: str, start_task: str = None) -> bool:
         """Process a single case through the complete workflow using WorkflowEngine."""
@@ -873,21 +819,49 @@ class MainController:
         """Background worker for processing cases."""
         while self.running:
             try:
-                # Process case queue
-                self._process_case_queue()
-                
-                # Process individual cases
-                try:
-                    job_info = self.processing_queue.get(timeout=5)
-                    case_id = job_info["case_id"]
-                    start_task = job_info["start_task"]
-                    self._process_case(case_id, start_task=start_task)
-                except queue.Empty:
-                    continue
-                
+                # Re-queue waiting cases that are ready for retry
+                ready_cases = self._check_waiting_cases()
+                for case_id in ready_cases:
+                    if case_id not in list(self.scan_queue.queue):
+                        self.scan_queue.put(case_id)
+
+                # Attempt to schedule one case from the scan_queue into the job_scheduler
+                if not self.scan_queue.empty():
+                    try:
+                        case_id = self.scan_queue.get_nowait()
+                        start_task = self.case_scanner.get_case_resumption_task(case_id)
+                        
+                        if self.job_scheduler.schedule_case(case_id, start_task=start_task):
+                            self.logger.info(f"Successfully queued job for case: {case_id}")
+                            self._remove_from_waiting_list(case_id)
+                        else:
+                            self.logger.warning(f"Failed to schedule case {case_id}, adding to waiting list.")
+                            self._add_to_waiting_list(case_id)
+                    except queue.Empty:
+                        pass
+
+                # Fetch a job that is ready for processing (i.e., GPUs are allocated)
+                job_to_process = self.job_scheduler.get_next_job()
+
+                if job_to_process:
+                    case_id = job_to_process["case_id"]
+                    start_task = job_to_process.get("start_task", "setup") # Ensure start_task exists
+                    
+                    # Process the case in a separate thread to not block the scheduler
+                    processing_thread = threading.Thread(
+                        target=self._process_case,
+                        args=(case_id, start_task),
+                        name=f"CaseProcessor-{case_id[:8]}"
+                    )
+                    processing_thread.daemon = True
+                    processing_thread.start()
+                else:
+                    # Wait if no jobs are ready to be processed
+                    time.sleep(2)
+
             except Exception as e:
                 self.error_handler.handle_error(e, {"operation": "background_case_processing"})
-                time.sleep(1)
+                time.sleep(5)
     
     def _background_system_monitor(self) -> None:
         """Background worker for system monitoring."""
@@ -1141,17 +1115,13 @@ class MainController:
                     "last_scan_time": shared_state_snapshot["last_scan_time"],
                     "scan_interval_minutes": self.scan_interval
                 },
-                "job_status": {
-                    "active_cases": shared_state_snapshot["active_cases_count"],
-                    "max_concurrent_cases": self.max_concurrent_cases
-                },
+                "job_status": self.job_scheduler.get_queue_status(),
                 "process_status": {
                     "background_threads": len(self.threads),
                     "threads_alive": sum(1 for t in self.threads if t.is_alive())
                 },
                 "queue_status": {
                     "scan_queue_size": self.scan_queue.qsize(),
-                    "processing_queue_size": self.processing_queue.qsize(),
                     "completed_queue_size": self.completed_queue.qsize()
                 },
                 "system_health": shared_state_snapshot["system_health"]
