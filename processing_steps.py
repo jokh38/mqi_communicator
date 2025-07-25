@@ -22,6 +22,8 @@ class ProcessingContext:
     local_path: str = ""
     remote_path: str = ""
     output_path: str = ""
+    current_step: int = 0
+    total_workflow_steps: int = 0
 
 
 class ProcessingStep(ABC):
@@ -181,7 +183,9 @@ class ExecuteBeamCalculationsStep(ProcessingStep):
                 status="PROCESSING",
                 stage="Calculating beams",
                 gpu_allocation=gpu_allocation,
-                beam_info=f"Using GPUs: {gpu_allocation}"
+                beam_info=f"Using GPUs: {gpu_allocation}",
+                current_step=context.current_step,
+                total_steps=context.total_workflow_steps
             )
             
             # Read gantry information from case_status.json
@@ -527,6 +531,9 @@ class WorkflowEngine:
                     current_step=i + 1,
                     total_steps=len(steps)
                 )
+                
+                context.current_step = i + 1
+                context.total_workflow_steps = len(steps)
                 
                 if not step.execute(context):
                     context.logger.error(f"Step {step.name} failed for case {context.case_id}")
