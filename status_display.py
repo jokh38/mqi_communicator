@@ -23,7 +23,7 @@ class UpdateData:
     # New structured fields
     current_task: Optional[str] = None
     current_step: int = 0
-    total_steps: int = 4
+    total_steps: Optional[int] = None
     detailed_progress: Optional[str] = None
     detailed_status: Optional[str] = None
     # Raw data fields for formatting
@@ -39,7 +39,7 @@ class CaseDisplayInfo:
     # 새로운 구조화된 필드들
     current_task: str = ""      # "MOQUI Interpreter", "Beam Calculation", "DICOM Conversion"
     current_step: int = 0       # 현재 단계 (1, 2, 3, 4)
-    total_steps: int = 4        # 전체 단계 수
+    total_steps: int = 0        # 전체 단계 수
     detailed_progress: str = "" # 상세 진행률 ("85/223", "2/5")
     detailed_status: str = ""   # 상세 상태 ("Parsing RTPLAN...", "Processing beam 2/5 on GPU 3")
     
@@ -134,7 +134,7 @@ class StatusDisplay:
                           error_message: str = "",
                           # 새로운 매개변수들
                           current_task: str = "", current_step: int = 0,
-                          total_steps: int = 4, detailed_progress: str = None,
+                          total_steps: Optional[int] = None, detailed_progress: str = None,
                           detailed_status: str = None, **kwargs) -> None:
         """Update case status information using structured UpdateData or legacy parameters."""
         # Handle backward compatibility
@@ -192,7 +192,9 @@ class StatusDisplay:
                     case_info.current_task = data.current_task
                 if data.current_step > 0:
                     case_info.current_step = data.current_step
-                if data.total_steps > 0:
+                
+                # ADD THIS CONDITION
+                if data.total_steps is not None and data.total_steps > 0:
                     case_info.total_steps = data.total_steps
                 
                 # Update formatted fields using centralized logic

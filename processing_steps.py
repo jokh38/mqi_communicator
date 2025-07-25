@@ -191,8 +191,17 @@ class ExecuteBeamCalculationsStep(ProcessingStep):
             
             # For demonstration, simulate multiple beams by iterating through available GPUs
             beam_results = []
+            total_beams = len(gpu_allocation) # Get total number of beams
+
             for i, gpu_id in enumerate(gpu_allocation):
                 beam_id = i + 1  # Start beam numbering from 1
+                
+                # ADD THIS CALL
+                context.status_display.update_case_status(
+                    case_id=context.case_id,
+                    detailed_progress=f"{beam_id}/{total_beams}",
+                    detailed_status=f"Calculating beam {beam_id} on GPU {gpu_id}"
+                )
                 
                 context.logger.info(f"Starting beam {beam_id} calculation for case {context.case_id} on GPU {gpu_id}")
                 
