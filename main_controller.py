@@ -543,10 +543,6 @@ class MainController:
                 shared_state=self.shared_state
             )
             
-            # Add status update callback to workflow engine that delegates to state manager
-            context.status_update_callback = lambda task_name: self.state_manager.set_case_processing(case_id, current_task=task_name)
-            context.starting_task = current_task
-            
             # Execute the workflow
             success = self.workflow_engine.execute_workflow(context)
             
