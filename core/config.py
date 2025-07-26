@@ -77,6 +77,11 @@ class BackupConfig(BaseModel):
     months_to_keep: int = Field(default=12, ge=1, le=60, description="Number of months to keep backups")
 
 
+class ArchivingConfig(BaseModel):
+    """Archiving configuration model."""
+    archive_after_days: int = Field(default=30, ge=1, le=365, description="Number of days after which to archive cases")
+
+
 class DisplayConfig(BaseModel):
     """Display configuration model."""
     refresh_interval_seconds: int = Field(default=2, ge=1, le=10, description="Display refresh interval in seconds")
@@ -107,6 +112,7 @@ class AppConfig(BaseModel):
     gpu_management: GpuManagementConfig
     error_handling: ErrorHandlingConfig
     backup: BackupConfig
+    archiving: ArchivingConfig
     display: DisplayConfig
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     moqui_tps_params: Optional[Dict[str, Any]] = Field(default_factory=dict, description="MOQUI TPS parameters")
@@ -233,6 +239,10 @@ class ConfigManager:
     def get_monitoring_interval(self) -> int:
         """Get GPU monitoring interval in seconds."""
         return self.config.gpu_management.monitoring_interval_sec
+
+    def get_archive_after_days(self) -> int:
+        """Get number of days after which to archive cases."""
+        return self.config.archiving.archive_after_days
 
     def reload_config(self) -> None:
         """Reload configuration from file."""

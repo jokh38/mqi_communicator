@@ -45,6 +45,9 @@
   "backup": {
     "months_to_keep": 12
   },
+  "archiving": {
+    "archive_after_days": 30
+  },
   "display": {
     "refresh_interval_seconds": 1
   },

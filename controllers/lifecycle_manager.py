@@ -14,13 +14,14 @@ from pathlib import Path
 class LifecycleManager:
     """Manages the application's lifecycle: startup, shutdown, and crash recovery."""
     
-    def __init__(self, logger, state_manager, resource_manager, remote_executor, case_service):
+    def __init__(self, logger, state_manager, resource_manager, remote_executor, case_service, shared_state=None):
         """Initialize lifecycle manager with dependencies."""
         self.logger = logger
         self.state_manager = state_manager
         self.resource_manager = resource_manager
         self.remote_executor = remote_executor
         self.case_service = case_service
+        self.shared_state = shared_state
         
         self.lock_file = Path("mqi_communicator.pid")
         
@@ -74,6 +75,9 @@ class LifecycleManager:
         try:
             self.logger.info("Performing startup recovery checks")
             
+            # Synchronize in-memory state with persisted state
+            self._synchronize_active_cases()
+            
             # Recover ALL cases left in PROCESSING state (regardless of duration)
             recovery_result = self.case_service.recover_stale_jobs(max_processing_hours=0)
             
@@ -103,6 +107,38 @@ class LifecycleManager:
             
         except Exception as e:
             self.logger.error(f"Error during startup recovery checks: {e}")
+
+    def _synchronize_active_cases(self) -> None:
+        """Synchronize the in-memory active_cases with the persisted state."""
+        try:
+            if not self.shared_state:
+                self.logger.warning("Shared state not available for synchronization")
+                return
+                
+            # Query the StateManager for all cases with PROCESSING status
+            processing_cases = self.state_manager.get_cases_by_status("PROCESSING")
+            
+            if processing_cases:
+                self.logger.info(f"Found {len(processing_cases)} cases in PROCESSING state, synchronizing active_cases")
+                
+                # Initialize the active_cases set with processing cases
+                if 'active_cases' not in self.shared_state:
+                    self.shared_state['active_cases'] = set()
+                
+                # Add all processing cases to active_cases
+                for case_id in processing_cases:
+                    self.shared_state['active_cases'].add(case_id)
+                    
+                self.logger.info(f"Synchronized active_cases with {len(processing_cases)} cases: {processing_cases}")
+            else:
+                self.logger.info("No cases in PROCESSING state found during synchronization")
+                
+                # Ensure active_cases is initialized even if empty
+                if 'active_cases' not in self.shared_state:
+                    self.shared_state['active_cases'] = set()
+                    
+        except Exception as e:
+            self.logger.error(f"Error synchronizing active cases: {e}")
 
     def _cleanup_stale_case_resources(self, case_id: str) -> None:
         """Clean up resources for a stale case."""

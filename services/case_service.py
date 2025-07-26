@@ -23,13 +23,15 @@ class CaseService:
                  state_manager: StateManager,
                  stability_period_seconds: int = 10,
                  max_retries: int = 3,
-                 logger: Optional[Logger] = None):
+                 logger: Optional[Logger] = None,
+                 config_manager=None):
         
         self.base_path = Path(base_path)
         self.state_manager = state_manager
         self.stability_period_seconds = stability_period_seconds
         self.max_retries = max_retries
         self.logger = logger
+        self.config_manager = config_manager
     
     def _get_last_modified_time(self, folder_path: Path) -> Optional[float]:
         """Get the last modification time of any file in the folder."""
@@ -323,8 +325,18 @@ class CaseService:
         # This would need to be implemented in StateManager
         pass
     
-    def archive_old_cases(self, days: int = 30) -> None:
+    def archive_old_cases(self, days: Optional[int] = None) -> None:
         """Archive old completed or failed cases."""
+        # Get archiving period from config if not specified
+        if days is None:
+            if self.config_manager:
+                days = self.config_manager.get_archive_after_days()
+            else:
+                days = 30  # Default fallback
+        
+        if self.logger:
+            self.logger.info(f"Archiving cases older than {days} days")
+        
         # Get all cases - this would need to be implemented in StateManager
         # For now, skip implementation
         pass
