@@ -11,20 +11,29 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Dict, List, Any
 
-from config_manager import ConfigManager
-from case_scanner import CaseScanner
-from gpu_manager import GPUManager
-from sftp_manager import SFTPManager
-from remote_executor import RemoteExecutor
-from ssh_connection_manager import SSHConnectionManager
-from job_scheduler import JobScheduler
-from process_monitor import ProcessMonitor
-from directory_manager import DirectoryManager
-from error_handler import ErrorHandler
-from logger import Logger
+# Core components
+from core.config import ConfigManager
+from core.logging import Logger
+from core.error_handler import ErrorHandler
+from core.state import StateManager
+
+# Services
+from services.resource_manager import ResourceManager
+from services.case_service import CaseService
+from services.job_service import JobService
+
+# Remote communication
+from remote.connection import ConnectionManager
+from remote.transfer import TransferManager
+
+# Executors
+from executors.remote import RemoteExecutor
+from executors.local import LocalExecutor
+
+# Other components
 from status_display import StatusDisplay
 from processing_steps import WorkflowEngine
-from state_manager import StateManager
+from process_monitor import ProcessMonitor
 
 
 class MainController:
@@ -41,8 +50,14 @@ class MainController:
         self.scan_queue = queue.Queue()
         self.completed_queue = queue.Queue()
         
-        # Initialize StateManager (will be properly initialized after config is loaded)
+        # Core services (will be properly initialized after config is loaded)
         self.state_manager = None
+        self.resource_manager = None
+        self.case_service = None
+        self.job_service = None
+        self.connection_manager = None
+        self.transfer_manager = None
+        self.remote_executor = None
         
         # Additional shared state (non-case related)
         self.shared_state = {
@@ -125,7 +140,7 @@ class MainController:
             self.logger.info("Performing startup recovery checks")
             
             # Recover ALL cases left in PROCESSING state (regardless of duration)
-            recovery_result = self.case_scanner.recover_stale_jobs(max_processing_hours=0)
+            recovery_result = self.case_service.recover_stale_jobs(max_processing_hours=0)
             
             if recovery_result["recovered_count"] > 0:
                 self.logger.warning(f"Recovered {recovery_result['recovered_count']} stale cases: {recovery_result['recovered_cases']}")
@@ -136,16 +151,16 @@ class MainController:
             else:
                 self.logger.info("No stale cases found during startup")
             
-            # Clean up any zombie GPU processes
-            if hasattr(self.gpu_manager, 'remote_executor') and self.gpu_manager.remote_executor:
-                zombie_processes = self.gpu_manager.cleanup_zombie_processes()
+            # Clean up any zombie GPU processes and stale locks
+            if self.resource_manager:
+                zombie_processes = self.resource_manager.cleanup_zombie_processes()
                 if zombie_processes:
                     self.logger.warning(f"Cleaned up {len(zombie_processes)} zombie GPU processes")
                 else:
                     self.logger.info("No zombie GPU processes found")
                 
                 # Clean up stale GPU locks
-                cleaned_locks = self.gpu_manager.cleanup_stale_locks()
+                cleaned_locks = self.resource_manager.cleanup_stale_locks()
                 if cleaned_locks:
                     self.logger.warning(f"Cleaned up stale locks for GPUs: {cleaned_locks}")
                 else:
@@ -173,17 +188,13 @@ class MainController:
                 except Exception as e:
                     self.logger.warning(f"Error killing remote process {remote_pid} for case {case_id}: {e}")
             
-            # Release GPU locks
+            # Release GPU locks through resource manager
             locked_gpus = case_status.get('locked_gpus', [])
-            if locked_gpus and self.remote_executor:
+            if locked_gpus and self.resource_manager:
                 for gpu_id in locked_gpus:
                     try:
-                        lock_dir = f"/var/lock/mqi_locks/gpu_{gpu_id}"
-                        result = self.remote_executor.execute_command(f"rmdir {lock_dir}")
-                        if result['exit_code'] == 0:
-                            self.logger.info(f"Released GPU lock for GPU {gpu_id} (case {case_id})")
-                        else:
-                            self.logger.warning(f"Failed to release GPU lock for GPU {gpu_id} (case {case_id}): {result['stderr']}")
+                        self.resource_manager.release_gpu_resource(gpu_id)
+                        self.logger.info(f"Released GPU lock for GPU {gpu_id} (case {case_id})")
                     except Exception as e:
                         self.logger.warning(f"Error releasing GPU lock for GPU {gpu_id} (case {case_id}): {e}")
             
@@ -275,8 +286,8 @@ class MainController:
                 self.logger.info("Auto GPU allocation detected, finding idle GPU...")
                 
                 try:
-                    # Find idle GPU using gpu_manager
-                    selected_gpu_id = self.gpu_manager.find_idle_gpu()
+                    # Find idle GPU using resource manager
+                    selected_gpu_id = self.resource_manager.find_idle_gpu()
                     
                     # Update the configuration with the resolved GPU ID
                     self.config["moqui_tps_template"]["GPUID"] = selected_gpu_id
@@ -303,23 +314,23 @@ class MainController:
             raise
 
     def _initialize_components(self) -> None:
-        """Initialize all system components."""
+        """Initialize all system components using new service layer architecture."""
         try:
-            # Initialize logger first (without configuration)
+            # Initialize core components first
             self.logger = Logger(log_directory="logs", log_queue=self.log_queue)
             
-            # Initialize configuration manager with logger
+            # Initialize configuration manager
             self.config_manager = ConfigManager(config_path=self.config_file, logger=self.logger)
             self.config = self.config_manager.get_config()
 
             # Update logger with configuration
             self.logger.config = self.config.get("logging", {})
             
-            # Initialize StateManager with proper status file path
+            # Initialize StateManager
             status_file = self.config.get("paths", {}).get("status_file", "case_status.json")
             self.state_manager = StateManager(status_file=status_file, logger=self.logger)
 
-            # Extract configuration values using ConfigManager methods
+            # Extract configuration values
             self.scan_interval = self.config_manager.get_scanning_interval()
             self.max_concurrent_cases = self.config_manager.get_max_concurrent_cases()
             
@@ -334,84 +345,70 @@ class MainController:
             backup_config = self.config.get("backup", {})
             self.backup_months_to_keep = backup_config.get("months_to_keep", 12)
             
-            # Log session start with spacer
+            # Log session start
             self.logger.info("=" * 80)
             self.logger.info(f"{'=' * 20} START NEW SESSION {'=' * 20}")
             self.logger.info(f"Session started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
             self.logger.info(f"Process ID: {os.getpid()}")
             self.logger.info("=" * 80)
 
-            # Initialize error handler
+            # Initialize core services
             self.error_handler = ErrorHandler(logger=self.logger)
 
-            # Initialize directory manager
-            self.directory_manager = DirectoryManager(
+            # Initialize connection and communication layer
+            self.connection_manager = ConnectionManager(
+                config_manager=self.config_manager,
+                logger=self.logger
+            )
+            
+            self.transfer_manager = TransferManager(
+                connection_manager=self.connection_manager,
+                logger=self.logger
+            )
+            
+            self.remote_executor = RemoteExecutor(
+                connection_manager=self.connection_manager,
+                config_manager=self.config_manager,
+                logger=self.logger
+            )
+            
+            # Update status display with connection status
+            if hasattr(self, 'status_display'):
+                self.status_display.update_system_info({
+                    "connection_manager": "INITIALIZED",
+                    "remote_executor": "INITIALIZED",
+                    "gpu_server_auth": "READY"
+                })
+
+            # Initialize resource manager
+            self.resource_manager = ResourceManager(
+                total_gpus=self.config_manager.get_total_gpus(),
+                reserved_gpus=self.config_manager.get_reserved_gpus(),
+                memory_threshold=self.config_manager.get_memory_threshold(),
+                remote_executor=self.remote_executor,
                 local_base=self.config_manager.get_local_logdata_path(),
                 remote_base=self.config_manager.get_remote_workspace_path(),
                 output_base=self.config_manager.get_local_output_path(),
                 logger=self.logger
             )
 
-            # Initialize SSH connection manager
-            self.ssh_connection_manager = SSHConnectionManager(
-                config_manager=self.config_manager,
-                logger=self.logger
-            )
-            
-            # Initialize SFTP manager with SSH connection manager
-            self.sftp_manager = SFTPManager(
-                ssh_connection_manager=self.ssh_connection_manager,
-                logger=self.logger
-            )
-            
-            # Update status display with SFTP connection
-            if hasattr(self, 'status_display'):
-                self.status_display.update_system_info({
-                    "sftp_connection": "INITIALIZED"
-                })
-
-            # Initialize remote executor with SSH connection manager
-            self.remote_executor = RemoteExecutor(
-                ssh_connection_manager=self.ssh_connection_manager,
-                config_manager=self.config_manager,
-                logger=self.logger
-            )
-            
-            # Update status display with remote executor
-            if hasattr(self, 'status_display'):
-                self.status_display.update_system_info({
-                    "remote_executor": "INITIALIZED",
-                    "gpu_server_auth": "READY"
-                })
-
-            # Initialize GPU manager with remote executor
-            self.gpu_manager = GPUManager(
-                total_gpus=self.config_manager.get_total_gpus(),
-                reserved_gpus=self.config_manager.get_reserved_gpus(),
-                memory_threshold=self.config_manager.get_memory_threshold(),
-                remote_executor=self.remote_executor,
-                logger=self.logger
-            )
-
             # Resolve auto GPU allocation if configured
             self._resolve_auto_gpu_allocation()
 
-            # Initialize case scanner with StateManager
-            self.case_scanner = CaseScanner(
+            # Initialize service layer
+            self.case_service = CaseService(
                 base_path=self.config_manager.get_local_logdata_path(),
                 state_manager=self.state_manager,
                 logger=self.logger,
                 config=self.config
             )
 
-            # Initialize job scheduler
-            self.job_scheduler = JobScheduler(
-                gpu_manager=self.gpu_manager,
-                case_scanner=self.case_scanner,
+            self.job_service = JobService(
+                resource_manager=self.resource_manager,
+                case_service=self.case_service,
                 max_concurrent_jobs=self.max_concurrent_cases,
                 remote_executor=self.remote_executor,
                 config=self.config,
-                directory_manager=self.directory_manager,
                 status_display=self.status_display,
                 logger=self.logger
             )
@@ -424,11 +421,7 @@ class MainController:
                 logger=self.logger
             )
 
-            # Connect directory manager to other components
-            self.directory_manager.sftp_manager = self.sftp_manager
-            self.directory_manager.remote_executor = self.remote_executor
-
-            self.logger.info("All components initialized successfully")
+            self.logger.info("All service components initialized successfully")
             
             # Update status display with successful initialization
             if hasattr(self, 'status_display'):
@@ -486,8 +479,8 @@ class MainController:
                         "last_scan": datetime.now().strftime("%H:%M:%S")
                     })
                 
-                # Scan for new cases
-                new_cases = self.case_scanner.scan_for_new_cases()
+                # Scan for new cases using case service
+                new_cases = self.case_service.scan_for_new_cases()
                 
                 # Add new cases to queue under lock
                 with self.shared_state_lock:
@@ -530,16 +523,16 @@ class MainController:
             # Update status to PROCESSING at start using state manager
             self.state_manager.set_case_processing(case_id, current_task=current_task)
             
-            # Create processing context
+            # Create processing context with new service layer
             context = self.workflow_engine.create_context(
                 case_id=case_id,
                 logger=self.logger,
                 status_display=self.status_display,
-                directory_manager=self.directory_manager,
-                sftp_manager=self.sftp_manager,
+                resource_manager=self.resource_manager,
+                transfer_manager=self.transfer_manager,
                 remote_executor=self.remote_executor,
-                job_scheduler=self.job_scheduler,
-                case_scanner=self.case_scanner,
+                job_service=self.job_service,
+                case_service=self.case_service,
                 shared_state=self.shared_state
             )
             
@@ -585,7 +578,7 @@ class MainController:
                 
                 # Clean up remote workspace on permanent failure
                 try:
-                    remote_path = self.directory_manager.get_case_remote_path(case_id)
+                    remote_path = self.resource_manager.get_case_remote_path(case_id)
                     self.remote_executor.execute_command(f"rm -rf {shlex.quote(remote_path)}")
                     self.logger.info(f"Cleaned up remote workspace for failed case: {case_id}")
                 except Exception as cleanup_error:
@@ -599,8 +592,8 @@ class MainController:
     def _monitor_system_health(self) -> None:
         """Monitor system health and log metrics."""
         try:
-            # Get GPU status
-            gpu_status = self.gpu_manager.get_gpu_status_summary()
+            # Get GPU status from resource manager
+            gpu_status = self.resource_manager.get_gpu_status_summary()
             
             # Get system resources
             cpu_percent = psutil.cpu_percent(interval=1)
@@ -659,8 +652,8 @@ class MainController:
             for case_id in active_cases_list:
                 case_status = self.state_manager.get_case_status(case_id)
                 if case_status:
-                    job_status = self.job_scheduler.get_job_status(case_id)
-                    active_job = self.job_scheduler.active_jobs.get(case_id)
+                    job_status = self.job_service.get_job_status(case_id)
+                    active_job = self.job_service.active_jobs.get(case_id)
                     
                     gpu_allocation = []
                     if active_job:
@@ -825,9 +818,9 @@ class MainController:
                 if not self.scan_queue.empty():
                     try:
                         case_id = self.scan_queue.get_nowait()
-                        start_task = self.case_scanner.get_case_resumption_task(case_id)
+                        start_task = self.case_service.get_case_resumption_task(case_id)
                         
-                        if self.job_scheduler.schedule_case(case_id, start_task=start_task):
+                        if self.job_service.schedule_case(case_id, start_task=start_task):
                             self.logger.info(f"Successfully queued job for case: {case_id}")
                             self._remove_from_waiting_list(case_id)
                         else:
@@ -837,7 +830,7 @@ class MainController:
                         pass
 
                 # Fetch a job that is ready for processing (i.e., GPUs are allocated)
-                job_to_process = self.job_scheduler.get_next_job()
+                job_to_process = self.job_service.get_next_job()
 
                 if job_to_process:
                     case_id = job_to_process["case_id"]
@@ -954,7 +947,7 @@ class MainController:
                             
                             if last_check_date != current_time.date():
                                 self.logger.info("Performing daily check for old cases to archive.")
-                                self.case_scanner.archive_old_cases()
+                                self.case_service.archive_old_cases()
                                 with self.shared_state_lock:
                                     self.shared_state['last_archive_check_date'] = current_time.date()
 
@@ -1025,7 +1018,7 @@ class MainController:
     def _cleanup_active_remote_processes(self) -> None:
         """Clean up remote processes for active cases during shutdown."""
         try:
-            if not hasattr(self, 'case_scanner') or not self.remote_executor:
+            if not hasattr(self, 'case_service') or not self.remote_executor:
                 return
                 
             processing_cases = self.state_manager.get_cases_by_status("PROCESSING")
@@ -1051,14 +1044,12 @@ class MainController:
                     except Exception as e:
                         self.logger.warning(f"Error killing remote process {remote_pid} for case {case_id}: {e}")
                 
-                # Release GPU locks
+                # Release GPU locks through resource manager
                 locked_gpus = case_status.get('locked_gpus', [])
                 for gpu_id in locked_gpus:
                     try:
-                        lock_dir = f"/var/lock/mqi_locks/gpu_{gpu_id}"
-                        result = self.remote_executor.execute_command(f"rmdir {lock_dir}")
-                        if result['exit_code'] == 0:
-                            self.logger.info(f"Released GPU lock for GPU {gpu_id} (case {case_id})")
+                        self.resource_manager.release_gpu_resource(gpu_id)
+                        self.logger.info(f"Released GPU lock for GPU {gpu_id} (case {case_id})")
                     except Exception as e:
                         self.logger.warning(f"Error releasing GPU lock for GPU {gpu_id}: {e}")
                         
@@ -1068,9 +1059,9 @@ class MainController:
     def cleanup_resources(self) -> None:
         """Clean up all resources."""
         try:
-            # Close SSH connection manager (which manages both SFTP and SSH connections)
-            if hasattr(self, 'ssh_connection_manager'):
-                self.ssh_connection_manager.disconnect()
+            # Close connection manager (which manages both SFTP and SSH connections)
+            if hasattr(self, 'connection_manager'):
+                self.connection_manager.disconnect()
             
             # Stop process monitor
             if hasattr(self, 'process_monitor'):
@@ -1111,7 +1102,7 @@ class MainController:
                     "last_scan_time": shared_state_snapshot["last_scan_time"],
                     "scan_interval_minutes": self.scan_interval
                 },
-                "job_status": self.job_scheduler.get_queue_status(),
+                "job_status": self.job_service.get_queue_status(),
                 "process_status": {
                     "background_threads": len(self.threads),
                     "threads_alive": sum(1 for t in self.threads if t.is_alive())

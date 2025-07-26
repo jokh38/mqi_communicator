@@ -9,11 +9,11 @@ class ProcessingContext:
     case_id: str
     logger: Any
     status_display: Any
-    directory_manager: Any
-    sftp_manager: Any
+    resource_manager: Any
+    transfer_manager: Any
     remote_executor: Any
-    job_scheduler: Any
-    case_scanner: Any
+    job_service: Any
+    case_service: Any
     shared_state: Dict[str, Any]
     
     # Processing state
