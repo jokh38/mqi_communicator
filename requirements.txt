@@ -4,6 +4,9 @@ paramiko>=2.12.0
 # System monitoring and process management
 psutil>=5.8.0
 
+# Configuration validation and management
+pydantic>=2.0.0
+
 # Python version compatibility (for Python < 3.8)
 typing-extensions>=4.5.0
 
@@ -20,8 +23,8 @@ filelock>=3.9.0
 # Code linting and formatting
 ruff>=0.1.0
 
-# Development and testing dependencies (uncomment for development)
-# pytest>=7.0.0
-# pytest-cov>=4.0.0
-# pytest-mock>=3.10.0
-# coverage>=7.0.0
+# Development and testing dependencies
+pytest>=7.0.0
+pytest-cov>=4.0.0
+pytest-mock>=3.10.0
+coverage>=7.0.0

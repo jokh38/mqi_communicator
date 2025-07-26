@@ -1,0 +1,136 @@
+{
+  "servers": {
+    "windows_pc": "25.2.191.53",
+    "linux_gpu": "25.2.190.194"
+  },
+  "credentials": {
+    "username": "gpuadmin",
+    "password": "smc1234567"
+  },
+  "paths": {
+    "local_logdata": "C:\\moqui\\log_data",
+    "status_file": "case_status.json",
+    "remote_workspace": "/home/gpuadmin/MOQUI_SMC/tps",
+    "local_output": "C:\\moqui\\dose_dcm",
+    "linux_mqi_interpreter": "/home/gpuadmin/MOQUI_SMC/mqi_interpreter/main_cli.py",
+    "linux_raw_to_dcm": "/home/gpuadmin/MOQUI_SMC/RawToDCM/moqui_raw2dicom.py",
+    "linux_moqui_interpreter_outputs_dir": "/home/gpuadmin/MOQUI_SMC/Outputs_csv",
+    "linux_moqui_outputs_dir": "/home/gpuadmin/MOQUI_SMC/Dose_raw",
+    "linux_venv_python": "/opt/deepops/env/bin/python3.10",
+    "linux_moqui_execution": "/home/gpuadmin/MOQUI_SMC/tps_env/tps_env"
+  },
+  "working_directories": {
+    "mqi_interpreter": "/home/gpuadmin/MOQUI_SMC/mqi_interpreter",
+    "moqui_binary": "/home/gpuadmin/MOQUI_SMC/moqui",
+    "raw2dicom": "/home/gpuadmin/MOQUI_SMC/RawToDCM",
+    "tps_env": "/home/gpuadmin/MOQUI_SMC/tps_env"
+  },
+  "scanning": {
+    "interval_minutes": 30,
+    "max_concurrent_cases": 2,
+    "stale_case_recovery_hours": 1
+  },
+  "gpu_management": {
+    "total_gpus": 8,
+    "reserved_gpus": [
+      7
+    ],
+    "memory_threshold_mb": 1024,
+    "monitoring_interval_sec": 5
+  },
+  "error_handling": {
+    "max_network_retries": 3,
+    "max_retries": 3
+  },
+  "backup": {
+    "months_to_keep": 12
+  },
+  "display": {
+    "refresh_interval_seconds": 1
+  },
+  "shell_commands": {
+    "process": {
+      "check_process_by_pid": "ps -p {pid}",
+      "kill_process": "kill {pid}",
+      "kill_process_signal": "kill -{signal} {pid}",
+      "check_process_by_name": "ps aux | grep {process_name} | grep -v grep",
+      "nohup_background": "nohup {command} > {output_file} 2>&1 & echo $!"
+    },
+    "filesystem": {
+      "write_file_heredoc": "cat <<'EOF' > {target_path}\n{content}\nEOF",
+      "read_file": "cat {file_path}",
+      "check_file_exists": "test -f {file_path}",
+      "check_dir_exists": "test -d {dir_path}",
+      "create_directory": "mkdir -p {dir_path}",
+      "tail_file": "tail -n {lines} {file_path}",
+      "cleanup_old_files": "find {directory} -type f -mtime +{days} -delete",
+      "remove_file": "rm {file_path}",
+      "remove_directory": "rm -rf {dir_path}"
+    },
+    "system_info": {
+      "hostname": "hostname",
+      "uptime": "uptime",
+      "memory": "free -h",
+      "disk_usage": "df -h",
+      "disk_usage_path": "df -h {path}",
+      "cpu_count": "nproc",
+      "load_average": "cat /proc/loadavg"
+    },
+    "shell_operators": {
+      "change_directory": "cd {working_dir} && {command}",
+      "background_job": "{command} &",
+      "get_process_id": "echo $!",
+      "redirect_output": "{command} > {output_file} 2>&1",
+      "pipe": "{command1} | {command2}"
+    }
+  },
+  "logging": {
+    "log_level": "INFO",
+    "max_file_size": "10MB",
+    "backup_count": 5,
+    "rotation_type": "time",
+    "console_output": false,
+    "filter_sensitive": true,
+    "quiet_file_transfers": true,
+    "summary_only_transfers": true,
+    "format": "%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s"
+  },
+  "moqui_tps_params": {
+    "GPUID": 0,
+    "ParentDir": "",
+    "OutputDir": "",
+    "GantryNum": 0
+  },
+  "moqui_tps_template": {
+    "GPUID": "auto",
+    "RandomSeed": -1932780356,
+    "UseAbsolutePath": true,
+    "Verbosity": 0,
+    "UsingPhantomGeo": true,
+    "PhantomDimX": 400,
+    "PhantomDimY": 400,
+    "PhantomDimZ": 400,
+    "PhantomUnitX": 1,
+    "PhantomUnitY": 1,
+    "PhantomUnitZ": 1,
+    "PhantomPositionX": -200.0,
+    "PhantomPositionY": -200.0,
+    "PhantomPositionZ": -380.0,
+    "Scorer": "Dose",
+    "SupressStd": true,
+    "ReadStructure": true,
+    "ROIName": "External",
+    "DicomDir": "plan",
+    "logFilePath": "log",
+    "SourceType": "FluenceMap",
+    "SimulationType": "perBeam",
+    "ScoreToCTGrid": true,
+    "OutputFormat": "raw",
+    "OverwriteResults": true,
+    "TotalThreads": -1,
+    "MaxHistoriesPerBatch": 10000,
+    "BeamNumbers": 0,
+    "ParticlesPerHistory": 1,
+    "TwoCentimeterMode": true
+  }
+}

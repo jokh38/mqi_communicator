@@ -1,0 +1,16 @@
+{
+  "logging": {
+    "level": "INFO",
+    "enable_console": false,
+    "enable_file": true
+  },
+  "display": {
+    "refresh_interval_seconds": 2
+  },
+  "scanning": {
+    "interval_minutes": 30
+  },
+  "gpu_management": {
+    "monitoring_interval_sec": 10
+  }
+}
