@@ -1,8 +1,7 @@
 import os
-import sys
 import time
 import threading
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass
 from collections import deque
@@ -368,7 +367,7 @@ class StatusDisplay:
                     'memory_percent': 0.0,
                     'gpu_status': {'available_gpus': 0, 'total_gpus': 0}
                 })
-        except Exception as e:
+        except Exception:
             # Other errors, continue with existing info
             pass
             
@@ -450,7 +449,7 @@ class StatusDisplay:
             # System info
             if self.system_info:
                 gpu_info = self.system_info.get('gpu_status', {})
-                print(f"[System Status]:")
+                print("[System Status]:")
                 print(f"   GPUs: {gpu_info.get('available_gpus', 0)} available / {gpu_info.get('total_gpus', 0)} total")
                 print(f"   CPU: {self.system_info.get('cpu_percent', 0):.1f}%")
                 print(f"   Memory: {self.system_info.get('memory_percent', 0):.1f}%")

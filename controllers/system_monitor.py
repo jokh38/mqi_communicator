@@ -1,8 +1,11 @@
-"""System Monitor for MOQUI automation system.
+"""
+System Monitor Controller - Handles system health monitoring and status display updates.
 
-Handles system health monitoring and status display updates.
+This class manages system health monitoring, status display updates, and runs
+background monitoring tasks.
 """
 
+import threading
 import time
 import psutil
 from typing import Dict, Any
@@ -11,20 +14,46 @@ from typing import Dict, Any
 class SystemMonitor:
     """Manages system health monitoring and status display updates."""
     
-    def __init__(self, shared_state, shared_state_lock, resource_manager, 
-                 state_manager, job_service, status_display, logger, 
-                 error_handler, monitoring_interval):
+    def __init__(self, logger, config, monitoring_interval, resource_manager, 
+                 shared_state, shared_state_lock, status_display, state_manager, 
+                 job_service, error_handler):
         """Initialize system monitor with dependencies."""
+        self.logger = logger
+        self.config = config
+        self.monitoring_interval = monitoring_interval
+        self.resource_manager = resource_manager
         self.shared_state = shared_state
         self.shared_state_lock = shared_state_lock
-        self.resource_manager = resource_manager
+        self.status_display = status_display
         self.state_manager = state_manager
         self.job_service = job_service
-        self.status_display = status_display
-        self.logger = logger
         self.error_handler = error_handler
-        self.monitoring_interval = monitoring_interval
-        self.running = True
+        
+        # Thread control
+        self.running = False
+        self.worker_thread = None
+
+    def start(self) -> None:
+        """Start the background worker thread."""
+        try:
+            self.running = True
+            self.worker_thread = threading.Thread(
+                target=self._background_system_monitor,
+                name="SystemMonitor",
+                daemon=True
+            )
+            self.worker_thread.start()
+            self.logger.info("System monitor started successfully")
+        except Exception as e:
+            self.logger.error(f"Failed to start system monitor: {e}")
+            raise
+
+    def stop(self) -> None:
+        """Stop the system monitor."""
+        self.logger.info("Stopping system monitor")
+        self.running = False
+        if self.worker_thread and self.worker_thread.is_alive():
+            self.worker_thread.join(timeout=5)
 
     def monitor_system_health(self) -> None:
         """Monitor system health and log metrics."""
@@ -105,7 +134,21 @@ class SystemMonitor:
         except Exception as e:
             self.logger.error(f"Error updating status display: {e}")
 
-    def background_system_monitor(self) -> None:
+    def get_system_status(self) -> Dict[str, Any]:
+        """Get current system status snapshot."""
+        try:
+            with self.shared_state_lock:
+                return {
+                    "gpu_status": self.shared_state.get('gpu_status', {}),
+                    "system_health": self.shared_state.get('system_health', {}),
+                    "active_cases_count": len(self.shared_state.get('active_cases', set())),
+                    "waiting_cases_count": len(self.shared_state.get('waiting_cases', {}))
+                }
+        except Exception as e:
+            self.logger.error(f"Error getting system status: {e}")
+            return {"error": "Failed to get system status"}
+
+    def _background_system_monitor(self) -> None:
         """Background worker for system monitoring."""
         while self.running:
             try:
@@ -115,17 +158,3 @@ class SystemMonitor:
             except Exception as e:
                 self.error_handler.handle_error(e, {"operation": "background_system_monitoring"})
                 time.sleep(self.monitoring_interval)
-
-    def get_system_status(self) -> Dict[str, Any]:
-        """Get current system status snapshot."""
-        with self.shared_state_lock:
-            return {
-                "gpu_status": self.shared_state.get('gpu_status', {}),
-                "system_health": self.shared_state.get('system_health', {}),
-                "active_cases_count": len(self.shared_state.get('active_cases', set())),
-                "waiting_cases_count": len(self.shared_state.get('waiting_cases', {}))
-            }
-
-    def stop(self) -> None:
-        """Stop the system monitor."""
-        self.running = False

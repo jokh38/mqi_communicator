@@ -1,6 +1,8 @@
-"""Scheduler for MOQUI automation system.
+"""
+Scheduler Controller - Manages case scanning, queuing, and processing logic.
 
-Handles case scanning, queuing, scheduling logic, and case processing workflow.
+This class handles all case-related scheduling operations including scanning for new cases,
+managing the case queue, processing workflow, and retry logic.
 """
 
 import threading
@@ -12,31 +14,57 @@ from typing import List
 
 
 class Scheduler:
-    """Manages case scanning, queuing, and scheduling logic."""
+    """Manages case scanning, queuing, and processing logic."""
     
-    def __init__(self, scan_queue, shared_state, shared_state_lock, scan_lock, 
-                 case_service, job_service, status_display, logger, error_handler,
-                 scan_interval, workflow_engine, resource_manager, transfer_manager,
-                 remote_executor, state_manager, config, completed_queue):
+    def __init__(self, logger, config, case_service, job_service, scan_queue, completed_queue,
+                 shared_state, shared_state_lock, scan_lock, status_display, workflow_engine,
+                 error_handler, resource_manager, transfer_manager, remote_executor, state_manager):
         """Initialize scheduler with dependencies."""
+        self.logger = logger
+        self.config = config
+        self.case_service = case_service
+        self.job_service = job_service
         self.scan_queue = scan_queue
+        self.completed_queue = completed_queue
         self.shared_state = shared_state
         self.shared_state_lock = shared_state_lock
         self.scan_lock = scan_lock
-        self.case_service = case_service
-        self.job_service = job_service
         self.status_display = status_display
-        self.logger = logger
-        self.error_handler = error_handler
-        self.scan_interval = scan_interval
         self.workflow_engine = workflow_engine
+        self.error_handler = error_handler
         self.resource_manager = resource_manager
         self.transfer_manager = transfer_manager
         self.remote_executor = remote_executor
         self.state_manager = state_manager
-        self.config = config
-        self.completed_queue = completed_queue
-        self.running = True
+        
+        # Extract scan interval from config
+        self.scan_interval = config.get("scanning", {}).get("interval_minutes", 30)
+        
+        # Thread control
+        self.running = False
+        self.worker_thread = None
+
+    def start(self) -> None:
+        """Start the background worker thread."""
+        try:
+            self.running = True
+            self.worker_thread = threading.Thread(
+                target=self._background_case_processor,
+                name="CaseProcessor",
+                daemon=True
+            )
+            self.worker_thread.start()
+            self.logger.info("Scheduler started successfully")
+        except Exception as e:
+            self.logger.error(f"Failed to start scheduler: {e}")
+            raise
+
+    def stop(self) -> None:
+        """Stop the scheduler."""
+        self.logger.info("Stopping scheduler")
+        self.running = False
+        if self.worker_thread and self.worker_thread.is_alive():
+            self.worker_thread.join(timeout=5)
 
     def scan_for_new_cases(self) -> None:
         """Scan for new cases and add them to the queue."""
@@ -98,7 +126,7 @@ class Scheduler:
             # Default to next 30 minutes
             return current_time + timedelta(minutes=self.scan_interval)
 
-    def check_waiting_cases(self) -> List[str]:
+    def _check_waiting_cases(self) -> List[str]:
         """Check waiting cases and return those ready for retry."""
         with self.shared_state_lock:
             current_time = datetime.now()
@@ -115,7 +143,7 @@ class Scheduler:
             
             return ready_cases
 
-    def add_to_waiting_list(self, case_id: str) -> None:
+    def _add_to_waiting_list(self, case_id: str) -> None:
         """Add case to waiting list with exponential backoff."""
         with self.shared_state_lock:
             current_time = datetime.now()
@@ -136,7 +164,7 @@ class Scheduler:
             self.logger.info(f"Added case {case_id} to waiting list (retry #{waiting_info['retry_count']}, "
                             f"next retry in {retry_delay} seconds)")
 
-    def remove_from_waiting_list(self, case_id: str) -> None:
+    def _remove_from_waiting_list(self, case_id: str) -> None:
         """Remove case from waiting list (e.g., when successfully scheduled)."""
         with self.shared_state_lock:
             if case_id in self.shared_state['waiting_cases']:
@@ -156,7 +184,7 @@ class Scheduler:
         
         return final_delay
 
-    def process_case(self, case_id: str, start_task: str = None) -> bool:
+    def _process_case(self, case_id: str, start_task: str = None) -> bool:
         """Process a single case through the complete workflow using WorkflowEngine."""
         try:
             # Read current status from state manager to determine starting point
@@ -239,12 +267,12 @@ class Scheduler:
             
             return False
 
-    def background_case_processor(self) -> None:
+    def _background_case_processor(self) -> None:
         """Background worker for processing cases."""
         while self.running:
             try:
                 # Re-queue waiting cases that are ready for retry
-                ready_cases = self.check_waiting_cases()
+                ready_cases = self._check_waiting_cases()
                 for case_id in ready_cases:
                     if case_id not in list(self.scan_queue.queue):
                         self.scan_queue.put(case_id)
@@ -257,10 +285,10 @@ class Scheduler:
                         
                         if self.job_service.schedule_case(case_id, start_task=start_task):
                             self.logger.info(f"Successfully queued job for case: {case_id}")
-                            self.remove_from_waiting_list(case_id)
+                            self._remove_from_waiting_list(case_id)
                         else:
                             self.logger.warning(f"Failed to schedule case {case_id}, adding to waiting list.")
-                            self.add_to_waiting_list(case_id)
+                            self._add_to_waiting_list(case_id)
                     except queue.Empty:
                         pass
 
@@ -273,7 +301,7 @@ class Scheduler:
                     
                     # Process the case in a separate thread to not block the scheduler
                     processing_thread = threading.Thread(
-                        target=self.process_case,
+                        target=self._process_case,
                         args=(case_id, start_task),
                         name=f"CaseProcessor-{case_id[:8]}"
                     )
@@ -286,7 +314,3 @@ class Scheduler:
             except Exception as e:
                 self.error_handler.handle_error(e, {"operation": "background_case_processing"})
                 time.sleep(5)
-
-    def stop(self) -> None:
-        """Stop the scheduler."""
-        self.running = False

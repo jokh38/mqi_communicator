@@ -128,7 +128,7 @@
     "OutputFormat": "raw",
     "OverwriteResults": true,
     "TotalThreads": -1,
-    "MaxHistoriesPerBatch": 600000000,
+    "MaxHistoriesPerBatch": 10000,
     "BeamNumbers": 0,
     "ParticlesPerHistory": 1,
     "TwoCentimeterMode": true
