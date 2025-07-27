@@ -40,7 +40,7 @@ class Case(StatefulObject):
         self.current_task = None
         self.last_completed_step = last_completed_step
     
-    def fail(self, error_message: str, last_completed_step: str = "", retry_count: int = None) -> None:
+    def fail(self, error_message: str, last_completed_step: str = "", retry_count: Optional[int] = None) -> None:
         """Transition case to failed state."""
         self._transition_to("FAILED") 
         self.end_time = self.last_updated

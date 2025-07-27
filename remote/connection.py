@@ -102,7 +102,7 @@ class ConnectionManager:
                 if self.transport:
                     try:
                         self.transport.close()
-                    except:
+                    except (OSError, paramiko.SSHException):
                         pass
                     finally:
                         self.transport = None
@@ -178,12 +178,12 @@ class ConnectionManager:
                     if transport and transport != self.transport:
                         try:
                             transport.close()
-                        except:
+                        except (OSError, paramiko.SSHException):
                             pass
                     if sock:
                         try:
                             sock.close()
-                        except:
+                        except (OSError, socket.error):
                             pass
         
         # All attempts failed
@@ -243,7 +243,7 @@ class ConnectionManager:
             if ssh_client:
                 try:
                     ssh_client.close()
-                except:
+                except (OSError, paramiko.SSHException):
                     pass
             return None
     
@@ -263,7 +263,7 @@ class ConnectionManager:
             if sftp_client:
                 try:
                     sftp_client.close()
-                except:
+                except (OSError, paramiko.SSHException):
                     pass
             return None
     

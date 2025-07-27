@@ -158,9 +158,9 @@ class ConfigManager:
             return config
             
         except FileNotFoundError as e:
-            raise FileNotFoundError(f"Configuration file not found: {e}")
+            raise FileNotFoundError(f"Configuration file not found: {e}") from e
         except json.JSONDecodeError as e:
-            raise json.JSONDecodeError(f"Invalid JSON in config file: {e}", "", 0)
+            raise json.JSONDecodeError(f"Invalid JSON in config file: {e}", e.doc, e.pos) from e
 
     def _merge_configs(self, base_config: Dict[str, Any], env_config: Dict[str, Any]) -> Dict[str, Any]:
         """Merge environment-specific configuration over base configuration."""
@@ -181,7 +181,7 @@ class ConfigManager:
         except Exception as e:
             if self.logger:
                 self.logger.error(f"Configuration validation failed: {e}")
-            raise ValueError(f"Invalid configuration: {e}")
+            raise ValueError(f"Invalid configuration: {e}") from e
 
     def get_windows_pc_ip(self) -> str:
         """Get Windows PC server IP address."""

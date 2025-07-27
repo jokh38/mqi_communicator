@@ -24,12 +24,12 @@ class Job(StatefulObject):
         self.retry_count = 0
         self.max_retries = 3
         
-    def schedule(self, scheduled_time: str = None) -> None:
+    def schedule(self, scheduled_time: Optional[str] = None) -> None:
         """Transition job to scheduled state."""
         self._transition_to("SCHEDULED")
         self.scheduled_time = scheduled_time or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
-    def start_execution(self, allocated_resources: Dict[str, Any] = None) -> None:
+    def start_execution(self, allocated_resources: Optional[Dict[str, Any]] = None) -> None:
         """Transition job to running state."""
         self._transition_to("RUNNING")
         self.start_time = self.last_updated

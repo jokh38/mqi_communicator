@@ -451,6 +451,6 @@ class TransferManager:
         if self.sftp:
             try:
                 self.sftp.close()
-            except:
+            except (OSError, paramiko.SSHException):
                 pass
             self.sftp = None

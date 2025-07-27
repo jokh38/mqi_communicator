@@ -36,7 +36,7 @@ class StatefulObject(ABC):
 class StateManager:
     """Simple repository for managing StatefulObject instances."""
     
-    def __init__(self, status_file: str = "case_status.json", logger=None):
+    def __init__(self, status_file: str = "case_status.json", logger: Optional[Any] = None):
         """Initialize StateManager with thread-safe lock."""
         self.status_file = Path(status_file) if Path(status_file).is_absolute() else Path.cwd() / status_file
         self.logger = logger

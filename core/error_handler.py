@@ -142,34 +142,36 @@ class ErrorHandler:
             if self.logger:
                 if error_record["is_critical"]:
                     self.logger.critical(message)
-                    self.logger.log_structured("CRITICAL", "Critical error logged", {
-                        "error_type": error_record["error_type"],
-                        "error_message": str(error_record["error"]),
-                        "context": error_record.get("context", {}),
-                        "timestamp": error_record["timestamp"]
-                    })
+                    if hasattr(self.logger, 'log_structured'):
+                        self.logger.log_structured("CRITICAL", "Critical error logged", {
+                            "error_type": error_record["error_type"],
+                            "error_message": str(error_record["message"]),
+                            "context": error_record.get("context", {}),
+                            "timestamp": error_record["timestamp"]
+                        })
                 else:
                     self.logger.error(message)
             else:
-                if error_record["is_critical"]:
-                    self.logger.critical(message)
-                else:
-                    self.logger.error(message)
+                print(f"[CRITICAL] {message}" if error_record["is_critical"] else f"[ERROR] {message}")
                 
         except Exception as log_error:
-            self.logger.error(f"Failed to log error: {log_error}")
+            if self.logger:
+                self.logger.error(f"Failed to log error: {log_error}")
+            else:
+                print(f"[ERROR] Failed to log error: {log_error}")
 
     def _handle_critical_error(self, error: Exception, context: Dict[str, Any]) -> None:
         """Handle critical errors that require immediate attention."""
         try:
             if self.logger:
                 self.logger.critical(f"Critical error detected: {error}")
-                self.logger.log_structured("CRITICAL", "Critical error detected", {
-                    "error": str(error),
-                    "cleanup_initiated": True
-                })
+                if hasattr(self.logger, 'log_structured'):
+                    self.logger.log_structured("CRITICAL", "Critical error detected", {
+                        "error": str(error),
+                        "cleanup_initiated": True
+                    })
             else:
-                self.logger.critical(f"Critical error detected: {error}")
+                print(f"[CRITICAL] Critical error detected: {error}")
             
             # Perform emergency cleanup
             self.cleanup_resources()
@@ -179,10 +181,13 @@ class ErrorHandler:
             if self.logger:
                 self.logger.critical("Emergency cleanup completed")
             else:
-                self.logger.critical("Emergency cleanup completed")
+                print("[CRITICAL] Emergency cleanup completed")
             
         except Exception as critical_error:
-            self.logger.error(f"Error handling critical error: {critical_error}")
+            if self.logger:
+                self.logger.error(f"Error handling critical error: {critical_error}")
+            else:
+                print(f"[ERROR] Error handling critical error: {critical_error}")
 
     def should_retry(self, error: Exception, attempt: int) -> bool:
         """Determine if an error should be retried."""
@@ -253,16 +258,20 @@ class ErrorHandler:
                 # Check if we should retry
                 if attempt < max_attempts and self.should_retry(error, attempt):
                     delay = self.get_retry_delay(attempt)
+                    error_type = self._classify_error(error)
                     if self.logger:
-                        self.logger.log_structured("INFO", "Operation retry scheduled", {
-                            "attempt": attempt + 1,
-                            "max_attempts": max_attempts,
-                            "delay_seconds": delay,
-                            "error_type": error_classification["error_type"],
-                            "operation": "retryable_operation"
-                        })
+                        if hasattr(self.logger, 'log_structured'):
+                            self.logger.log_structured("INFO", "Operation retry scheduled", {
+                                "attempt": attempt + 1,
+                                "max_attempts": max_attempts,
+                                "delay_seconds": delay,
+                                "error_type": error_type.value,
+                                "operation": "retryable_operation"
+                            })
+                        else:
+                            self.logger.info(f"Retrying in {delay:.2f} seconds (attempt {attempt + 1}/{max_attempts})")
                     else:
-                        self.logger.info(f"Retrying in {delay:.2f} seconds (attempt {attempt + 1}/{max_attempts})")
+                        print(f"[INFO] Retrying in {delay:.2f} seconds (attempt {attempt + 1}/{max_attempts})")
                     time.sleep(delay)
                     continue
                 else:

@@ -107,12 +107,11 @@ class CaseService:
                 individual_data = json.load(f)
             
             # Create Case model from individual file data
-            case = Case(
-                case_id=case_id,
-                status=individual_data.get("status", "NEW"),
-                current_task=individual_data.get("current_task"),
-                last_updated=datetime.now()  # Will be updated by the model
-            )
+            case = Case(case_id=case_id, case_path=str(case_dir))
+            # Set the status and other properties after creation
+            case.status = individual_data.get("status", "NEW")
+            case.current_task = individual_data.get("current_task")
+            case.last_updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             
             # Save to StateManager
             self.state_manager.save(case)
@@ -181,8 +180,7 @@ class CaseService:
                     
                     # Create new case if not migrated
                     if not migrated_data:
-                        current_hash = self._calculate_folder_hash(case_dir)
-                        new_case = Case(case_id=case_id, folder_hash=current_hash)
+                        new_case = Case(case_id=case_id, case_path=str(case_dir))
                         self.state_manager.save(new_case)
                 
                 else:

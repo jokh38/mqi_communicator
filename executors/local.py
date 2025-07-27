@@ -6,7 +6,7 @@ Provides local command execution capabilities with timeout support.
 
 import subprocess
 import time
-from typing import Optional
+from typing import Optional, Any
 
 from .base import BaseExecutor, ExecutionResult
 
@@ -14,7 +14,7 @@ from .base import BaseExecutor, ExecutionResult
 class LocalExecutor(BaseExecutor):
     """Executor for local command execution using subprocess."""
     
-    def __init__(self, working_directory: Optional[str] = None, logger=None):
+    def __init__(self, working_directory: Optional[str] = None, logger: Optional[Any] = None):
         super().__init__(logger)
         self.working_directory = working_directory
     
