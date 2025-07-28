@@ -7,7 +7,7 @@ Merges functionality from case_scanner.py to provide unified case management.
 import json
 import hashlib
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Dict, List, Optional, Any
 
 from models.case import Case
@@ -103,7 +103,7 @@ class CaseService:
             if not individual_status_file.exists():
                 return None
             
-            with open(individual_status_file, 'r') as f:
+            with open(individual_status_file, 'r', encoding='utf-8') as f:
                 individual_data = json.load(f)
             
             # Create Case model from individual file data

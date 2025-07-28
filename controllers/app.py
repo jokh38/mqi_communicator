@@ -8,8 +8,7 @@ initializing and holding all services and controllers.
 import threading
 import time
 import queue
-from datetime import datetime, timedelta
-from typing import Dict, List, Any
+from datetime import datetime
 
 # Core components
 from core.config import ConfigManager
@@ -28,7 +27,6 @@ from remote.transfer import TransferManager
 
 # Executors
 from executors.remote import RemoteExecutor
-from executors.local import LocalExecutor
 
 # Other components
 from status_display import StatusDisplay
@@ -151,7 +149,6 @@ class Application:
             
             self.remote_executor = RemoteExecutor(
                 connection_manager=self.connection_manager,
-                config_manager=self.config_manager,
                 logger=self.logger
             )
             
@@ -182,8 +179,7 @@ class Application:
             self.case_service = CaseService(
                 base_path=self.config_manager.get_local_logdata_path(),
                 state_manager=self.state_manager,
-                logger=self.logger,
-                config=self.config
+                logger=self.logger
             )
 
             self.job_service = JobService(
@@ -191,17 +187,14 @@ class Application:
                 case_service=self.case_service,
                 max_concurrent_jobs=self.max_concurrent_cases,
                 remote_executor=self.remote_executor,
-                config=self.config,
                 status_display=self.status_display,
                 logger=self.logger
             )
 
             # Initialize process monitor
             self.process_monitor = ProcessMonitor(
-                remote_executor=self.remote_executor,
-                monitoring_interval=self.monitoring_interval,
-                status_display=self.status_display,
-                logger=self.logger
+                logger=self.logger,
+                monitoring_interval=self.monitoring_interval
             )
 
             self.logger.info("All service components initialized successfully")
@@ -253,7 +246,7 @@ class Application:
                 except RuntimeError as e:
                     # Log critical error and exit the application as specified
                     self.logger.critical(f"Failed to find idle GPU for auto allocation: {e}")
-                    raise RuntimeError(f"Auto GPU allocation failed: {e}")
+                    raise RuntimeError(f"Auto GPU allocation failed: {e}") from e
                     
             elif isinstance(gpu_id, (int, str)) and str(gpu_id).isdigit():
                 # GPU ID is already a number, no action needed
@@ -290,7 +283,6 @@ class Application:
                 shared_state_lock=self.shared_state_lock,
                 scan_lock=self.scan_lock,
                 status_display=self.status_display,
-                workflow_engine=self.workflow_engine,
                 error_handler=self.error_handler,
                 resource_manager=self.resource_manager,
                 transfer_manager=self.transfer_manager,
@@ -306,7 +298,6 @@ class Application:
                 resource_manager=self.resource_manager,
                 shared_state=self.shared_state,
                 shared_state_lock=self.shared_state_lock,
-                status_display=self.status_display,
                 state_manager=self.state_manager,
                 job_service=self.job_service,
                 error_handler=self.error_handler

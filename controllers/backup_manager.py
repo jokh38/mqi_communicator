@@ -29,7 +29,7 @@ class BackupManager:
             last_backup_month = None
             if backup_info_file.exists():
                 try:
-                    with open(backup_info_file, 'r') as f:
+                    with open(backup_info_file, 'r', encoding='utf-8') as f:
                         last_backup_month = f.read().strip()
                 except Exception as e:
                     self.logger.warning(f"Failed to read last backup info: {e}")
@@ -41,7 +41,7 @@ class BackupManager:
                 
                 if success:
                     # Update last backup month
-                    with open(backup_info_file, 'w') as f:
+                    with open(backup_info_file, 'w', encoding='utf-8') as f:
                         f.write(current_month)
                     self.logger.info(f"Monthly backup completed successfully for {current_month}")
                 else:

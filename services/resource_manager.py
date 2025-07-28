@@ -9,7 +9,6 @@ from typing import List, Dict, Optional, Any, TYPE_CHECKING
 from pathlib import Path
 from datetime import datetime
 
-from resources.base import BaseResource
 from resources.gpu import GPUResource
 from resources.disk import DiskResource
 from core.logging import Logger

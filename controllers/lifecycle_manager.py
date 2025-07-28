@@ -14,14 +14,13 @@ from pathlib import Path
 class LifecycleManager:
     """Manages the application's lifecycle: startup, shutdown, and crash recovery."""
     
-    def __init__(self, logger, state_manager, resource_manager, remote_executor, case_service, shared_state=None):
+    def __init__(self, logger, state_manager, resource_manager, remote_executor, case_service):
         """Initialize lifecycle manager with dependencies."""
         self.logger = logger
         self.state_manager = state_manager
         self.resource_manager = resource_manager
         self.remote_executor = remote_executor
         self.case_service = case_service
-        self.shared_state = shared_state
         
         self.lock_file = Path("mqi_communicator.pid")
         
@@ -34,24 +33,24 @@ class LifecycleManager:
             if self.lock_file.exists():
                 # Check if lock file contains a valid PID
                 try:
-                    with open(self.lock_file, 'r') as f:
+                    with open(self.lock_file, 'r', encoding='utf-8') as f:
                         pid = int(f.read().strip())
                     
                     # Check if process is still running
                     if psutil.pid_exists(pid):
                         self.logger.warning(f"Another instance is already running (PID: {pid})")
                         return False
-                    else:
-                        # Process no longer exists, remove stale lock file
-                        self.lock_file.unlink()
-                        self.logger.info("Removed stale lock file")
+                    
+                    # Process no longer exists, remove stale lock file
+                    self.lock_file.unlink()
+                    self.logger.info("Removed stale lock file")
                 except (ValueError, FileNotFoundError):
                     # Invalid lock file, remove it
                     self.lock_file.unlink()
                     self.logger.info("Removed invalid lock file")
             
             # Create lock file with current PID
-            with open(self.lock_file, 'w') as f:
+            with open(self.lock_file, 'w', encoding='utf-8') as f:
                 f.write(str(os.getpid()))
             
             self.logger.info(f"Acquired application lock (PID: {os.getpid()})")

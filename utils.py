@@ -5,12 +5,13 @@ This module contains stateless helper functions that can be used across
 different modules without introducing coupling.
 """
 
-import time
 import hashlib
 import functools
+import socket
+import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 
 def retry_on_exception(max_retries: int = 3, 
@@ -274,9 +275,9 @@ def validate_file_path(file_path: Union[str, Path], must_exist: bool = True) -> 
         
         if must_exist:
             return path.exists() and path.is_file()
-        else:
-            # Check if parent directory exists and path is valid
-            return path.parent.exists() and str(path).strip() != ""
+        
+        # Check if parent directory exists and path is valid
+        return path.parent.exists() and str(path).strip() != ""
     except Exception:
         return False
 
@@ -373,7 +374,6 @@ def is_port_open(host: str, port: int, timeout: float = 3.0) -> bool:
     Returns:
         bool: True if port is open
     """
-    import socket
     
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:

@@ -5,12 +5,18 @@ This class handles all case-related scheduling operations including scanning for
 managing the case queue, processing workflow, and retry logic.
 """
 
+import json
+import os
+import random
+import shlex
 import threading
 import time
 import queue
-import shlex
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import List
+
+from core.config import ConfigManager
 
 
 class Scheduler:
@@ -172,7 +178,6 @@ class Scheduler:
 
     def _calculate_retry_delay(self, retry_count: int, base_delay: int = 60) -> int:
         """Calculate retry delay using exponential backoff with jitter."""
-        import random
         
         # Exponential backoff: base_delay * (2 ^ retry_count)
         delay = base_delay * (2 ** min(retry_count, 6))  # Cap at 6 to prevent extremely long delays
@@ -467,7 +472,6 @@ class Scheduler:
                 dynamic_params = self._prepare_dynamic_params(case_id, gantry_info, gpu_id, beam_id)
                 
                 # Create the config file
-                from config_manager import ConfigManager
                 config_manager = ConfigManager()
                 tps_env_path = self.remote_executor.working_directories["tps_env"]
                 target_path = f"{tps_env_path}/moqui_tps.in"
@@ -584,7 +588,6 @@ class Scheduler:
             remote_path = self.resource_manager.get_case_remote_path(case_id)
             
             # Check if results already downloaded
-            import os
             output_exists = os.path.exists(output_path) and os.listdir(output_path)
             
             if output_exists:
@@ -619,8 +622,6 @@ class Scheduler:
 
     def _read_gantry_info_from_status(self, case_id: str) -> dict:
         """Read gantry information from case_status.json."""
-        import json
-        from pathlib import Path
         
         try:
             status_file_path = Path.cwd() / "case_status.json"
@@ -639,7 +640,6 @@ class Scheduler:
 
     def _prepare_dynamic_params(self, case_id: str, gantry_info: dict, gpu_id: int, beam_id: int) -> dict:
         """Prepare dynamic parameters for moqui_tps.in with absolute paths."""
-        import os
         
         dynamic_params = {}
         
@@ -679,8 +679,6 @@ class Scheduler:
     def _archive_tps_parameters(self, case_id: str, merged_params: dict, beam_id: int = None) -> None:
         """Archive the generated moqui_tps.in parameters locally for monitoring."""
         try:
-            from datetime import datetime
-            from pathlib import Path
             
             # Create archive directory
             archive_dir = Path("logs/archive")
