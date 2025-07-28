@@ -6,6 +6,7 @@ to provide unified resource management.
 """
 
 from typing import List, Dict, Optional, Any, TYPE_CHECKING
+from dataclasses import dataclass
 from pathlib import Path
 from datetime import datetime
 
@@ -17,55 +18,73 @@ if TYPE_CHECKING:
     from executors.remote import RemoteExecutor
 
 
+@dataclass
+class ResourceConfig:
+    """Configuration for ResourceManager."""
+    total_gpus: int = 8
+    reserved_gpus: List[int] = None
+    memory_threshold: int = 1024
+    local_base: str = None
+    remote_base: str = None
+    output_base: str = None
+    
+    def __post_init__(self):
+        if self.reserved_gpus is None:
+            self.reserved_gpus = []
+
+
 class ResourceManager:
     """Manages pools of resources (GPU, Disk) and coordinates their allocation."""
     
     def __init__(self, 
-                 total_gpus: int = 8,
-                 reserved_gpus: List[int] = None,
-                 memory_threshold: int = 1024,
-                 local_base: str = None,
-                 remote_base: str = None,
-                 output_base: str = None,
+                 config: ResourceConfig,
                  remote_executor: Optional['RemoteExecutor'] = None,
                  sftp_manager=None,
                  logger: Optional[Logger] = None):
         
+        self.config = config
         self.remote_executor = remote_executor
         self.sftp_manager = sftp_manager
         self.logger = logger
         
-        # Initialize GPU resources
+        self._initialize_gpu_resources()
+        self._initialize_disk_resources()
+        self._setup_directory_paths()
+    
+    def _initialize_gpu_resources(self) -> None:
+        """Initialize GPU resource pool."""
         self.gpu_resources: Dict[int, GPUResource] = {}
-        for gpu_id in range(total_gpus):
-            if reserved_gpus and gpu_id in reserved_gpus:
+        for gpu_id in range(self.config.total_gpus):
+            if gpu_id in self.config.reserved_gpus:
                 continue
             self.gpu_resources[gpu_id] = GPUResource(
                 gpu_id=gpu_id,
-                memory_threshold=memory_threshold,
-                remote_executor=remote_executor,
-                logger=logger
+                memory_threshold=self.config.memory_threshold,
+                remote_executor=self.remote_executor,
+                logger=self.logger
             )
-        
-        # Initialize disk resources
+    
+    def _initialize_disk_resources(self) -> None:
+        """Initialize disk resource pool."""
         self.disk_resources: Dict[str, DiskResource] = {}
-        if local_base:
+        if self.config.local_base:
             self.disk_resources['local'] = DiskResource(
                 resource_id='local',
-                path=local_base,
-                logger=logger
+                path=self.config.local_base,
+                logger=self.logger
             )
-        if output_base:
+        if self.config.output_base:
             self.disk_resources['output'] = DiskResource(
                 resource_id='output', 
-                path=output_base,
-                logger=logger
+                path=self.config.output_base,
+                logger=self.logger
             )
-        
-        # Directory management paths
-        self.local_base = Path(local_base) if local_base else None
-        self.remote_base = remote_base
-        self.output_base = Path(output_base) if output_base else None
+    
+    def _setup_directory_paths(self) -> None:
+        """Setup directory management paths."""
+        self.local_base = Path(self.config.local_base) if self.config.local_base else None
+        self.remote_base = self.config.remote_base
+        self.output_base = Path(self.config.output_base) if self.config.output_base else None
     
     # GPU Resource Management
     def get_available_gpus(self) -> List[int]:
@@ -156,7 +175,7 @@ class ResourceManager:
     def cleanup_stale_gpu_locks(self) -> List[int]:
         """Clean up stale GPU locks."""
         cleaned_gpus = []
-        for gpu_id, gpu_resource in self.gpu_resources.items():
+        for _, gpu_resource in self.gpu_resources.items():
             # This would need to be implemented in GPUResource
             pass
         return cleaned_gpus
@@ -244,10 +263,10 @@ class ResourceManager:
                 if self.logger:
                     self.logger.info(f"Created remote directory: {directory_path}")
                 return True
-            else:
-                if self.logger:
-                    self.logger.error(f"Failed to create remote directory: {directory_path}")
-                return False
+            
+            if self.logger:
+                self.logger.error(f"Failed to create remote directory: {directory_path}")
+            return False
                 
         except Exception as e:
             if self.logger:
@@ -320,7 +339,7 @@ class ResourceManager:
                 
                 return self.sftp_manager.upload_directory(local_path, remote_path, status_display, case_id)
                 
-            elif direction == "download":
+            if direction == "download":
                 if self.output_base:
                     output_path = self.get_case_output_path(case_id)
                     if not self.ensure_local_directory(str(output_path)):

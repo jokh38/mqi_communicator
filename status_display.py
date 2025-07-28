@@ -49,7 +49,7 @@ class StatusDisplay:
     def _update_display(self) -> None:
         """Update the display with current status."""
         # Placeholder implementation
-        pass
+        # TODO: Implement display update logic
     
     def update_case_status(self, case_id: str, status: Optional[str] = None, **kwargs) -> None:
         """Update case status information."""

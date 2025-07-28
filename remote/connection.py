@@ -95,99 +95,126 @@ class ConnectionManager:
         max_attempts = 3
         
         for attempt in range(max_attempts):
-            sock = None
-            transport = None
             try:
-                # Clean up any existing transport
-                if self.transport:
-                    try:
-                        self.transport.close()
-                    except (OSError, paramiko.SSHException):
-                        pass
-                    finally:
-                        self.transport = None
-                
-                # Add a small fixed delay between attempts
-                if attempt > 0:
-                    delay = self.retry_delay
-                    if self.logger:
-                        self.logger.info(f"Retrying SSH connection in {delay} seconds (attempt {attempt + 1}/{max_attempts})")
-                    time.sleep(delay)
-                
-                self._enforce_connection_rate_limit()
-                
-                # Create a new transport and connect
-                sock = socket.create_connection((self.host, self.port), timeout=self.timeout)
-                transport = paramiko.Transport(sock)
-                
-                transport.connect(username=self.username, password=self.password)
-                
-                # Only assign to self.transport after successful connection
-                self.transport = transport
-                self.connected = True
-                if self.logger:
-                    self.logger.info(f"Successfully connected to {self.host}:{self.port} on attempt {attempt + 1}")
-                
-                return True
-                
-            except paramiko.SSHException as e:
-                error_msg = str(e)
-                
-                # Comprehensive list of retryable SSH errors
-                retryable_errors = [
-                    "Invalid packet blocking", 
-                    "Error reading SSH protocol banner", 
-                    "utf-8", 
-                    "UnicodeDecodeError",
-                    "WinError 10038",
-                    "소켓 이외의 개체에 작업을 시도했습니다",
-                    "Bad file descriptor",
-                    "Socket is not valid",
-                    "EOFError",
-                    "Connection lost",
-                    "Connection reset",
-                    "Connection refused",
-                    "Timeout"
-                ]
-                
-                if any(keyword in error_msg for keyword in retryable_errors):
-                    if self.logger:
-                        self.logger.warning(f"SSH connection error on attempt {attempt + 1}/{max_attempts}: {error_msg}")
-                    if attempt < max_attempts - 1:
-                        total_delay = self.retry_delay
-                        if self.logger:
-                            self.logger.info(f"Retrying SSH connection in {total_delay} seconds (attempt {attempt + 2}/{max_attempts})")
-                        time.sleep(total_delay)
-                        continue
-                    else:
-                        if self.logger:
-                            self.logger.error(f"SSH connection failed after {max_attempts} attempts due to persistent errors")
-                else:
-                    if self.logger:
-                        self.logger.error(f"SSH connection failed with non-retryable error: {error_msg}")
-                    break
-                
+                if self._attempt_connection(attempt, max_attempts):
+                    return True
             except Exception as e:
-                if self.logger:
-                    self.logger.error(f"SSH connection failed on attempt {attempt + 1}/{max_attempts}: {e}")
-                if attempt < max_attempts - 1:
-                    continue
-            finally:
-                # Clean up resources on failure, but only if connection wasn't successful
-                if not self.connected:
-                    if transport and transport != self.transport:
-                        try:
-                            transport.close()
-                        except (OSError, paramiko.SSHException):
-                            pass
-                    if sock:
-                        try:
-                            sock.close()
-                        except (OSError, socket.error):
-                            pass
+                if not self._handle_connection_error(e, attempt, max_attempts):
+                    break
         
-        # All attempts failed
         self.connected = False
+        return False
+    
+    def _attempt_connection(self, attempt: int, max_attempts: int) -> bool:
+        """Attempt a single SSH connection."""
+        self._prepare_connection_attempt(attempt, max_attempts)
+        
+        sock, transport = self._create_transport()
+        
+        try:
+            transport.connect(username=self.username, password=self.password)
+            self._finalize_successful_connection(transport, attempt)
+            return True
+        except Exception:
+            self._cleanup_failed_connection(sock, transport)
+            raise
+    
+    def _prepare_connection_attempt(self, attempt: int, max_attempts: int) -> None:
+        """Prepare for a connection attempt."""
+        self._cleanup_existing_transport()
+        
+        if attempt > 0:
+            self._wait_before_retry(attempt, max_attempts)
+        
+        self._enforce_connection_rate_limit()
+    
+    def _cleanup_existing_transport(self) -> None:
+        """Clean up any existing transport."""
+        if self.transport:
+            try:
+                self.transport.close()
+            except (OSError, paramiko.SSHException):
+                pass
+            finally:
+                self.transport = None
+    
+    def _wait_before_retry(self, attempt: int, max_attempts: int) -> None:
+        """Wait before retrying connection."""
+        delay = self.retry_delay
+        if self.logger:
+            self.logger.info(f"Retrying SSH connection in {delay} seconds (attempt {attempt + 1}/{max_attempts})")
+        time.sleep(delay)
+    
+    def _create_transport(self) -> tuple:
+        """Create socket and transport objects."""
+        sock = socket.create_connection((self.host, self.port), timeout=self.timeout)
+        transport = paramiko.Transport(sock)
+        return sock, transport
+    
+    def _finalize_successful_connection(self, transport, attempt: int) -> None:
+        """Finalize a successful connection."""
+        self.transport = transport
+        self.connected = True
+        if self.logger:
+            self.logger.info(f"Successfully connected to {self.host}:{self.port} on attempt {attempt + 1}")
+    
+    def _cleanup_failed_connection(self, sock, transport) -> None:
+        """Clean up resources after failed connection."""
+        if transport and transport != self.transport:
+            try:
+                transport.close()
+            except (OSError, paramiko.SSHException):
+                pass
+        if sock:
+            try:
+                sock.close()
+            except (OSError, socket.error):
+                pass
+    
+    def _handle_connection_error(self, error: Exception, attempt: int, max_attempts: int) -> bool:
+        """Handle connection errors and determine if retry is appropriate."""
+        if isinstance(error, paramiko.SSHException):
+            return self._handle_ssh_exception(error, attempt, max_attempts)
+        
+        if self.logger:
+            self.logger.error(f"SSH connection failed on attempt {attempt + 1}/{max_attempts}: {error}")
+        return attempt < max_attempts - 1
+    
+    def _handle_ssh_exception(self, error: paramiko.SSHException, attempt: int, max_attempts: int) -> bool:
+        """Handle SSH-specific exceptions."""
+        error_msg = str(error)
+        
+        if self._is_retryable_error(error_msg):
+            return self._handle_retryable_error(error_msg, attempt, max_attempts)
+        
+        if self.logger:
+            self.logger.error(f"SSH connection failed with non-retryable error: {error_msg}")
+        return False
+    
+    def _is_retryable_error(self, error_msg: str) -> bool:
+        """Check if an error is retryable."""
+        retryable_errors = [
+            "Invalid packet blocking", "Error reading SSH protocol banner", 
+            "utf-8", "UnicodeDecodeError", "WinError 10038",
+            "소켓 이외의 개체에 작업을 시도했습니다", "Bad file descriptor",
+            "Socket is not valid", "EOFError", "Connection lost",
+            "Connection reset", "Connection refused", "Timeout"
+        ]
+        return any(keyword in error_msg for keyword in retryable_errors)
+    
+    def _handle_retryable_error(self, error_msg: str, attempt: int, max_attempts: int) -> bool:
+        """Handle retryable errors."""
+        if self.logger:
+            self.logger.warning(f"SSH connection error on attempt {attempt + 1}/{max_attempts}: {error_msg}")
+        
+        if attempt < max_attempts - 1:
+            if self.logger:
+                self.logger.info(f"Retrying SSH connection in {self.retry_delay} seconds (attempt {attempt + 2}/{max_attempts})")
+            time.sleep(self.retry_delay)
+            return True
+        
+        if self.logger:
+            self.logger.error(f"SSH connection failed after {max_attempts} attempts due to persistent errors")
         return False
     
     def disconnect(self) -> None:

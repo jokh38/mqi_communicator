@@ -319,80 +319,11 @@ class Application:
     def run(self) -> None:
         """Main application run method."""
         try:
-            # Acquire application lock to prevent multiple instances
-            if not self.lifecycle_manager.acquire_lock():
-                if hasattr(self, 'logger'):
-                    self.logger.critical("Failed to acquire application lock. Another instance may be running.")
-                else:
-                    print("CRITICAL: Failed to acquire application lock. Another instance may be running.")
+            if not self._initialize_application():
                 return
             
-            self.logger.info("Starting MOQUI automation system")
-            self.running = True
-            
-            # Start status display
-            self.status_display.start()
-            
-            # Perform startup recovery checks
-            self.lifecycle_manager.perform_startup_checks()
-            
-            # Start background threads for scheduler and system monitor
-            self.scheduler.start()
-            self.system_monitor.start()
-            
-            # Perform an initial update to show info immediately
-            self.logger.info("Performing initial system health check and display update.")
-            self.system_monitor.monitor_system_health()
-            self.system_monitor.update_status_display()
-
-            # Perform an initial scan for cases
-            self.logger.info("Performing initial scan for new cases.")
-            self.scheduler.scan_for_new_cases()
-            
-            # Main scheduling loop
-            while self.running:
-                try:
-                    # Calculate next scan time
-                    current_time = datetime.now()
-                    next_scan_time = self.scheduler.calculate_next_scan_time(current_time)
-                    
-                    # Wait until next scan time
-                    while datetime.now() < next_scan_time and self.running:
-                        time.sleep(10)  # Check every 10 seconds for more responsive display
-                        
-                        # Update status display frequently for real-time progress updates
-                        self.system_monitor.update_status_display()
-                        
-                        # Perform health checks while waiting
-                        if datetime.now().minute % 5 == 0:  # Every 5 minutes
-                            self.system_monitor.monitor_system_health()
-                            
-                        # Check for daily archive (once per day after 07:00)
-                        current_time = datetime.now()
-                        if current_time.hour >= 7:
-                            with self.shared_state_lock:
-                                last_check_date = self.shared_state.get('last_archive_check_date')
-                            
-                            if last_check_date != current_time.date():
-                                self.logger.info("Performing daily check for old cases to archive.")
-                                self.case_service.archive_old_cases()
-                                with self.shared_state_lock:
-                                    self.shared_state['last_archive_check_date'] = current_time.date()
-
-                        # Check for monthly backup (once per day at 02:00)
-                        if current_time.hour == 2 and current_time.minute == 0:
-                            self.backup_manager.run_backup_cycle()
-                    
-                    # Execute scheduled scan
-                    if self.running:
-                        self.scheduler.scan_for_new_cases()
-                    
-                except KeyboardInterrupt:
-                    self.logger.info("Received keyboard interrupt, shutting down...")
-                    break
-                except Exception as e:
-                    self.error_handler.handle_error(e, {"operation": "main_loop"})
-                    time.sleep(60)  # Wait before retrying
+            self._start_services()
+            self._run_main_loop()
             
         except KeyboardInterrupt:
             self.logger.info("Received keyboard interrupt, shutting down...")
@@ -400,6 +331,98 @@ class Application:
             self.error_handler.handle_error(e, {"operation": "main_execution"})
         finally:
             self.shutdown()
+    
+    def _initialize_application(self) -> bool:
+        """Initialize application and acquire lock."""
+        if not self.lifecycle_manager.acquire_lock():
+            if hasattr(self, 'logger'):
+                self.logger.critical("Failed to acquire application lock. Another instance may be running.")
+            else:
+                print("CRITICAL: Failed to acquire application lock. Another instance may be running.")
+            return False
+        
+        self.logger.info("Starting MOQUI automation system")
+        self.running = True
+        return True
+    
+    def _start_services(self) -> None:
+        """Start all background services and perform initial operations."""
+        self.status_display.start()
+        self.lifecycle_manager.perform_startup_checks()
+        
+        self.scheduler.start()
+        self.system_monitor.start()
+        
+        self._perform_initial_operations()
+    
+    def _perform_initial_operations(self) -> None:
+        """Perform initial system health check and case scan."""
+        self.logger.info("Performing initial system health check and display update.")
+        self.system_monitor.monitor_system_health()
+        self.system_monitor.update_status_display()
+
+        self.logger.info("Performing initial scan for new cases.")
+        self.scheduler.scan_for_new_cases()
+    
+    def _run_main_loop(self) -> None:
+        """Run the main scheduling loop."""
+        while self.running:
+            try:
+                self._execute_scheduling_cycle()
+            except KeyboardInterrupt:
+                self.logger.info("Received keyboard interrupt, shutting down...")
+                break
+            except Exception as e:
+                self.error_handler.handle_error(e, {"operation": "main_loop"})
+                time.sleep(60)  # Wait before retrying
+    
+    def _execute_scheduling_cycle(self) -> None:
+        """Execute one complete scheduling cycle."""
+        current_time = datetime.now()
+        next_scan_time = self.scheduler.calculate_next_scan_time(current_time)
+        
+        self._wait_for_next_scan(next_scan_time)
+        
+        if self.running:
+            self.scheduler.scan_for_new_cases()
+    
+    def _wait_for_next_scan(self, next_scan_time) -> None:
+        """Wait until next scan time while performing maintenance tasks."""
+        while datetime.now() < next_scan_time and self.running:
+            time.sleep(10)  # Check every 10 seconds for more responsive display
+            
+            self.system_monitor.update_status_display()
+            self._perform_periodic_maintenance()
+    
+    def _perform_periodic_maintenance(self) -> None:
+        """Perform periodic maintenance tasks while waiting."""
+        current_time = datetime.now()
+        
+        # Perform health checks every 5 minutes
+        if current_time.minute % 5 == 0:
+            self.system_monitor.monitor_system_health()
+        
+        self._check_daily_archive(current_time)
+        self._check_monthly_backup(current_time)
+    
+    def _check_daily_archive(self, current_time) -> None:
+        """Check for daily archive if conditions are met."""
+        if current_time.hour < 7:
+            return
+            
+        with self.shared_state_lock:
+            last_check_date = self.shared_state.get('last_archive_check_date')
+        
+        if last_check_date != current_time.date():
+            self.logger.info("Performing daily check for old cases to archive.")
+            self.case_service.archive_old_cases()
+            with self.shared_state_lock:
+                self.shared_state['last_archive_check_date'] = current_time.date()
+    
+    def _check_monthly_backup(self, current_time) -> None:
+        """Check for monthly backup at scheduled time."""
+        if current_time.hour == 2 and current_time.minute == 0:
+            self.backup_manager.run_backup_cycle()
 
     def shutdown(self) -> None:
         """Shutdown the application and cleanup resources."""
