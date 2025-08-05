@@ -7,6 +7,8 @@ Provides remote command execution capabilities with connection management.
 import time
 import socket
 from typing import Optional, Dict, Any, TYPE_CHECKING
+from contextlib import contextmanager
+import paramiko
 
 from .base import BaseExecutor, ExecutionResult
 
@@ -23,6 +25,21 @@ class RemoteExecutor(BaseExecutor):
         super().__init__(logger)
         self.connection_manager = connection_manager
         self._connection_failures = 0
+
+    @contextmanager
+    def _get_ssh_client_context(self):
+        """Provides an SSH client within a context, ensuring it's closed."""
+        ssh_client = None
+        try:
+            ssh_client = self.connection_manager.get_ssh_client()
+            if not ssh_client:
+                raise ConnectionError("Failed to get SSH client from ConnectionManager.")
+            yield ssh_client
+        finally:
+            if ssh_client:
+                # This closes the channel, not the transport, as the transport
+                # was not created by this client instance.
+                ssh_client.close()
     
     def execute(self, command: str, timeout: Optional[int] = None, **kwargs) -> ExecutionResult:
         """
@@ -37,93 +54,67 @@ class RemoteExecutor(BaseExecutor):
             ExecutionResult: Result of command execution
         """
         start_time = time.time()
-        timeout_occurred = False
+        working_dir = kwargs.get('working_dir')
+        final_command = f"cd '{working_dir}' && {command}" if working_dir else command
         
         try:
-            ssh_client = self.connection_manager.get_ssh_client()
-            if not ssh_client:
-                self._connection_failures += 1
+            with self._get_ssh_client_context() as ssh_client:
+                if self.logger:
+                    self.logger.debug(f"Executing remote command: {final_command}")
+
+                stdin, stdout, stderr = ssh_client.exec_command(final_command, timeout=timeout)
+
+                stdout_data = stdout.read().decode('utf-8', errors='ignore')
+                stderr_data = stderr.read().decode('utf-8', errors='ignore')
+                exit_code = stdout.channel.recv_exit_status()
+
                 execution_time = time.time() - start_time
                 
-                return ExecutionResult(
-                    stdout="",
-                    stderr="SSH connection failed",
-                    exit_code=-1,
+                execution_result = ExecutionResult(
+                    stdout=stdout_data,
+                    stderr=stderr_data,
+                    exit_code=exit_code,
                     execution_time=execution_time,
-                    command=command,
+                    command=final_command,
                     timeout_occurred=False
                 )
-            
-            if self.logger:
-                self.logger.debug(f"Executing remote command: {command}")
-            
-            # Handle working directory change if specified
-            final_command = command
-            if 'working_dir' in kwargs:
-                working_dir = kwargs['working_dir']
-                final_command = f"cd '{working_dir}' && {command}"
-            
-            # Execute command
-            stdin, stdout, stderr = ssh_client.exec_command(final_command, timeout=timeout)
-            
-            stdout_data = stdout.read().decode('utf-8')
-            stderr_data = stderr.read().decode('utf-8')
-            exit_code = stdout.channel.recv_exit_status()
-            
-            execution_time = time.time() - start_time
-            
-            execution_result = ExecutionResult(
-                stdout=stdout_data,
-                stderr=stderr_data,
-                exit_code=exit_code,
-                execution_time=execution_time,
-                command=final_command,
-                timeout_occurred=timeout_occurred
-            )
-            
-            if self.logger:
-                if execution_result.success:
-                    self.logger.debug(f"Remote command succeeded in {execution_time:.2f}s: {command}")
-                else:
-                    self.logger.warning(f"Remote command failed (exit code {exit_code}): {command}")
-                    if stderr_data:
-                        self.logger.warning(f"Command stderr: {stderr_data}")
-            
-            # Reset connection failure counter on success
-            self._connection_failures = 0
-            
-            return execution_result
-            
+
+                if self.logger:
+                    if execution_result.success:
+                        self.logger.debug(f"Remote command succeeded in {execution_time:.2f}s: {command}")
+                    else:
+                        self.logger.warning(f"Remote command failed (exit code {exit_code}): {command}")
+                        if stderr_data:
+                            self.logger.warning(f"Command stderr: {stderr_data.strip()}")
+
+                self._connection_failures = 0
+                return execution_result
+
         except socket.timeout:
             execution_time = time.time() - start_time
-            timeout_occurred = True
-            
             if self.logger:
                 self.logger.error(f"Remote command timed out after {timeout}s: {command}")
-            
             return ExecutionResult(
                 stdout="",
                 stderr=f"Command timed out after {timeout} seconds",
                 exit_code=-1,
                 execution_time=execution_time,
-                command=command,
-                timeout_occurred=timeout_occurred
+                command=final_command,
+                timeout_occurred=True
             )
             
-        except (socket.error, Exception) as e:
+        except (ConnectionError, socket.error, paramiko.SSHException, Exception) as e:
             execution_time = time.time() - start_time
             self._connection_failures += 1
-            
             if self.logger:
                 self.logger.error(f"Remote command execution error: {command}, error: {e}")
-            
             return ExecutionResult(
                 stdout="",
                 stderr=f"Connection/execution error: {str(e)}",
                 exit_code=-1,
                 execution_time=execution_time,
-                command=command,
-                timeout_occurred=timeout_occurred
+                command=final_command,
+                timeout_occurred=False
             )
     
     def check_availability(self) -> bool:
@@ -134,9 +125,12 @@ class RemoteExecutor(BaseExecutor):
             bool: True if SSH connection is available, False otherwise
         """
         try:
-            result = self.execute("echo test", timeout=5)
+            # A short timeout is crucial here to avoid long waits on network issues
+            result = self.execute("echo test", timeout=10)
             return result.success and "test" in result.stdout
-        except Exception:
+        except Exception as e:
+            if self.logger:
+                self.logger.warning(f"Remote executor availability check failed: {e}")
             return False
     
     def execute_with_workdir(self, command: str, working_dir: str, timeout: Optional[int] = None) -> ExecutionResult:
@@ -151,7 +145,7 @@ class RemoteExecutor(BaseExecutor):
         Returns:
             ExecutionResult: Result of command execution
         """
-        return self.execute(command, timeout, working_dir=working_dir)
+        return self.execute(command, timeout=timeout, working_dir=working_dir)
     
     def execute_streaming(self, command: str, working_dir: str = None, 
                          timeout: Optional[int] = None, 
@@ -169,111 +163,85 @@ class RemoteExecutor(BaseExecutor):
             ExecutionResult: Result of command execution
         """
         start_time = time.time()
-        timeout_occurred = False
+        final_command = f"cd '{working_dir}' && {command}" if working_dir else command
+
+        stdout_lines = []
+        stderr_lines = []
         
         try:
-            ssh_client = self.connection_manager.get_ssh_client()
-            if not ssh_client:
-                self._connection_failures += 1
+            with self._get_ssh_client_context() as ssh_client:
+                if self.logger:
+                    self.logger.debug(f"Executing streaming remote command: {final_command}")
+
+                stdin, stdout, stderr = ssh_client.exec_command(final_command, timeout=timeout)
+
+                # Stream stdout in real-time
+                for line in iter(stdout.readline, ""):
+                    if not line:
+                        break
+                    line_str = line.rstrip()
+                    stdout_lines.append(line_str)
+
+                    if output_callback and line_str.strip():
+                        try:
+                            output_callback(line_str)
+                        except Exception as cb_e:
+                            if self.logger:
+                                self.logger.error(f"Output callback failed: {cb_e}")
+
+                    if self.logger and line_str.strip():
+                        self.logger.debug(f"Remote output: {line_str}")
+
+                stderr_data = stderr.read().decode('utf-8', errors='ignore')
+                if stderr_data:
+                    stderr_lines.extend(stderr_data.splitlines())
+
+                exit_code = stdout.channel.recv_exit_status()
                 execution_time = time.time() - start_time
                 
-                return ExecutionResult(
-                    stdout="",
-                    stderr="SSH connection failed",
-                    exit_code=-1,
+                execution_result = ExecutionResult(
+                    stdout="\n".join(stdout_lines),
+                    stderr="\n".join(stderr_lines),
+                    exit_code=exit_code,
                     execution_time=execution_time,
-                    command=command,
+                    command=final_command,
                     timeout_occurred=False
                 )
-            
-            # Handle working directory change if specified
-            final_command = command
-            if working_dir:
-                final_command = f"cd '{working_dir}' && {command}"
-            
-            if self.logger:
-                self.logger.debug(f"Executing streaming remote command: {final_command}")
-            
-            stdin, stdout, stderr = ssh_client.exec_command(final_command, timeout=timeout)
-            
-            stdout_lines = []
-            stderr_lines = []
-            
-            # Stream stdout in real-time
-            while True:
-                line = stdout.readline()
-                if not line:
-                    break
-                    
-                line_str = line.rstrip()
-                stdout_lines.append(line_str)
                 
-                # Call output callback if provided
-                if output_callback and line_str.strip():
-                    output_callback(line_str)
+                if self.logger:
+                    if execution_result.success:
+                        self.logger.debug(f"Streaming remote command succeeded in {execution_time:.2f}s")
+                    else:
+                        self.logger.warning(f"Streaming remote command failed (exit code {exit_code})")
+
+                self._connection_failures = 0
+                return execution_result
                 
-                # Log individual progress lines
-                if self.logger and line_str.strip():
-                    self.logger.debug(f"Remote output: {line_str}")
-            
-            # Read any remaining stderr
-            stderr_data = stderr.read().decode('utf-8')
-            if stderr_data:
-                stderr_lines.extend(stderr_data.splitlines())
-            
-            exit_code = stdout.channel.recv_exit_status()
-            execution_time = time.time() - start_time
-            
-            execution_result = ExecutionResult(
-                stdout="\n".join(stdout_lines),
-                stderr="\n".join(stderr_lines),
-                exit_code=exit_code,
-                execution_time=execution_time,
-                command=final_command,
-                timeout_occurred=timeout_occurred
-            )
-            
-            if self.logger:
-                if execution_result.success:
-                    self.logger.debug(f"Streaming remote command succeeded in {execution_time:.2f}s")
-                else:
-                    self.logger.warning(f"Streaming remote command failed (exit code {exit_code})")
-            
-            # Reset connection failure counter on success
-            self._connection_failures = 0
-            
-            return execution_result
-            
         except socket.timeout:
             execution_time = time.time() - start_time
-            timeout_occurred = True
-            
             if self.logger:
                 self.logger.error(f"Streaming remote command timed out after {timeout}s")
-            
             return ExecutionResult(
-                stdout="\n".join(stdout_lines) if 'stdout_lines' in locals() else "",
+                stdout="\n".join(stdout_lines),
                 stderr=f"Command timed out after {timeout} seconds",
                 exit_code=-1,
                 execution_time=execution_time,
-                command=command,
-                timeout_occurred=timeout_occurred
+                command=final_command,
+                timeout_occurred=True
             )
             
-        except Exception as e:
+        except (ConnectionError, socket.error, paramiko.SSHException, Exception) as e:
             execution_time = time.time() - start_time
             self._connection_failures += 1
-            
             if self.logger:
                 self.logger.error(f"Streaming remote command execution error: {e}")
-            
             return ExecutionResult(
-                stdout="\n".join(stdout_lines) if 'stdout_lines' in locals() else "",
+                stdout="\n".join(stdout_lines),
                 stderr=f"Connection/execution error: {str(e)}",
                 exit_code=-1,
                 execution_time=execution_time,
-                command=command,
-                timeout_occurred=timeout_occurred
+                command=final_command,
+                timeout_occurred=False
             )
     
     def get_system_info(self) -> Dict[str, Any]:
@@ -329,6 +297,19 @@ class RemoteExecutor(BaseExecutor):
             bool: True if successful, False otherwise
         """
         result = self.execute(f"kill -{signal_type} {pid}")
+        return result.success
+
+    def check_directory_exists(self, path: str) -> bool:
+        """Check if a directory exists on the remote server."""
+        # Use a more robust check to avoid issues with special characters in path
+        command = f"if [ -d '{path}' ]; then exit 0; else exit 1; fi"
+        result = self.execute(command)
+        return result.success
+
+    def create_directory(self, path: str) -> bool:
+        """Create a directory on the remote server."""
+        command = f"mkdir -p '{path}'"
+        result = self.execute(command)
         return result.success
     
     def check_process_running(self, pid: int) -> bool:
