@@ -17,7 +17,7 @@ from core.error_handler import ErrorHandler
 from core.state import StateManager
 
 # Services
-from services.resource_manager import ResourceManager
+from services.resource_manager import ResourceManager, ResourceConfig
 from services.case_service import CaseService
 from services.job_service import JobService
 
@@ -29,7 +29,7 @@ from remote.transfer import TransferManager
 from executors.remote import RemoteExecutor
 
 # Other components
-from status_display import StatusDisplay
+from core.display import StatusDisplay
 from processing_steps import WorkflowEngine
 from process_monitor import ProcessMonitor
 
@@ -43,9 +43,8 @@ from .backup_manager import BackupManager
 class Application:
     """Main application class that orchestrates all system components."""
     
-    def __init__(self, config_file: str = "config.json"):
+    def __init__(self):
         """Initialize application with all components."""
-        self.config_file = config_file
         self.running = False
         self.threads = []
         
@@ -102,7 +101,7 @@ class Application:
             self.logger = Logger(log_directory="logs", log_queue=self.log_queue)
             
             # Initialize configuration manager
-            self.config_manager = ConfigManager(config_path=self.config_file, logger=self.logger)
+            self.config_manager = ConfigManager(logger=self.logger)
             self.config = self.config_manager.get_config()
 
             # Update logger with configuration
@@ -161,14 +160,17 @@ class Application:
                 })
 
             # Initialize resource manager
-            self.resource_manager = ResourceManager(
+            resource_config = ResourceConfig(
                 total_gpus=self.config_manager.get_total_gpus(),
                 reserved_gpus=self.config_manager.get_reserved_gpus(),
                 memory_threshold=self.config_manager.get_memory_threshold(),
-                remote_executor=self.remote_executor,
                 local_base=self.config_manager.get_local_logdata_path(),
                 remote_base=self.config_manager.get_remote_workspace_path(),
-                output_base=self.config_manager.get_local_output_path(),
+                output_base=self.config_manager.get_local_output_path()
+            )
+            self.resource_manager = ResourceManager(
+                config=resource_config,
+                remote_executor=self.remote_executor,
                 logger=self.logger
             )
 
@@ -300,7 +302,8 @@ class Application:
                 shared_state_lock=self.shared_state_lock,
                 state_manager=self.state_manager,
                 job_service=self.job_service,
-                error_handler=self.error_handler
+                error_handler=self.error_handler,
+                status_display=self.status_display
             )
             
             # Initialize BackupManager

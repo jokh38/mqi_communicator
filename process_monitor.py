@@ -210,22 +210,18 @@ class ProcessMonitor:
                     del self.monitored_processes[pid]
     
     def get_system_stats(self) -> Dict[str, Any]:
-        """Get overall system statistics."""
-        try:
-            return {
-                "cpu_percent": psutil.cpu_percent(interval=1),
-                "memory_percent": psutil.virtual_memory().percent,
-                "disk_usage": psutil.disk_usage('/').percent if os.name != 'nt' else psutil.disk_usage('C:').percent,
-                "monitored_processes": len(self.monitored_processes),
-                "timestamp": datetime.now().isoformat()
-            }
-        except Exception as e:
-            if self.logger:
-                self.logger.error(f"Error getting system stats: {e}")
-            return {
-                "error": str(e),
-                "timestamp": datetime.now().isoformat()
-            }
+        """
+        Get overall system statistics.
+
+        .. deprecated:: 1.1.0
+           This function is deprecated and will be removed in a future version.
+           System statistics are now collected by the SystemMonitor.
+        """
+        if self.logger:
+            self.logger.warning("The 'get_system_stats' method in ProcessMonitor is deprecated.")
+
+        # Return empty dict to avoid breaking callers expecting a dictionary.
+        return {}
     
     def cleanup_zombie_processes(self) -> int:
         """Clean up any zombie processes."""
