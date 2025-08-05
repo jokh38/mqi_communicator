@@ -1,0 +1,9 @@
+ Based on the git history, I can see that commit e61cfc9 implemented "Centralize SSH connection management and
+  implement dependency injection" which corresponds to the INST_code_rev1.md instructions.
+
+  The version just before INST_code_rev1.md was applied is:
+
+  f3c0cc4 - [STRUCTURAL] Remove moqui_tps.in archiving feature from remote executor
+
+  This commit represents the state of the codebase immediately before the SSH connection management centralization
+  and dependency injection refactoring was implemented according to INST_code_rev1.md.
