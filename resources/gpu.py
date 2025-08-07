@@ -155,6 +155,8 @@ class GPUResource(BaseResource):
                         self._gpu_info_cache = gpu_info
                         self._cache_timestamp = current_time
                         return gpu_info
+                elif xml_output:
+                    self.logger.error(f"nvidia-smi command failed with exit code {xml_output.exit_code}: {xml_output.stderr}")
             else:
                 # Get GPU info from local system
                 result = subprocess.run(
