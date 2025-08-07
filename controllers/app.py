@@ -251,7 +251,7 @@ class Application:
 
                     # Update the configuration to use CPU
                     self.config["moqui_tps_template"]["GPUID"] = -1
-                    self.config_manager.config["moqui_tps_template"]["GPUID"] = -1
+                    self.config_manager.config.moqui_tps_template["GPUID"] = -1
                     
             elif isinstance(gpu_id, (int, str)) and str(gpu_id).isdigit():
                 # GPU ID is already a number, no action needed
