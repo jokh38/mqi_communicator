@@ -154,6 +154,7 @@ class ConnectionManager:
     def _finalize_successful_connection(self, transport, attempt: int) -> None:
         """Finalize a successful connection."""
         self.transport = transport
+        self.transport.set_keepalive(60)
         self.connected = True
         if self.logger:
             self.logger.info(f"Successfully connected to {self.host}:{self.port} on attempt {attempt + 1}")
@@ -327,6 +328,13 @@ class ConnectionManager:
         return (self.connected and 
                 self.transport is not None and 
                 self.transport.is_active())
+
+    def reconnect(self) -> bool:
+        """Disconnect and then reconnect."""
+        if self.logger:
+            self.logger.info("Reconnecting SSH connection...")
+        self.disconnect()
+        return self.connect()
     
     def get_host(self) -> str:
         """Get the host address."""
