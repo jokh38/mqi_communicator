@@ -57,85 +57,65 @@ class RemoteExecutor(BaseExecutor):
         working_dir = kwargs.get('working_dir')
         final_command = f"cd '{working_dir}' && {command}" if working_dir else command
         
-        max_attempts = 2
-        for attempt in range(max_attempts):
-            try:
-                with self._get_ssh_client_context() as ssh_client:
-                    if self.logger:
-                        self.logger.debug(f"Executing remote command (attempt {attempt + 1}/{max_attempts}): {final_command}")
-
-                    stdin, stdout, stderr = ssh_client.exec_command(final_command, timeout=timeout)
-
-                    stdout_data = stdout.read().decode('utf-8', errors='ignore')
-                    stderr_data = stderr.read().decode('utf-8', errors='ignore')
-                    exit_code = stdout.channel.recv_exit_status()
-
-                    execution_time = time.time() - start_time
-
-                    execution_result = ExecutionResult(
-                        stdout=stdout_data,
-                        stderr=stderr_data,
-                        exit_code=exit_code,
-                        execution_time=execution_time,
-                        command=final_command,
-                        timeout_occurred=False
-                    )
-
-                    if self.logger:
-                        if execution_result.success:
-                            self.logger.debug(f"Remote command succeeded in {execution_time:.2f}s: {command}")
-                        else:
-                            self.logger.warning(f"Remote command failed (exit code {exit_code}): {command}")
-                            if stderr_data:
-                                self.logger.warning(f"Command stderr: {stderr_data.strip()}")
-
-                    self._connection_failures = 0
-                    return execution_result
-
-            except socket.timeout:
-                execution_time = time.time() - start_time
-                timeout_message = f"after {timeout} seconds" if timeout is not None else "due to no timeout set"
+        try:
+            with self._get_ssh_client_context() as ssh_client:
                 if self.logger:
-                    self.logger.error(f"Remote command timed out {timeout_message}: {command}")
-                return ExecutionResult(
-                    stdout="",
-                    stderr=f"Command timed out {timeout_message}",
-                    exit_code=-1,
-                    execution_time=execution_time,
-                    command=final_command,
-                    timeout_occurred=True
-                )
+                    self.logger.debug(f"Executing remote command: {final_command}")
 
-            except (ConnectionError, socket.error, paramiko.SSHException) as e:
-                # Retry on "Channel closed" error
-                if isinstance(e, paramiko.SSHException) and "Channel closed" in str(e) and attempt < max_attempts - 1:
-                    if self.logger:
-                        self.logger.warning(f"SSH channel closed for command: {command}. Reconnecting and retrying...")
-                    self.connection_manager.reconnect()
-                    continue
+                stdin, stdout, stderr = ssh_client.exec_command(final_command, timeout=timeout)
+
+                stdout_data = stdout.read().decode('utf-8', errors='ignore')
+                stderr_data = stderr.read().decode('utf-8', errors='ignore')
+                exit_code = stdout.channel.recv_exit_status()
+
+                execution_time = time.time() - start_time
                 
-                execution_time = time.time() - start_time
-                self._connection_failures += 1
-                if self.logger:
-                    self.logger.error(f"Remote command execution error: {command}, error: {e}")
-                return ExecutionResult(
-                    stdout="",
-                    stderr=f"Connection/execution error: {str(e)}",
-                    exit_code=-1,
+                execution_result = ExecutionResult(
+                    stdout=stdout_data,
+                    stderr=stderr_data,
+                    exit_code=exit_code,
                     execution_time=execution_time,
                     command=final_command,
                     timeout_occurred=False
                 )
 
-        # This part should not be reached if the loop is structured correctly
-        return ExecutionResult(
-            stdout="",
-            stderr="Exhausted all retry attempts.",
-            exit_code=-1,
-            execution_time=time.time() - start_time,
-            command=final_command,
-            timeout_occurred=False
-        )
+                if self.logger:
+                    if execution_result.success:
+                        self.logger.debug(f"Remote command succeeded in {execution_time:.2f}s: {command}")
+                    else:
+                        self.logger.warning(f"Remote command failed (exit code {exit_code}): {command}")
+                        if stderr_data:
+                            self.logger.warning(f"Command stderr: {stderr_data.strip()}")
+
+                self._connection_failures = 0
+                return execution_result
+
+        except socket.timeout:
+            execution_time = time.time() - start_time
+            if self.logger:
+                self.logger.error(f"Remote command timed out after {timeout}s: {command}")
+            return ExecutionResult(
+                stdout="",
+                stderr=f"Command timed out after {timeout} seconds",
+                exit_code=-1,
+                execution_time=execution_time,
+                command=final_command,
+                timeout_occurred=True
+            )
+
+        except (ConnectionError, socket.error, paramiko.SSHException, Exception) as e:
+            execution_time = time.time() - start_time
+            self._connection_failures += 1
+            if self.logger:
+                self.logger.error(f"Remote command execution error: {command}, error: {e}")
+            return ExecutionResult(
+                stdout="",
+                stderr=f"Connection/execution error: {str(e)}",
+                exit_code=-1,
+                execution_time=execution_time,
+                command=final_command,
+                timeout_occurred=False
+            )
 
     def check_availability(self) -> bool:
         """
