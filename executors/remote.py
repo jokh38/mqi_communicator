@@ -6,6 +6,7 @@ Provides remote command execution capabilities with connection management.
 
 import time
 import socket
+import traceback
 from typing import Optional, Dict, Any, TYPE_CHECKING
 from contextlib import contextmanager
 import paramiko
@@ -82,10 +83,16 @@ class RemoteExecutor(BaseExecutor):
                 if self.logger:
                     if execution_result.success:
                         self.logger.debug(f"Remote command succeeded in {execution_time:.2f}s: {command}")
+                        # Log stderr even on success if it's not empty (for debugging)
+                        if stderr_data:
+                            self.logger.debug(f"Command stderr (success): {stderr_data.strip()}")
                     else:
                         self.logger.warning(f"Remote command failed (exit code {exit_code}): {command}")
+                        # Log both stdout and stderr content for failed commands (first 200 chars)
+                        if stdout_data:
+                            self.logger.warning(f"stdout: {stdout_data[:200]}")
                         if stderr_data:
-                            self.logger.warning(f"Command stderr: {stderr_data.strip()}")
+                            self.logger.warning(f"stderr: {stderr_data[:200]}")
 
                 self._connection_failures = 0
                 return execution_result
@@ -106,11 +113,16 @@ class RemoteExecutor(BaseExecutor):
         except (ConnectionError, socket.error, paramiko.SSHException, Exception) as e:
             execution_time = time.time() - start_time
             self._connection_failures += 1
+            
             if self.logger:
-                self.logger.error(f"Remote command execution error: {command}, error: {e}")
+                self.logger.error(f"Remote command execution exception: {command}")
+                self.logger.error(f"Exception type: {type(e).__name__}")
+                self.logger.error(f"Exception message: {str(e)}")
+                self.logger.error(f"Traceback: {traceback.format_exc()}")
+            
             return ExecutionResult(
                 stdout="",
-                stderr=f"Connection/execution error: {str(e)}",
+                stderr=f"Exception ({type(e).__name__}): {str(e)}",
                 exit_code=-1,
                 execution_time=execution_time,
                 command=final_command,
@@ -211,8 +223,18 @@ class RemoteExecutor(BaseExecutor):
                 if self.logger:
                     if execution_result.success:
                         self.logger.debug(f"Streaming remote command succeeded in {execution_time:.2f}s")
+                        # Log stderr even on success if it's not empty (for debugging)
+                        if stderr_data:
+                            self.logger.debug(f"Streaming command stderr (success): {stderr_data.strip()}")
                     else:
                         self.logger.warning(f"Streaming remote command failed (exit code {exit_code})")
+                        # Log both stdout and stderr content for failed commands (first 200 chars)
+                        stdout_str = "\n".join(stdout_lines)
+                        stderr_str = "\n".join(stderr_lines)
+                        if stdout_str:
+                            self.logger.warning(f"stdout: {stdout_str[:200]}")
+                        if stderr_str:
+                            self.logger.warning(f"stderr: {stderr_str[:200]}")
 
                 self._connection_failures = 0
                 return execution_result
@@ -233,11 +255,16 @@ class RemoteExecutor(BaseExecutor):
         except (ConnectionError, socket.error, paramiko.SSHException, Exception) as e:
             execution_time = time.time() - start_time
             self._connection_failures += 1
+            
             if self.logger:
-                self.logger.error(f"Streaming remote command execution error: {e}")
+                self.logger.error(f"Streaming remote command execution exception: {command}")
+                self.logger.error(f"Exception type: {type(e).__name__}")
+                self.logger.error(f"Exception message: {str(e)}")
+                self.logger.error(f"Traceback: {traceback.format_exc()}")
+            
             return ExecutionResult(
                 stdout="\n".join(stdout_lines),
-                stderr=f"Connection/execution error: {str(e)}",
+                stderr=f"Exception ({type(e).__name__}): {str(e)}",
                 exit_code=-1,
                 execution_time=execution_time,
                 command=final_command,
