@@ -241,7 +241,7 @@ class Application:
                     self.config["moqui_tps_template"]["GPUID"] = selected_gpu_id
                     
                     # Update the config manager as well to persist the change during this session
-                    self.config_manager.config["moqui_tps_template"]["GPUID"] = selected_gpu_id
+                    self.config_manager.config.moqui_tps_template["GPUID"] = selected_gpu_id
                     
                     self.logger.info(f"Auto GPU allocation resolved: Selected GPU {selected_gpu_id}")
                     
