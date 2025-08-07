@@ -133,7 +133,7 @@ class GPUResource(BaseResource):
         
         return status
     
-    def _get_gpu_info(self) -> Optional[GPUInfo]:
+    def _get_gpu_info(self, timeout: int = 10) -> Optional[GPUInfo]:
         """Get GPU information with caching."""
         current_time = time.time()
         
@@ -146,7 +146,7 @@ class GPUResource(BaseResource):
             if self.remote_executor:
                 # Get GPU info from remote system
                 xml_output = self.remote_executor.execute(
-                    "nvidia-smi -q -x", capture_output=True
+                    "nvidia-smi -q -x", capture_output=True, timeout=timeout
                 )
                 if xml_output and xml_output.exit_code == 0:
                     root = ET.fromstring(xml_output.stdout)

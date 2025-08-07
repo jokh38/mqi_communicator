@@ -92,11 +92,12 @@ class RemoteExecutor(BaseExecutor):
 
         except socket.timeout:
             execution_time = time.time() - start_time
+            timeout_message = f"after {timeout} seconds" if timeout is not None else "due to no timeout set"
             if self.logger:
-                self.logger.error(f"Remote command timed out after {timeout}s: {command}")
+                self.logger.error(f"Remote command timed out {timeout_message}: {command}")
             return ExecutionResult(
                 stdout="",
-                stderr=f"Command timed out after {timeout} seconds",
+                stderr=f"Command timed out {timeout_message}",
                 exit_code=-1,
                 execution_time=execution_time,
                 command=final_command,
