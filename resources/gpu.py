@@ -133,7 +133,7 @@ class GPUResource(BaseResource):
         
         return status
     
-    def _get_gpu_info(self, timeout: int = 10) -> Optional[GPUInfo]:
+    def _get_gpu_info(self, timeout: int = 30) -> Optional[GPUInfo]:
         """Get GPU information with caching."""
         current_time = time.time()
         
@@ -144,67 +144,12 @@ class GPUResource(BaseResource):
         
         try:
             if self.remote_executor:
-                # Get GPU info from remote system
-                # Try multiple possible nvidia-smi paths
-                nvidia_commands = [
-                    "/usr/bin/nvidia-smi -q -x",
-                    "/usr/local/cuda/bin/nvidia-smi -q -x", 
-                    "nvidia-smi -q -x",  # Try without full path
-                    "PATH=$PATH:/usr/bin:/usr/local/cuda/bin nvidia-smi -q -x"
-                ]
-                
-                xml_output = None
-                for cmd in nvidia_commands:
-                    xml_output = self.remote_executor.execute(cmd, capture_output=True, timeout=timeout)
-                    if xml_output and xml_output.exit_code == 0:
-                        break
-                    elif xml_output and self.logger:
-                        self.logger.debug(f"Command '{cmd}' failed with exit code {xml_output.exit_code}")
-                        self.logger.debug(f"Command stdout: '{xml_output.stdout[:200]}'")
-                        self.logger.debug(f"Command stderr: '{xml_output.stderr[:200]}'")
-                
-                if xml_output and xml_output.exit_code == 0:
-                    # Log the raw output for debugging
-                    if self.logger:
-                        self.logger.debug(f"nvidia-smi raw output (first 200 chars): '{xml_output.stdout[:200]}'")
-                    
-                    if not xml_output.stdout.strip():
-                        if self.logger:
-                            self.logger.error("nvidia-smi returned empty output")
-                        return None
-                    
-                    # Clean the output - remove any command path that might be prepended
-                    xml_content = xml_output.stdout
-                    if not xml_content.strip().startswith('<?xml'):
-                        # Find the XML start
-                        xml_start = xml_content.find('<?xml')
-                        if xml_start > 0:
-                            xml_content = xml_content[xml_start:]
-                            if self.logger:
-                                self.logger.debug(f"Stripped command path from nvidia-smi output")
-                    
-                    try:
-                        root = ET.fromstring(xml_content)
-                        gpu_info = self._parse_gpu_xml(root)
-                        if gpu_info:
-                            self._gpu_info_cache = gpu_info
-                            self._cache_timestamp = current_time
-                            return gpu_info
-                    except ET.ParseError as e:
-                        if self.logger:
-                            self.logger.error(f"XML parsing failed: {e}")
-                            self.logger.error(f"Raw nvidia-smi output: '{xml_output.stdout[:500]}'")
-                            self.logger.error(f"Cleaned XML content: '{xml_content[:500]}'")
-                        return None
-                elif xml_output:
-                    self.logger.error(f"nvidia-smi command failed with exit code {xml_output.exit_code}")
-                    self.logger.error(f"Command stderr: '{xml_output.stderr}'")
-                    self.logger.error(f"Command stdout: '{xml_output.stdout}'")
-                    
-                    # Also try to get which nvidia-smi info for debugging
-                    debug_result = self.remote_executor.execute("which nvidia-smi || echo 'nvidia-smi not found in PATH'; echo $PATH", timeout=5)
-                    if debug_result and self.logger:
-                        self.logger.debug(f"PATH debug info: {debug_result.stdout}")
+                # Get GPU info using simple nvidia-smi commands (no XML parsing needed)
+                gpu_info = self._get_simple_gpu_info()
+                if gpu_info:
+                    self._gpu_info_cache = gpu_info
+                    self._cache_timestamp = current_time
+                    return gpu_info
             else:
                 # Get GPU info from local system
                 result = subprocess.run(
@@ -224,6 +169,67 @@ class GPUResource(BaseResource):
                 self.logger.error(f"Error getting GPU {self.gpu_id} info: {e}")
         
         return None
+    
+    def _get_simple_gpu_info(self) -> Optional[GPUInfo]:
+        """Get essential GPU info using simple nvidia-smi commands without XML."""
+        try:
+            # Get memory info - much smaller output
+            memory_result = self.remote_executor.execute(
+                f"nvidia-smi -i {self.gpu_id} --query-gpu=memory.total,memory.used,memory.free,name --format=csv,noheader,nounits",
+                timeout=10
+            )
+            
+            if not memory_result or memory_result.exit_code != 0:
+                if self.logger:
+                    self.logger.debug(f"Memory query failed for GPU {self.gpu_id}")
+                return None
+            
+            # Parse memory info: "24576, 69, 24199, NVIDIA GeForce RTX 3090"
+            memory_parts = [part.strip() for part in memory_result.stdout.strip().split(',')]
+            if len(memory_parts) < 4:
+                if self.logger:
+                    self.logger.error(f"Invalid memory info format: {memory_result.stdout}")
+                return None
+            
+            memory_total = int(memory_parts[0])
+            memory_used = int(memory_parts[1]) 
+            memory_free = int(memory_parts[2])
+            gpu_name = memory_parts[3]
+            
+            # Get process info - much smaller output
+            process_result = self.remote_executor.execute(
+                f"nvidia-smi -i {self.gpu_id} --query-compute-apps=pid,name,used_memory --format=csv,noheader,nounits",
+                timeout=10
+            )
+            
+            processes = []
+            if process_result and process_result.exit_code == 0 and process_result.stdout.strip():
+                for line in process_result.stdout.strip().split('\n'):
+                    if line.strip() and 'No running' not in line:
+                        parts = [part.strip() for part in line.split(',')]
+                        if len(parts) >= 3:
+                            try:
+                                processes.append({
+                                    'pid': int(parts[0]),
+                                    'process_name': parts[1],
+                                    'used_memory': int(parts[2]) if parts[2].isdigit() else 0
+                                })
+                            except ValueError:
+                                continue
+            
+            return GPUInfo(
+                gpu_id=self.gpu_id,
+                memory_total=memory_total,
+                memory_used=memory_used,
+                memory_free=memory_free,
+                gpu_name=gpu_name,
+                processes=processes
+            )
+            
+        except Exception as e:
+            if self.logger:
+                self.logger.error(f"Error getting simple GPU {self.gpu_id} info: {e}")
+            return None
     
     def _parse_gpu_xml(self, root: ET.Element) -> Optional[GPUInfo]:
         """Parse GPU information from nvidia-smi XML output."""
