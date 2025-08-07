@@ -68,6 +68,17 @@ class RemoteExecutor(BaseExecutor):
                 stderr_data = stderr.read().decode('utf-8', errors='ignore')
                 exit_code = stdout.channel.recv_exit_status()
 
+                # Enhanced error handling for exit code -1
+                if exit_code == -1:
+                    if self.logger:
+                        transport_active = ssh_client.get_transport() and ssh_client.get_transport().is_active()
+                        self.logger.warning(
+                            f"Remote command returned exit code -1, indicating a potential channel issue. "
+                            f"Command: '{final_command}'. Transport active: {transport_active}."
+                        )
+                    if not stderr_data:
+                        stderr_data = "Channel closed prematurely, no stderr received."
+
                 execution_time = time.time() - start_time
                 
                 execution_result = ExecutionResult(
