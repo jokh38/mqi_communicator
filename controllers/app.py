@@ -245,10 +245,13 @@ class Application:
                     
                     self.logger.info(f"Auto GPU allocation resolved: Selected GPU {selected_gpu_id}")
                     
-                except RuntimeError as e:
-                    # Log critical error and exit the application as specified
-                    self.logger.critical(f"Failed to find idle GPU for auto allocation: {e}")
-                    raise RuntimeError(f"Auto GPU allocation failed: {e}") from e
+                except RuntimeError:
+                    # If no idle GPU is found, log a warning and set to -1 (CPU mode)
+                    self.logger.warning("No idle GPU available. Proceeding with CPU-only mode (GPUID = -1).")
+
+                    # Update the configuration to use CPU
+                    self.config["moqui_tps_template"]["GPUID"] = -1
+                    self.config_manager.config["moqui_tps_template"]["GPUID"] = -1
                     
             elif isinstance(gpu_id, (int, str)) and str(gpu_id).isdigit():
                 # GPU ID is already a number, no action needed
