@@ -122,9 +122,8 @@ class AppConfig(BaseModel):
 class ConfigManager:
     """Configuration manager with Pydantic validation and environment-specific settings."""
     
-    def __init__(self, config_path: str = "config.json", logger=None):
+    def __init__(self, logger=None):
         """Initialize configuration manager."""
-        self.config_path = Path(config_path)
         self.logger = logger
         self.app_env = os.getenv("APP_ENV", "development")
         self.config_dict = self._load_config()
@@ -135,13 +134,11 @@ class ConfigManager:
         try:
             # Load default configuration
             default_config_path = Path("config/default.json")
-            if default_config_path.exists():
-                with open(default_config_path, 'r', encoding='utf-8') as f:
-                    config = json.load(f)
-            else:
-                # Fallback to original config.json if config/ directory doesn't exist
-                with open(self.config_path, 'r', encoding='utf-8') as f:
-                    config = json.load(f)
+            if not default_config_path.exists():
+                raise FileNotFoundError("Default configuration file 'config/default.json' not found.")
+
+            with open(default_config_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
             
             # Load environment-specific configuration and merge
             env_config_path = Path(f"config/{self.app_env}.json")

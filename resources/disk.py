@@ -21,7 +21,7 @@ class DiskResource(BaseResource):
                 return False
             
             # Get disk usage
-            _, used, free = shutil.disk_usage(self.path)
+            total, used, free = shutil.disk_usage(self.path)
             free_mb = free / (1024 * 1024)
             
             # Check if free space minus reserved space meets minimum requirement
@@ -89,7 +89,7 @@ class DiskResource(BaseResource):
         
         try:
             if self.path.exists():
-                _, used, free = shutil.disk_usage(self.path)
+                total, used, free = shutil.disk_usage(self.path)
                 status.update({
                     "total_space_mb": total / (1024 * 1024),
                     "used_space_mb": used / (1024 * 1024),

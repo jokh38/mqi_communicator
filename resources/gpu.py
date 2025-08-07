@@ -145,10 +145,10 @@ class GPUResource(BaseResource):
         try:
             if self.remote_executor:
                 # Get GPU info from remote system
-                xml_output = self.remote_executor.execute_command(
+                xml_output = self.remote_executor.execute(
                     "nvidia-smi -q -x", capture_output=True
                 )
-                if xml_output and xml_output.returncode == 0:
+                if xml_output and xml_output.exit_code == 0:
                     root = ET.fromstring(xml_output.stdout)
                     gpu_info = self._parse_gpu_xml(root)
                     if gpu_info:

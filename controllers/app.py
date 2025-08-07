@@ -17,7 +17,7 @@ from core.error_handler import ErrorHandler
 from core.state import StateManager
 
 # Services
-from services.resource_manager import ResourceManager
+from services.resource_manager import ResourceManager, ResourceConfig
 from services.case_service import CaseService
 from services.job_service import JobService
 
@@ -29,7 +29,7 @@ from remote.transfer import TransferManager
 from executors.remote import RemoteExecutor
 
 # Other components
-from status_display import StatusDisplay
+from core.display import StatusDisplay
 from processing_steps import WorkflowEngine
 from process_monitor import ProcessMonitor
 
@@ -43,9 +43,8 @@ from .backup_manager import BackupManager
 class Application:
     """Main application class that orchestrates all system components."""
     
-    def __init__(self, config_file: str = "config.json"):
+    def __init__(self):
         """Initialize application with all components."""
-        self.config_file = config_file
         self.running = False
         self.threads = []
         
@@ -102,7 +101,7 @@ class Application:
             self.logger = Logger(log_directory="logs", log_queue=self.log_queue)
             
             # Initialize configuration manager
-            self.config_manager = ConfigManager(config_path=self.config_file, logger=self.logger)
+            self.config_manager = ConfigManager(logger=self.logger)
             self.config = self.config_manager.get_config()
 
             # Update logger with configuration
@@ -161,14 +160,17 @@ class Application:
                 })
 
             # Initialize resource manager
-            self.resource_manager = ResourceManager(
+            resource_config = ResourceConfig(
                 total_gpus=self.config_manager.get_total_gpus(),
                 reserved_gpus=self.config_manager.get_reserved_gpus(),
                 memory_threshold=self.config_manager.get_memory_threshold(),
-                remote_executor=self.remote_executor,
                 local_base=self.config_manager.get_local_logdata_path(),
                 remote_base=self.config_manager.get_remote_workspace_path(),
-                output_base=self.config_manager.get_local_output_path(),
+                output_base=self.config_manager.get_local_output_path()
+            )
+            self.resource_manager = ResourceManager(
+                config=resource_config,
+                remote_executor=self.remote_executor,
                 logger=self.logger
             )
 
@@ -239,14 +241,17 @@ class Application:
                     self.config["moqui_tps_template"]["GPUID"] = selected_gpu_id
                     
                     # Update the config manager as well to persist the change during this session
-                    self.config_manager.config["moqui_tps_template"]["GPUID"] = selected_gpu_id
+                    self.config_manager.config.moqui_tps_template["GPUID"] = selected_gpu_id
                     
                     self.logger.info(f"Auto GPU allocation resolved: Selected GPU {selected_gpu_id}")
                     
-                except RuntimeError as e:
-                    # Log critical error and exit the application as specified
-                    self.logger.critical(f"Failed to find idle GPU for auto allocation: {e}")
-                    raise RuntimeError(f"Auto GPU allocation failed: {e}") from e
+                except RuntimeError:
+                    # If no idle GPU is found, log a warning and set to -1 (CPU mode)
+                    self.logger.warning("No idle GPU available. Proceeding with CPU-only mode (GPUID = -1).")
+
+                    # Update the configuration to use CPU
+                    self.config["moqui_tps_template"]["GPUID"] = -1
+                    self.config_manager.config.moqui_tps_template["GPUID"] = -1
                     
             elif isinstance(gpu_id, (int, str)) and str(gpu_id).isdigit():
                 # GPU ID is already a number, no action needed
@@ -268,7 +273,8 @@ class Application:
                 state_manager=self.state_manager,
                 resource_manager=self.resource_manager,
                 remote_executor=self.remote_executor,
-                case_service=self.case_service
+                case_service=self.case_service,
+                shared_state=self.shared_state
             )
             
             # Initialize Scheduler
@@ -300,7 +306,8 @@ class Application:
                 shared_state_lock=self.shared_state_lock,
                 state_manager=self.state_manager,
                 job_service=self.job_service,
-                error_handler=self.error_handler
+                error_handler=self.error_handler,
+                status_display=self.status_display
             )
             
             # Initialize BackupManager
@@ -359,7 +366,7 @@ class Application:
         """Perform initial system health check and case scan."""
         self.logger.info("Performing initial system health check and display update.")
         self.system_monitor.monitor_system_health()
-        self.system_monitor.update_status_display()
+        self.system_monitor.update_display_data()
 
         self.logger.info("Performing initial scan for new cases.")
         self.scheduler.scan_for_new_cases()
@@ -391,7 +398,7 @@ class Application:
         while datetime.now() < next_scan_time and self.running:
             time.sleep(10)  # Check every 10 seconds for more responsive display
             
-            self.system_monitor.update_status_display()
+            self.system_monitor.update_display_data()
             self._perform_periodic_maintenance()
     
     def _perform_periodic_maintenance(self) -> None:
