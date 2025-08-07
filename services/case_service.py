@@ -279,19 +279,14 @@ class CaseService:
             return case.current_task
         return None
     
-    def get_cases_by_status(self, status: str) -> List[Case]:
-        """Get all cases with specified status."""
-        # This would need to be implemented in StateManager
-        # For now, return empty list
-        return []
     
     def get_processing_cases(self) -> List[Case]:
         """Get list of currently processing cases."""
-        return self.get_cases_by_status("PROCESSING")
+        return self.state_manager.get_by_status("PROCESSING")
     
     def get_failed_cases(self) -> List[Case]:
         """Get list of failed cases that can be retried."""
-        return self.get_cases_by_status("FAILED")
+        return self.state_manager.get_by_status("FAILED")
     
     def analyze_case_beam_count(self, case_id: str) -> int:
         """Analyze case directory to determine number of beams."""
@@ -339,7 +334,7 @@ class CaseService:
         # For now, skip implementation
         pass
     
-    def recover_stale_cases(self, max_processing_hours: int = 1) -> Dict[str, Any]:
+    def recover_stale_jobs(self, max_processing_hours: int = 1) -> Dict[str, Any]:
         """Recover cases that have been stuck in PROCESSING state for too long."""
         # This would need to be implemented with proper StateManager integration
         recovered_cases = []

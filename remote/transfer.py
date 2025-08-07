@@ -251,9 +251,7 @@ class TransferManager:
                         transfer_progress=progress
                     )
             
-            download_start_time = time.time()
             self.sftp.get(remote_path, str(local_file), callback=progress_callback)
-            download_duration = time.time() - download_start_time
             
             # Verify download
             if local_file.exists():

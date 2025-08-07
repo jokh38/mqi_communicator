@@ -179,6 +179,22 @@ class ResourceManager:
             # This would need to be implemented in GPUResource
             pass
         return cleaned_gpus
+
+    def cleanup_zombie_processes(self) -> List[int]:
+        """Clean up zombie processes."""
+        cleaned_gpus = []
+        for _, gpu_resource in self.gpu_resources.items():
+            # This would need to be implemented in GPUResource
+            pass
+        return cleaned_gpus
+
+    def cleanup_stale_locks(self) -> List[int]:
+        """Clean up stale locks."""
+        cleaned_gpus = []
+        for _, gpu_resource in self.gpu_resources.items():
+            # This would need to be implemented in GPUResource
+            pass
+        return cleaned_gpus
     
     # Disk Resource Management
     def get_disk_usage(self, location: str = 'local') -> Dict[str, Any]:
@@ -195,27 +211,53 @@ class ResourceManager:
     def _get_remote_disk_usage(self) -> Dict[str, Any]:
         """Get remote disk usage via remote executor."""
         try:
-            if not self.remote_executor:
-                return {"error": "No remote executor available"}
+            if not self.remote_executor or not self.remote_base:
+                return {"error": "No remote executor or remote base path available"}
             
-            result = self.remote_executor.execute_command("df -BG . | tail -1")
-            if result["exit_code"] != 0:
-                return {"error": f"df command failed: {result['stderr']}"}
+            # Command to get disk usage of the remote base directory's filesystem
+            command = "df -BG . | tail -n 1"
+            result = self.remote_executor.execute(command, working_dir=self.remote_base)
             
-            fields = result["stdout"].split()
-            if len(fields) < 4:
-                return {"error": "Unexpected df output format"}
+            if not result.success:
+                error_message = f"df command failed with exit code {result.exit_code}: {result.stderr}"
+                if self.logger:
+                    self.logger.error(error_message)
+                return {"error": error_message}
             
-            total_gb = float(fields[1].rstrip('G'))
-            used_gb = float(fields[2].rstrip('G'))
-            available_gb = float(fields[3].rstrip('G'))
-            
-            return {
-                "total_gb": total_gb,
-                "used_gb": used_gb,
-                "free_gb": available_gb,
-                "usage_percent": round((used_gb / total_gb) * 100, 2)
-            }
+            # Expected output format from 'df -BG .':
+            # Filesystem     1G-blocks  Used Available Use% Mounted on
+            # /dev/sda1           100G   50G       50G  50% /
+            fields = result.stdout.split()
+            if len(fields) < 6:
+                error_message = f"Unexpected df output format: {result.stdout}"
+                if self.logger:
+                    self.logger.error(error_message)
+                return {"error": error_message}
+
+            try:
+                # Parse values, removing 'G' suffix and converting to float
+                total_gb = float(fields[1].rstrip('G'))
+                used_gb = float(fields[2].rstrip('G'))
+                available_gb = float(fields[3].rstrip('G'))
+
+                # Ensure total_gb is not zero to avoid division by zero
+                if total_gb == 0:
+                    usage_percent = 0.0
+                else:
+                    usage_percent = round((used_gb / total_gb) * 100, 2)
+
+                return {
+                    "total_gb": total_gb,
+                    "used_gb": used_gb,
+                    "free_gb": available_gb,
+                    "usage_percent": usage_percent,
+                    "path": self.remote_base
+                }
+            except (ValueError, IndexError) as e:
+                error_message = f"Failed to parse df output: {result.stdout}, error: {e}"
+                if self.logger:
+                    self.logger.error(error_message)
+                return {"error": error_message}
             
         except Exception as e:
             if self.logger:
