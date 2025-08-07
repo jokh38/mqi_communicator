@@ -14,13 +14,14 @@ from pathlib import Path
 class LifecycleManager:
     """Manages the application's lifecycle: startup, shutdown, and crash recovery."""
     
-    def __init__(self, logger, state_manager, resource_manager, remote_executor, case_service):
+    def __init__(self, logger, state_manager, resource_manager, remote_executor, case_service, shared_state):
         """Initialize lifecycle manager with dependencies."""
         self.logger = logger
         self.state_manager = state_manager
         self.resource_manager = resource_manager
         self.remote_executor = remote_executor
         self.case_service = case_service
+        self.shared_state = shared_state
         
         self.lock_file = Path("mqi_communicator.pid")
         
@@ -115,7 +116,7 @@ class LifecycleManager:
                 return
                 
             # Query the StateManager for all cases with PROCESSING status
-            processing_cases = self.state_manager.get_cases_by_status("PROCESSING")
+            processing_cases = self.state_manager.get_by_status("PROCESSING")
             
             if processing_cases:
                 self.logger.info(f"Found {len(processing_cases)} cases in PROCESSING state, synchronizing active_cases")
@@ -196,7 +197,7 @@ class LifecycleManager:
             if not hasattr(self, 'case_service') or not self.remote_executor:
                 return
                 
-            processing_cases = self.state_manager.get_cases_by_status("PROCESSING")
+            processing_cases = self.state_manager.get_by_status("PROCESSING")
             if not processing_cases:
                 return
                 

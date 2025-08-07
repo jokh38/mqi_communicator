@@ -53,7 +53,7 @@ class SystemMonitor:
     def monitor_system_health(self) -> None:
         """Monitor system health, update shared state, and log critical conditions."""
         try:
-            gpu_status = self.resource_manager.get_gpu_status_summary()
+            gpu_status = self.resource_manager.get_all_gpu_status()
             cpu_percent = psutil.cpu_percent(interval=1)
             memory = psutil.virtual_memory()
             disk = psutil.disk_usage('/')
@@ -83,7 +83,7 @@ class SystemMonitor:
         except Exception as e:
             self.error_handler.handle_error(e, {"operation": "system_health_monitoring"})
 
-    def _update_display_data(self) -> None:
+    def update_display_data(self) -> None:
         """Update the status display with the latest data from the shared state."""
         try:
             with self.shared_state_lock:
@@ -133,7 +133,7 @@ class SystemMonitor:
         while self.running:
             try:
                 self.monitor_system_health()
-                self._update_display_data()
+                self.update_display_data()
                 time.sleep(self.monitoring_interval)
             except Exception as e:
                 self.error_handler.handle_error(e, {"operation": "background_system_monitoring"})

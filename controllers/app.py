@@ -273,7 +273,8 @@ class Application:
                 state_manager=self.state_manager,
                 resource_manager=self.resource_manager,
                 remote_executor=self.remote_executor,
-                case_service=self.case_service
+                case_service=self.case_service,
+                shared_state=self.shared_state
             )
             
             # Initialize Scheduler
@@ -365,7 +366,7 @@ class Application:
         """Perform initial system health check and case scan."""
         self.logger.info("Performing initial system health check and display update.")
         self.system_monitor.monitor_system_health()
-        self.system_monitor.update_status_display()
+        self.system_monitor.update_display_data()
 
         self.logger.info("Performing initial scan for new cases.")
         self.scheduler.scan_for_new_cases()
@@ -397,7 +398,7 @@ class Application:
         while datetime.now() < next_scan_time and self.running:
             time.sleep(10)  # Check every 10 seconds for more responsive display
             
-            self.system_monitor.update_status_display()
+            self.system_monitor.update_display_data()
             self._perform_periodic_maintenance()
     
     def _perform_periodic_maintenance(self) -> None:
