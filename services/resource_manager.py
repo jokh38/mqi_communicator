@@ -179,6 +179,22 @@ class ResourceManager:
             # This would need to be implemented in GPUResource
             pass
         return cleaned_gpus
+
+    def cleanup_zombie_processes(self) -> List[int]:
+        """Clean up zombie processes."""
+        cleaned_gpus = []
+        for _, gpu_resource in self.gpu_resources.items():
+            # This would need to be implemented in GPUResource
+            pass
+        return cleaned_gpus
+
+    def cleanup_stale_locks(self) -> List[int]:
+        """Clean up stale locks."""
+        cleaned_gpus = []
+        for _, gpu_resource in self.gpu_resources.items():
+            # This would need to be implemented in GPUResource
+            pass
+        return cleaned_gpus
     
     # Disk Resource Management
     def get_disk_usage(self, location: str = 'local') -> Dict[str, Any]:
