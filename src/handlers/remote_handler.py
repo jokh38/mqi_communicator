@@ -321,8 +321,11 @@ class RemoteHandler:
             })
             return UploadResult(success=False, error=error_msg)
 
-    def upload_to_pc_localdata(self, local_file: Path, case_id: str) -> UploadResult:
-        """Uploads a file to the PC_localdata server."""
+    def upload_to_pc_localdata(self, local_path: Path, case_id: str) -> UploadResult:
+        """Uploads a file or an entire directory to the PC_localdata server."""
+        if not local_path.exists():
+            return UploadResult(success=False, error=f"Local path does not exist: {local_path}")
+
         config = self.settings.get_pc_localdata_connection()
         if not config:
             self.logger.error("PC_localdata connection not configured.", {"case_id": case_id})
@@ -338,32 +341,52 @@ class RemoteHandler:
             self.logger.error(msg, {"case_id": case_id})
             return UploadResult(success=False, error=msg)
 
-        remote_target_dir = f"{remote_base_dir}/{case_id}".replace("\\", "/")
-        remote_file_path = f"{remote_target_dir}/{local_file.name}"
-
         try:
             with paramiko.SSHClient() as ssh_client:
                 ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-                ssh_client.connect(
-                    hostname=host,
-                    username=user,
-                    key_filename=key_path,
-                    timeout=30
-                )
+                ssh_client.connect(hostname=host, username=user, key_filename=key_path, timeout=30)
 
                 with ssh_client.open_sftp() as sftp_client:
-                    self._mkdir_p(sftp_client, remote_target_dir)
-                    sftp_client.put(str(local_file), remote_file_path)
+                    if local_path.is_dir():
+                        # It's a directory, upload recursively
+                        remote_case_dir = f"{remote_base_dir}/{case_id}".replace("\\", "/")
+                        self._mkdir_p(sftp_client, remote_case_dir)
 
-            self.logger.info("Successfully uploaded file to PC_localdata.", {
-                "case_id": case_id,
-                "local_file": str(local_file),
-                "remote_file": remote_file_path
-            })
+                        for root, _, files in os.walk(str(local_path)):
+                            relative_path = Path(root).relative_to(local_path)
+                            remote_dir = (Path(remote_case_dir) / relative_path).as_posix()
+
+                            if str(relative_path) != '.':
+                                self._mkdir_p(sftp_client, remote_dir)
+
+                            for file in files:
+                                local_file = Path(root) / file
+                                remote_file = (Path(remote_dir) / file).as_posix()
+                                sftp_client.put(str(local_file), remote_file)
+                                self.logger.debug(f"Uploaded file {local_file} to {remote_file}")
+
+                        self.logger.info("Successfully uploaded directory to PC_localdata.", {
+                            "case_id": case_id,
+                            "local_directory": str(local_path),
+                            "remote_directory": remote_case_dir
+                        })
+                    else:
+                        # It's a single file
+                        remote_target_dir = f"{remote_base_dir}/{case_id}".replace("\\", "/")
+                        remote_file_path = f"{remote_target_dir}/{local_path.name}"
+                        self._mkdir_p(sftp_client, remote_target_dir)
+                        sftp_client.put(str(local_path), remote_file_path)
+                        self.logger.info("Successfully uploaded file to PC_localdata.", {
+                            "case_id": case_id,
+                            "local_file": str(local_path),
+                            "remote_file": remote_file_path
+                        })
+
             return UploadResult(success=True)
         except Exception as e:
-            self.logger.error("Failed to upload file to PC_localdata", {
+            self.logger.error("Failed to upload to PC_localdata", {
                 "case_id": case_id,
+                "local_path": str(local_path),
                 "error": str(e)
             })
             return UploadResult(success=False, error=str(e))

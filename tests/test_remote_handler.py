@@ -84,3 +84,65 @@ def test_upload_to_pc_localdata_success(mock_ssh_client_class, remote_handler: R
     assert isinstance(result, UploadResult)
     assert result.success is True
     assert result.error is None
+
+
+@patch('paramiko.SSHClient')
+def test_upload_directory_to_pc_localdata_success(mock_ssh_client_class, remote_handler: RemoteHandler, tmp_path: Path):
+    """
+    Tests the successful upload of an entire directory to PC_localdata.
+    """
+    # Arrange
+    mock_ssh_instance = MagicMock()
+    mock_sftp_instance = MagicMock()
+    mock_ssh_client_class.return_value.__enter__.return_value = mock_ssh_instance
+    mock_ssh_instance.open_sftp.return_value.__enter__.return_value = mock_sftp_instance
+
+    # Create a local directory structure to upload
+    local_dir = tmp_path / "case-002-results"
+    local_dir.mkdir()
+    (local_dir / "file1.dcm").touch()
+    nested_dir = local_dir / "nested"
+    nested_dir.mkdir()
+    (nested_dir / "file2.dcm").touch()
+
+    case_id = "case-002"
+    remote_handler._mkdir_p = MagicMock()
+
+    # Act
+    result = remote_handler.upload_to_pc_localdata(local_dir, case_id)
+
+    # Assert
+    assert result.success is True
+    assert result.error is None
+
+    # Check that remote directories were created
+    pc_local_config = remote_handler.settings.get_pc_localdata_connection()
+    base_remote_dir = f"{pc_local_config['remote_base_dir']}/{case_id}".replace("\\", "/")
+    nested_remote_dir = f"{base_remote_dir}/nested"
+
+    # Check that mkdir_p was called for base and nested directories
+    assert remote_handler._mkdir_p.call_count == 2
+    remote_handler._mkdir_p.assert_any_call(mock_sftp_instance, base_remote_dir)
+    remote_handler._mkdir_p.assert_any_call(mock_sftp_instance, nested_remote_dir)
+
+    # Check that both files were uploaded
+    assert mock_sftp_instance.put.call_count == 2
+    mock_sftp_instance.put.assert_any_call(str(local_dir / "file1.dcm"), f"{base_remote_dir}/file1.dcm")
+    mock_sftp_instance.put.assert_any_call(str(nested_dir / "file2.dcm"), f"{nested_remote_dir}/file2.dcm")
+
+
+def test_upload_to_pc_localdata_with_nonexistent_local_path(remote_handler: RemoteHandler, tmp_path: Path):
+    """
+    Tests that upload_to_pc_localdata returns a failure result when the local path does not exist.
+    """
+    # Arrange
+    non_existent_path = tmp_path / "non_existent_dir"
+    case_id = "case-003"
+
+    # Act
+    result = remote_handler.upload_to_pc_localdata(non_existent_path, case_id)
+
+    # Assert
+    assert result.success is False
+    assert result.error is not None
+    assert "does not exist" in result.error.lower()

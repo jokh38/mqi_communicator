@@ -266,8 +266,6 @@ class DownloadState(WorkflowState):
     def get_state_name(self) -> str:
         return "Download Results"
 
-import shutil
-
 class PostprocessingState(WorkflowState):
     """Postprocessing state - runs RawToDCM locally for a single beam's output."""
 
@@ -303,14 +301,10 @@ class PostprocessingState(WorkflowState):
             "dcm_files_count": len(dcm_files)
         })
 
-        # Create a zip archive of the output directory
-        zip_output_path = output_dir.parent / f"{output_dir.name}.zip"
-        shutil.make_archive(str(zip_output_path.with_suffix('')), 'zip', str(output_dir))
-
-        context.shared_context["final_result_path"] = str(zip_output_path)
-        context.logger.info("Created final result archive.", {
+        context.shared_context["final_result_path"] = str(output_dir)
+        context.logger.info("Final result is a directory.", {
             "beam_id": context.id,
-            "archive_path": str(zip_output_path)
+            "directory_path": str(output_dir)
         })
 
         input_file.unlink()
@@ -331,10 +325,10 @@ class UploadResultToPCLocalDataState(WorkflowState):
 
     @handle_state_exceptions
     def execute(self, manager: "WorkflowManager") -> Optional["WorkflowState"]:
-        final_result_file_str = manager.shared_context.get("final_result_path")
+        final_result_path_str = manager.shared_context.get("final_result_path")
 
-        if not final_result_file_str or not Path(final_result_file_str).exists():
-            raise ProcessingError(f"Final result file not found: {final_result_file_str}")
+        if not final_result_path_str or not Path(final_result_path_str).exists():
+            raise ProcessingError(f"Final result path not found: {final_result_path_str}")
 
         beam = manager.case_repo.get_beam(manager.id)
         if not beam:
@@ -342,7 +336,7 @@ class UploadResultToPCLocalDataState(WorkflowState):
 
         case_id = beam.parent_case_id
         result = manager.remote_handler.upload_to_pc_localdata(
-            local_file=Path(final_result_file_str),
+            local_path=Path(final_result_path_str),
             case_id=case_id
         )
 
