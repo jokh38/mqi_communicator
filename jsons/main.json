@@ -1,0 +1,74 @@
+{
+    "file_name": "main.py",
+    "description": "Master Process: Watches for new cases, manages the process pool, and serves as the main entry point for the application.",
+    "classes": [
+        {
+            "name": "CaseDetectionHandler",
+            "docstring": "File system event handler for detecting new cases. Monitors directory creation events and adds new cases to the processing queue.",
+            "properties": [
+                {
+                    "name": "case_queue",
+                    "type": "multiprocessing.Queue",
+                    "description": "Queue for communicating new cases to worker processes."
+                },
+                {
+                    "name": "db_handler",
+                    "type": "DatabaseHandler",
+                    "description": "Handler for database operations to persist case information."
+                },
+                {
+                    "name": "logger",
+                    "type": "StructuredLogger",
+                    "description": "Logger for recording events."
+                }
+            ],
+            "methods": [
+                {
+                    "name": "__init__",
+                    "docstring": "Initializes the CaseDetectionHandler.",
+                    "parameters": [
+                        {"name": "case_queue", "type": "multiprocessing.Queue"},
+                        {"name": "db_handler", "type": "DatabaseHandler"},
+                        {"name": "logger", "type": "StructuredLogger"}
+                    ]
+                },
+                {
+                    "name": "on_created",
+                    "docstring": "Handles directory creation events, adding new cases to the queue.",
+                    "parameters": [
+                        {"name": "event", "type": "watchdog.events.FileSystemEvent"}
+                    ],
+                    "returns": "None"
+                }
+            ],
+            "refactoring_suggestions": []
+        }
+    ],
+    "functions": [
+        {
+            "name": "main",
+            "docstring": "Main entry point for the MQI Communicator application. Initializes all components and starts the main processing loop.",
+            "returns": "NoReturn",
+            "refactoring_suggestions": [
+                {
+                    "issue": "Violation of Single Responsibility Principle",
+                    "description": "The main function is responsible for too many tasks: configuration, logging, database initialization, GPU monitoring, UI process management, and the main worker loop. This makes the function long, complex, and difficult to test.",
+                    "solution": "Delegate the responsibility of object creation and dependency injection to a dedicated 'Composition Root' or 'Assembler' module (as suggested for `worker.py` in `refactor.md`). The `main` function should only be responsible for starting and stopping the application.",
+                    "benefit": "Improves modularity and testability. Each component can be initialized and tested independently. Simplifies the application's entry point."
+                },
+                {
+                    "issue": "Complex and Nested Try-Except Blocks",
+                    "description": "The function has multiple levels of nested try-except blocks, which complicates the control flow and makes it hard to understand the error handling strategy.",
+                    "solution": "Refactor the initialization logic into separate functions, each with its own specific exception handling. For example, `initialize_logging()`, `initialize_database()`, `start_monitors()`. The main loop should also be in its own function.",
+                    "benefit": "Cleaner code, improved readability, and more granular error handling."
+                },
+                {
+                    "issue": "Hardcoded Initialization Sequence",
+                    "description": "The order of initialization is hardcoded and tightly coupled. For instance, the `DisplayProcessManager` and `GPUMonitor` are started before the main worker pool.",
+                    "solution": "Introduce a dependency injection framework or a simple container to manage the lifecycle of components. This would make the relationships between components explicit and manageable.",
+                    "benefit": "Reduces coupling and increases the flexibility of the application's startup process."
+                }
+            ]
+        }
+    ]
+}

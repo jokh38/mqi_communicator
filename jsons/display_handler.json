@@ -1,0 +1,67 @@
+{
+    "file_name": "display_handler.py",
+    "description": "Manages the rich console display for real-time progress and status dashboard using the 'rich' library.",
+    "classes": [
+        {
+            "name": "DisplayHandler",
+            "docstring": "Handler for the rich console display and status dashboard.",
+            "properties": [
+                {"name": "console", "type": "rich.console.Console", "description": "The Rich console object."},
+                {"name": "active_cases", "type": "Dict[str, Any]", "description": "A dictionary of active cases being displayed."},
+                {"name": "system_status", "type": "Dict[str, Any]", "description": "A dictionary of system-wide statistics."},
+                {"name": "gpu_resources", "type": "Dict[str, Dict[str, Any]]", "description": "A dictionary of GPU resource statuses."},
+                {"name": "activity_log", "type": "collections.deque", "description": "A deque for storing recent activity log entries."},
+                {"name": "db_handler", "type": "DatabaseHandler", "description": "The database handler for fetching data."},
+                {"name": "live", "type": "rich.live.Live", "description": "The Rich Live display object."}
+            ],
+            "methods": [
+                {"name": "__init__", "docstring": "Initializes the DisplayHandler."},
+                {"name": "_create_layout", "docstring": "Defines the console layout structure."},
+                {"name": "_refresh_system_stats", "docstring": "Fetches system statistics from the database."},
+                {"name": "_refresh_gpu_data", "docstring": "Fetches GPU resource data from the database."},
+                {"name": "_refresh_cases_data", "docstring": "Fetches active cases data from the database."},
+                {"name": "_create_cases_table", "docstring": "Creates the rich Table for active cases."},
+                {"name": "_create_gpu_status_table", "docstring": "Creates the rich Table for GPU resources."},
+                {"name": "_format_gpu_status", "docstring": "Formats GPU status strings with color."},
+                {"name": "update_display", "docstring": "Updates the live display with the latest data."},
+                {"name": "start", "docstring": "Starts the live display in a separate thread."},
+                {"name": "stop", "docstring": "Stops the live display thread."}
+            ],
+            "refactoring_suggestions": [
+                {
+                    "issue": "Violation of Single Responsibility Principle (SRP)",
+                    "description": "The `DisplayHandler` class is responsible for three distinct concerns: fetching data from the database, formatting that data for display, and rendering the UI components. This makes the class large and difficult to maintain.",
+                    "solution": "Decompose the class into three separate components within a new `ui` package, as specified in `refactor.md`: 1. A `DashboardDataProvider` class in `ui/provider.py` to handle all data fetching from repositories. 2. A new, leaner `DisplayHandler` class in `ui/display.py` that only receives data and renders the UI. 3. A set of helper functions in `ui/formatter.py` to handle data formatting (e.g., coloring text based on status).",
+                    "benefit": "Achieves clear separation of concerns, making each part independently testable and easier to modify. For example, the UI can be changed without touching the data fetching logic, and vice-versa."
+                },
+                {
+                    "issue": "Direct Dependency on Low-Level Data Handler",
+                    "description": "The `DisplayHandler` directly depends on `DatabaseHandler`, which is a low-level data access component. According to the new architecture, UI components should depend on higher-level abstractions like repositories or dedicated data providers.",
+                    "solution": "After creating the `ui/provider.py` module, make it responsible for interacting with the new `CaseRepository` and `GpuRepository`. The `DisplayHandler` will then only interact with the `DashboardDataProvider`, completely removing its knowledge of the database.",
+                    "benefit": "Decouples the UI from the data layer, adhering to the principles of layered architecture. This allows the data access logic to change without affecting the UI code."
+                },
+                {
+                    "issue": "Manual UI Updates and Threading Logic",
+                    "description": "The class manages its own threading, locking, and a manual refresh loop (`_display_loop`). This adds complexity that could be handled by a more robust application framework.",
+                    "solution": "While the current approach is functional, a future improvement could involve using a more structured application framework (like a service container) to manage the lifecycle of the display service, potentially simplifying the threading and state management.",
+                    "benefit": "Reduces boilerplate code and potential concurrency issues, allowing the developer to focus more on the UI logic itself."
+                }
+            ]
+        }
+    ],
+    "functions": [
+        {
+            "name": "main",
+            "docstring": "Main entry point when `display_handler.py` is run as a standalone subprocess. It initializes its own configuration, logging, and database connection to run the dashboard independently.",
+            "returns": "None",
+            "refactoring_suggestions": [
+                {
+                    "issue": "Code Duplication",
+                    "description": "The `main` function duplicates initialization logic (config, logging, db connection) that is also present in the main `main.py` and will be in the refactored `worker.py`. This violates the DRY (Don't Repeat Yourself) principle.",
+                    "solution": "The refactoring plan moves the `DisplayHandler` to be managed by a `DisplayProcessManager`. The logic in this `main` function should be entirely superseded by the `DisplayProcessManager`'s responsibility to start the display process, passing the necessary configuration.",
+                    "benefit": "Centralizes application startup and configuration logic, reducing redundancy and making the system easier to manage."
+                }
+            ]
+        }
+    ]
+}

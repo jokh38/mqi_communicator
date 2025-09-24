@@ -1,0 +1,46 @@
+{
+    "file_name": "display_process_manager.py",
+    "description": "Provides a robust interface for managing the DisplayHandler as an independent subprocess to prevent database lock contention and deadlocks.",
+    "classes": [
+        {
+            "name": "DisplayProcessManager",
+            "docstring": "A professional manager for the DisplayHandler subprocess lifecycle, handling its creation, monitoring, and clean termination.",
+            "properties": [
+                {"name": "database_path", "type": "str", "description": "The resolved path to the SQLite database file."},
+                {"name": "config", "type": "Optional[Config]", "description": "The application configuration object."},
+                {"name": "logger", "type": "Optional[StructuredLogger]", "description": "A logger instance for status messages."},
+                {"name": "project_root", "type": "Path", "description": "The root directory of the project."},
+                {"name": "_process", "type": "Optional[subprocess.Popen]", "description": "The managed subprocess object."},
+                {"name": "_is_running", "type": "bool", "description": "A flag indicating if the process is currently active."}
+            ],
+            "methods": [
+                {"name": "__init__", "docstring": "Initializes the DisplayProcessManager."},
+                {"name": "start", "docstring": "Starts the DisplayHandler as an independent process, returning True on success."},
+                {"name": "stop", "docstring": "Stops the DisplayHandler process gracefully, with a specified timeout."},
+                {"name": "is_running", "docstring": "Checks if the display process is currently running."},
+                {"name": "get_process_info", "docstring": "Returns a dictionary with information about the managed process."},
+                {"name": "restart", "docstring": "Restarts the display process."}
+            ],
+            "refactoring_suggestions": [
+                {
+                    "issue": "File Naming and Location",
+                    "description": "The file is named specifically for the 'display' process, but its functionality is generic process management. It's also located in the `src` root, not in a designated layer.",
+                    "solution": "Rename the file to `process_manager.py` and move it to the `src/infrastructure/` directory as planned in `refactor.md`. This clarifies that it's a general-purpose, low-level component.",
+                    "benefit": "Improves project structure and aligns the component with its role in the layered architecture."
+                },
+                {
+                    "issue": "OS-Specific Logic is Hardcoded",
+                    "description": "The `start` method contains an `if platform.system() == 'Windows':` block. This mixes platform-specific logic directly into the main class, making it harder to extend for other operating systems or execution environments.",
+                    "solution": "Apply the Strategy Pattern. Create an abstract `ProcessCreationStrategy` base class with `create_process` method. Implement concrete strategies like `WindowsConsoleStrategy` and `PosixPipeStrategy`. The `ProcessManager` would be initialized with a specific strategy object and would delegate the process creation call to it.",
+                    "benefit": "Decouples the process management logic from the platform-specific details of process creation. This makes the code cleaner, more extensible, and easier to test, as strategies can be mocked."
+                },
+                {
+                    "issue": "Hardcoded Subprocess Command",
+                    "description": "The `_get_display_command` method hardcodes `['sys.executable', '-m', 'src.display_handler', self.database_path]`. This tightly couples the process manager to the `display_handler` module.",
+                    "solution": "Generalize the manager to accept the command to be executed as an argument in its `start` method or constructor. This would make the `ProcessManager` a truly reusable component for any subprocess.",
+                    "benefit": "Transforms the class from a single-purpose manager into a generic, reusable utility, which is highly desirable for infrastructure-level code."
+                }
+            ]
+        }
+    ]
+}

@@ -1,0 +1,176 @@
+{
+    "file_name": "config.py",
+    "description": "Pydantic-based configuration loader and validator. Provides automatic, fail-fast validation of the configuration structure.",
+    "classes": [
+        {
+            "name": "DashboardConfig",
+            "docstring": "Configuration for the dashboard.",
+            "properties": [
+                {"name": "auto_start", "type": "bool", "description": "Set to false to disable automatic dashboard launch"},
+                {"name": "refresh_interval_seconds", "type": "float", "description": "How often (in seconds) the dashboard refreshes."}
+            ]
+        },
+        {
+            "name": "ApplicationConfig",
+            "docstring": "Configuration for the main application.",
+            "properties": [
+                {"name": "max_workers", "type": "int", "description": "Number of concurrent workers"},
+                {"name": "scan_interval_seconds", "type": "int", "description": "Directory scan interval"},
+                {"name": "polling_interval_seconds", "type": "int", "description": "HPC polling interval"},
+                {"name": "local_execution_timeout_seconds", "type": "int", "description": "Timeout for local subprocess execution"},
+                {"name": "dose_raw_filename", "type": "str", "description": "Expected raw dose file name"},
+                {"name": "completion_marker_filename", "type": "str", "description": "HPC job completion marker filename"}
+            ]
+        },
+        {
+            "name": "RetryPolicyConfig",
+            "docstring": "Configuration for the retry policy.",
+            "properties": [
+                {"name": "max_retries", "type": "int", "description": "Maximum number of retry attempts"},
+                {"name": "initial_delay_seconds", "type": "int", "description": "Initial delay between retries"},
+                {"name": "max_delay_seconds", "type": "int", "description": "Maximum delay between retries"},
+                {"name": "backoff_multiplier", "type": "float", "description": "Backoff multiplier for exponential backoff"}
+            ]
+        },
+        {
+            "name": "LoggingConfig",
+            "docstring": "Configuration for logging.",
+            "properties": [
+                {"name": "log_file_path", "type": "str", "description": "Path for the main log file"},
+                {"name": "log_level", "type": "str", "description": "Logging level for the file"},
+                {"name": "console_level", "type": "str", "description": "Logging level for the console"},
+                {"name": "tz_hours", "type": "int", "description": "Timezone offset in hours for logs"}
+            ]
+        },
+        {
+            "name": "DatabaseConfig",
+            "docstring": "Configuration for the database.",
+            "properties": [
+                {"name": "cache_size_mb", "type": "int", "description": "SQLite cache size in MB"},
+                {"name": "busy_timeout_ms", "type": "int", "description": "SQLite busy timeout in milliseconds"},
+                {"name": "journal_mode", "type": "str", "description": "SQLite journal mode"},
+                {"name": "synchronous_mode", "type": "str", "description": "SQLite synchronous mode"},
+                {"name": "enable_foreign_keys", "type": "bool", "description": "Enable foreign key constraints"}
+            ]
+        },
+        {
+            "name": "ExecutablesConfig",
+            "docstring": "Configuration for executables.",
+            "properties": [
+                {"name": "python_interpreter", "type": "str", "description": "Path to Python interpreter"},
+                {"name": "mqi_interpreter", "type": "str", "description": "Path to mqi_interpreter main_cli.py"},
+                {"name": "raw_to_dicom", "type": "str", "description": "Path to RawToDCM converter"}
+            ]
+        },
+        {
+            "name": "LocalPathsConfig",
+            "docstring": "Configuration for local paths.",
+            "properties": [
+                {"name": "scan_directory", "type": "str", "description": "Directory to watch for new cases"},
+                {"name": "database_path", "type": "str", "description": "Path to the SQLite database file"},
+                {"name": "processing_directory", "type": "str", "description": "Template path with {case_id} placeholder"},
+                {"name": "raw_output_directory", "type": "str", "description": "Template path for raw outputs"},
+                {"name": "final_dicom_directory", "type": "str", "description": "Template path for DICOM outputs"}
+            ]
+        },
+        {
+            "name": "HpcPathsConfig",
+            "docstring": "Configuration for HPC paths.",
+            "properties": [
+                {"name": "base_dir", "type": "str", "description": "HPC base directory"},
+                {"name": "tps_env_dir", "type": "str", "description": "TPS environment directory"},
+                {"name": "output_csv_dir", "type": "str", "description": "CSV output directory template"},
+                {"name": "dose_raw_dir", "type": "str", "description": "Raw dose output directory template"}
+            ]
+        },
+        {
+            "name": "PathsConfig",
+            "docstring": "Configuration for all paths.",
+            "properties": [
+                {"name": "base_directory", "type": "str", "description": "Base directory for all local data"},
+                {"name": "local", "type": "LocalPathsConfig"},
+                {"name": "hpc", "type": "HpcPathsConfig"}
+            ]
+        },
+        {
+            "name": "HpcConnectionConfig",
+            "docstring": "Configuration for HPC connection.",
+            "properties": [
+                {"name": "host", "type": "str", "description": "HPC hostname"},
+                {"name": "port", "type": "int", "description": "SSH port"},
+                {"name": "user", "type": "str", "description": "SSH username"},
+                {"name": "ssh_key_path", "type": "Optional[str]", "description": "Path to SSH private key"},
+                {"name": "connection_timeout_seconds", "type": "int", "description": "SSH connection timeout"},
+                {"name": "command_timeout_seconds", "type": "int", "description": "SSH command execution timeout"}
+            ]
+        },
+        {
+            "name": "CuratorConfig",
+            "docstring": "Configuration for the curator.",
+            "properties": [
+                {"name": "gpu_monitor_command", "type": "str", "description": "Command to get detailed GPU hardware statistics from the remote HPC."},
+                {"name": "gpu_monitor_interval_seconds", "type": "int", "description": "How often (in seconds) to refresh GPU monitoring data."}
+            ]
+        },
+        {
+            "name": "Config",
+            "docstring": "Root configuration model with all sections.",
+            "properties": [
+                {"name": "dashboard", "type": "DashboardConfig"},
+                {"name": "application", "type": "ApplicationConfig"},
+                {"name": "executables", "type": "ExecutablesConfig"},
+                {"name": "paths", "type": "PathsConfig"},
+                {"name": "hpc_connection", "type": "HpcConnectionConfig"},
+                {"name": "retry_policy", "type": "RetryPolicyConfig"},
+                {"name": "database", "type": "DatabaseConfig"},
+                {"name": "logging", "type": "LoggingConfig"},
+                {"name": "curator", "type": "CuratorConfig"}
+            ],
+            "methods": [
+                {
+                    "name": "resolve_placeholders",
+                    "docstring": "After initial validation, resolve all path placeholders like {base_directory}.",
+                    "returns": "Config"
+                }
+            ]
+        },
+        {
+            "name": "ConfigManager",
+            "docstring": "Manager for application configuration using Pydantic models.",
+            "properties": [
+                {"name": "config_path", "type": "Path", "description": "Path to the config.yaml file"},
+                {"name": "logger", "type": "Optional[StructuredLogger]", "description": "Optional structured logger for logging operations"},
+                {"name": "config", "type": "Config", "description": "The validated configuration object"}
+            ],
+            "methods": [
+                {
+                    "name": "__init__",
+                    "docstring": "Initializes the ConfigManager.",
+                    "parameters": [
+                        {"name": "config_path", "type": "str"},
+                        {"name": "logger", "type": "Optional[StructuredLogger]", "default": "None"}
+                    ]
+                },
+                {
+                    "name": "get_config",
+                    "docstring": "Get the validated configuration data.",
+                    "returns": "Config"
+                }
+            ],
+            "refactoring_suggestions": [
+                {
+                    "issue": "File Location and Naming",
+                    "description": "The configuration logic is in the root of `src`, while the refactoring plan suggests a dedicated `config` directory.",
+                    "solution": "Move this file to `src/config/settings.py` as outlined in `refactor.md`. This groups all configuration-related code together.",
+                    "benefit": "Improves project structure and makes it easier to locate configuration-related code."
+                },
+                {
+                    "issue": "Lack of Environment Variable Support",
+                    "description": "The current implementation only loads configuration from a YAML file. Sensitive information like credentials or environment-specific settings might be hardcoded.",
+                    "solution": "Inherit from Pydantic's `BaseSettings` instead of `BaseModel`. This would allow overriding configuration values with environment variables, which is a best practice for security and flexibility.",
+                    "benefit": "Enhances security by allowing secrets to be managed outside of version control. Increases flexibility for deploying in different environments (development, staging, production)."
+                }
+            ]
+        }
+    ]
+}

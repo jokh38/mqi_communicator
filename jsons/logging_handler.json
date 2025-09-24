@@ -1,0 +1,68 @@
+{
+    "file_name": "logging_handler.py",
+    "description": "Sets up and manages structured, context-aware logging for the entire application, integrating with Python's standard logging module.",
+    "classes": [
+        {
+            "name": "LogContext",
+            "docstring": "A data class to encapsulate common contextual information for structured logging, such as case ID and operation type.",
+            "type": "dataclass",
+            "properties": [
+                {"name": "case_id", "type": "Optional[str]"},
+                {"name": "operation", "type": "Optional[str]"},
+                {"name": "task_id", "type": "Optional[int]"},
+                {"name": "extra_data", "type": "Optional[Dict[str, Any]]"}
+            ]
+        },
+        {
+            "name": "StructuredLogger",
+            "docstring": "An enhanced logger that wraps the standard Python logger to provide structured logging with context.",
+            "methods": [
+                {"name": "debug", "docstring": "Logs a message with DEBUG level and optional context."},
+                {"name": "info", "docstring": "Logs a message with INFO level and optional context."},
+                {"name": "warning", "docstring": "Logs a message with WARNING level and optional context."},
+                {"name": "error", "docstring": "Logs a message with ERROR level and optional context."},
+                {"name": "critical", "docstring": "Logs a message with CRITICAL level and optional context."}
+            ]
+        },
+        {
+            "name": "JsonFormatter",
+            "docstring": "A custom logging formatter that outputs log records as JSON strings.",
+            "type": "logging.Formatter"
+        },
+        {
+            "name": "LoggingHandler",
+            "docstring": "A handler for setting up and managing the application's logging configuration, including file and console handlers.",
+            "methods": [
+                {"name": "__init__", "docstring": "Initializes the logging system with specified file paths, levels, and timezone."},
+                {"name": "get_logger", "docstring": "Returns a configured StructuredLogger instance.", "returns": "StructuredLogger"},
+                {"name": "shutdown", "docstring": "Shuts down the logging system."}
+            ],
+            "refactoring_suggestions": [
+                {
+                    "issue": "File Location and Architectural Layering",
+                    "description": "Logging is a cross-cutting, infrastructure-level concern because it deals with I/O (writing to files, console). The file is currently in the `src` root.",
+                    "solution": "Move the `logging_handler.py` file to the `src/infrastructure/` directory as specified in `refactor.md`. This correctly identifies it as a low-level component that provides services to all other layers of the application.",
+                    "benefit": "Aligns the project structure with the principles of layered architecture, making the roles and dependencies of different components clearer. It separates core application logic from infrastructure concerns."
+                },
+                {
+                    "issue": "Global State Modification",
+                    "description": "The `LoggingHandler` modifies the global state of the `logging` module by adding handlers to the root logger. This can sometimes lead to unexpected behavior in complex applications or during testing, as the logging configuration becomes a shared global resource.",
+                    "solution": "For improved testability and isolation, a potential enhancement would be to avoid configuring the root logger directly. Instead, the `LoggingHandler` could create and configure a specific, named logger (e.g., `logging.getLogger('mqi_communicator')`) and have all application code retrieve children of this logger. This would prevent interference with logging from third-party libraries.",
+                    "benefit": "Increases the isolation of the application's logging, making it more predictable and easier to control during tests (e.g., redirecting logs to a buffer for assertions without affecting other loggers)."
+                }
+            ]
+        }
+    ],
+    "functions": [
+        {
+            "name": "format_structured_message",
+            "docstring": "Formats a log message and its context into a single string.",
+            "returns": "str"
+        },
+        {
+            "name": "get_structured_logger",
+            "docstring": "A factory function to get a StructuredLogger instance.",
+            "returns": "StructuredLogger"
+        }
+    ]
+}

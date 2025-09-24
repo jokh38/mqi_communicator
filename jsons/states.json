@@ -1,0 +1,117 @@
+
+{
+    "file_name": "states.py",
+    "description": "Contains all State classes defining each workflow step, implementing the State design pattern.",
+    "classes": [
+        {
+            "name": "BaseState",
+            "docstring": "Abstract base class for all workflow states.",
+            "is_abstract": true,
+            "methods": [
+                {
+                    "name": "execute",
+                    "docstring": "Execute the state's specific task.",
+                    "parameters": [
+                        {"name": "context", "type": "WorkflowManager"}
+                    ],
+                    "returns": "Optional[BaseState]"
+                }
+            ]
+        },
+        {
+            "name": "PreProcessingState",
+            "docstring": "State for handling local preprocessing using mqi_interpreter (P2).",
+            "inherits_from": "BaseState",
+            "methods": [
+                {
+                    "name": "execute",
+                    "docstring": "Executes the preprocessing step.",
+                    "parameters": [
+                        {"name": "context", "type": "WorkflowManager"}
+                    ],
+                    "returns": "Optional[BaseState]"
+                }
+            ]
+        },
+        {
+            "name": "FileUploadState",
+            "docstring": "State for uploading files to HPC via SFTP.",
+            "inherits_from": "BaseState",
+            "methods": [
+                {
+                    "name": "execute",
+                    "docstring": "Executes the file upload step.",
+                    "parameters": [
+                        {"name": "context", "type": "WorkflowManager"}
+                    ],
+                    "returns": "Optional[BaseState]"
+                }
+            ]
+        },
+        {
+            "name": "HpcExecutionState",
+            "docstring": "State for executing MOQUI simulation on HPC via SSH.",
+            "inherits_from": "BaseState",
+            "methods": [
+                {
+                    "name": "execute",
+                    "docstring": "Executes the HPC simulation and polls for completion.",
+                    "parameters": [
+                        {"name": "context", "type": "WorkflowManager"}
+                    ],
+                    "returns": "Optional[BaseState]"
+                }
+            ]
+        },
+        {
+            "name": "DownloadState",
+            "docstring": "State for downloading result files from HPC via SFTP.",
+            "inherits_from": "BaseState",
+            "methods": [
+                {
+                    "name": "execute",
+                    "docstring": "Executes the file download step.",
+                    "parameters": [
+                        {"name": "context", "type": "WorkflowManager"}
+                    ],
+                    "returns": "Optional[BaseState]"
+                }
+            ]
+        },
+        {
+            "name": "PostProcessingState",
+            "docstring": "State for handling local postprocessing using RawToDCM (P3).",
+            "inherits_from": "BaseState",
+            "methods": [
+                {
+                    "name": "execute",
+                    "docstring": "Executes the postprocessing step.",
+                    "parameters": [
+                        {"name": "context", "type": "WorkflowManager"}
+                    ],
+                    "returns": "Optional[BaseState]"
+                }
+            ]
+        }
+    ],
+    "refactoring_suggestions": [
+        {
+            "issue": "Violation of Layered Architecture",
+            "description": "The state classes are part of the core business logic (domain) but are located in the root `src` directory.",
+            "solution": "Move `states.py` to the `src/domain/` directory as specified in `refactor.md`.",
+            "benefit": "Properly separates the core domain logic from other application layers, improving clarity and adhering to the planned architecture."
+        },
+        {
+            "issue": "Direct dependency on handlers and context",
+            "description": "The `execute` methods directly access various handlers (`db_handler`, `local_handler`, `remote_handler`) and configuration from the `context` object. This creates a tight coupling between the states and the specific implementation of the handlers.",
+            "solution": "Instead of a generic `context` object, inject specific dependencies required by each state into their constructors. For example, `FileUploadState` could receive a `RemoteHandler` instance directly. Alternatively, use a more structured context object that exposes interfaces rather than concrete implementations.",
+            "benefit": "Reduces coupling, improves testability by allowing mock objects to be injected, and makes the dependencies of each state more explicit."
+        },
+        {
+            "issue": "Mixed responsibilities within states",
+            "description": "Each state's `execute` method is responsible for logging, database updates, sending status updates, and calling the appropriate handler. This violates the Single Responsibility Principle.",
+            "solution": "Refactor the `WorkflowManager` to handle the cross-cutting concerns of logging, database updates, and status notifications before and after executing a state. The state's `execute` method should only be responsible for invoking the correct handler and returning the next state.",
+            "benefit": "Simplifies the state classes, reduces code duplication, and centralizes the workflow management logic in the `WorkflowManager`."
+        }
+    ]
+}

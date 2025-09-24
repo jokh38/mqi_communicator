@@ -1,0 +1,44 @@
+{
+    "file_name": "gpu_monitor.py",
+    "description": "A service that fetches GPU status from a remote HPC system and updates the local database.",
+    "classes": [
+        {
+            "name": "GPUMonitor",
+            "docstring": "A service for monitoring GPU resources on the HPC system. It periodically fetches GPU status using nvidia-smi and updates the database.",
+            "properties": [
+                {"name": "config", "type": "Config", "description": "The application configuration object."},
+                {"name": "db_handler", "type": "DatabaseHandler", "description": "The handler for storing GPU data in the database."},
+                {"name": "remote_handler", "type": "RemoteHandler", "description": "The handler for communicating with the remote HPC system."},
+                {"name": "logger", "type": "StructuredLogger", "description": "A structured logger for recording events."},
+                {"name": "update_interval", "type": "int", "description": "The interval in seconds for fetching GPU data."}
+            ],
+            "methods": [
+                {"name": "__init__", "docstring": "Initializes the GPU monitor."},
+                {"name": "start", "docstring": "Starts the GPU monitoring service in a separate thread."},
+                {"name": "stop", "docstring": "Stops the GPU monitoring service."},
+                {"name": "update_gpu_status", "docstring": "Fetches the current GPU status from the HPC and updates the database."},
+                {"name": "_monitor_loop", "docstring": "The main monitoring loop that runs in a separate thread."}
+            ],
+            "refactoring_suggestions": [
+                {
+                    "issue": "File Location and Layering",
+                    "description": "The `GPUMonitor` is responsible for interacting with external hardware/systems, which is an infrastructure-level concern. It is currently located in the `src` root.",
+                    "solution": "Move the `gpu_monitor.py` file to the `src/infrastructure/` directory as planned in `refactor.md`. This correctly places it in the layer responsible for external system communication.",
+                    "benefit": "Adheres to the layered architecture, making the project structure more logical and easier to navigate."
+                },
+                {
+                    "issue": "Separation of Concerns - Data Parsing",
+                    "description": "Currently, `GPUMonitor` fetches raw CSV data from `nvidia-smi` but delegates the parsing and database update logic to `DatabaseHandler.populate_gpu_resources_from_nvidia_smi`. This violates separation of concerns, as the database handler shouldn't know about the format of `nvidia-smi`'s output.",
+                    "solution": "Move the CSV parsing logic from `database_handler.py` directly into the `GPUMonitor.update_gpu_status` method. The monitor should be responsible for both fetching and parsing the data into a clean format (e.g., a list of `GpuStatus` Pydantic models defined in `domain/models.py`).",
+                    "benefit": "Improves modularity. The `GPUMonitor` becomes fully responsible for GPU data acquisition, and the data persistence layer (the future `GpuRepository`) only deals with structured data, not raw external output."
+                },
+                {
+                    "issue": "Direct Dependency on Low-Level Data Handler",
+                    "description": "The monitor directly depends on `DatabaseHandler`. The refactoring plan introduces a `GpuRepository` for handling GPU data persistence.",
+                    "solution": "Change the dependency from `DatabaseHandler` to the new `GpuRepository`. After parsing the `nvidia-smi` data, the `GPUMonitor` will call a method like `gpu_repository.upsert_resources()` to save the information.",
+                    "benefit": "Decouples the infrastructure component (`GPUMonitor`) from the specific database implementation, adhering to the Dependency Inversion Principle. This makes the monitor easier to test by mocking the repository."
+                }
+            ]
+        }
+    ]
+}

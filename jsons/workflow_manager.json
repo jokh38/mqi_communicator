@@ -1,0 +1,132 @@
+
+{
+    "file_name": "workflow_manager.py",
+    "description": "State Pattern-based workflow context manager. Manages the execution flow of a case through different states.",
+    "classes": [
+        {
+            "name": "WorkflowManager",
+            "docstring": "Context manager for the case workflow using the State pattern.",
+            "properties": [
+                {
+                    "name": "case_id",
+                    "type": "str",
+                    "description": "Unique identifier for the case being processed."
+                },
+                {
+                    "name": "case_path",
+                    "type": "Path",
+                    "description": "File system path to the case directory."
+                },
+                {
+                    "name": "config",
+                    "type": "Config",
+                    "description": "Application configuration object."
+                },
+                {
+                    "name": "db_handler",
+                    "type": "DatabaseHandler",
+                    "description": "Handler for database operations."
+                },
+                {
+                    "name": "local_handler",
+                    "type": "LocalHandler",
+                    "description": "Handler for local file system and process operations."
+                },
+                {
+                    "name": "remote_handler",
+                    "type": "RemoteHandler",
+                    "description": "Handler for remote HPC operations."
+                },
+                {
+                    "name": "logger",
+                    "type": "StructuredLogger",
+                    "description": "Logger for structured logging."
+                },
+                {
+                    "name": "status_queue",
+                    "type": "Optional[Queue]",
+                    "description": "Queue for sending status updates to the master process."
+                },
+                {
+                    "name": "current_state",
+                    "type": "Optional[BaseState]",
+                    "description": "The current state in the workflow."
+                },
+                {
+                    "name": "is_running",
+                    "type": "bool",
+                    "description": "Flag indicating if the workflow is currently running."
+                }
+            ],
+            "methods": [
+                {
+                    "name": "__init__",
+                    "docstring": "Initializes the WorkflowManager.",
+                    "parameters": [
+                        {"name": "case_id", "type": "str"},
+                        {"name": "case_path", "type": "Path"},
+                        {"name": "config", "type": "Config"},
+                        {"name": "db_handler", "type": "DatabaseHandler"},
+                        {"name": "local_handler", "type": "LocalHandler"},
+                        {"name": "remote_handler", "type": "RemoteHandler"},
+                        {"name": "logger", "type": "StructuredLogger"},
+                        {"name": "status_queue", "type": "Optional[Queue]", "default": "None"}
+                    ]
+                },
+                {
+                    "name": "send_status_update",
+                    "docstring": "Sends a status update to the master process via the queue.",
+                    "parameters": [
+                        {"name": "status", "type": "str"},
+                        {"name": "progress", "type": "int"}
+                    ],
+                    "returns": "None"
+                },
+                {
+                    "name": "run_workflow",
+                    "docstring": "Execute the main workflow loop.",
+                    "parameters": [],
+                    "returns": "None"
+                },
+                {
+                    "name": "stop_workflow",
+                    "docstring": "Gracefully stop the workflow.",
+                    "parameters": [],
+                    "returns": "None"
+                },
+                {
+                    "name": "get_current_status",
+                    "docstring": "Get current workflow status.",
+                    "parameters": [],
+                    "returns": "str"
+                }
+            ],
+            "refactoring_suggestions": [
+                {
+                    "issue": "Violation of Layered Architecture",
+                    "description": "The `WorkflowManager` is a core component of the application's logic but is located in the root `src` directory.",
+                    "solution": "Move `workflow_manager.py` to the `src/core/` directory as outlined in the `refactor.md` plan.",
+                    "benefit": "Clearly separates core application logic from other concerns like infrastructure, domain, and UI, adhering to the planned layered architecture."
+                },
+                {
+                    "issue": "Dependency on Concrete Handlers (Violation of DIP)",
+                    "description": "The `__init__` method directly depends on concrete implementations like `DatabaseHandler`, `LocalHandler`, and `RemoteHandler`. This violates the Dependency Inversion Principle.",
+                    "solution": "Depend on abstractions (interfaces or abstract base classes) instead of concretions. After refactoring, the `WorkflowManager` should depend on `CaseRepository`, `GpuRepository`, etc., which will be injected by the `worker.py` (the composition root).",
+                    "benefit": "Decouples the core workflow logic from the specific implementation details of data access and external services, making the system more modular, flexible, and easier to test."
+                },
+                {
+                    "issue": "Overly Broad Exception Handling",
+                    "description": "The `run_workflow` method catches a generic `Exception`, which can obscure the specific type of error that occurred and make targeted recovery difficult.",
+                    "solution": "Define and use specific, custom exceptions (e.g., `DatabaseError`, `HpcConnectionError`, `PreProcessingError`) in the respective handlers and repositories. The `WorkflowManager` can then catch these specific exceptions to implement more granular error handling and logging.",
+                    "benefit": "Improves the robustness and maintainability of error handling, allowing for different responses based on the type of failure."
+                },
+                {
+                    "issue": "State Transition Logic Mixed with Execution",
+                    "description": "The main `while` loop in `run_workflow` handles state execution, logging, and the transition to the next state. This mixes responsibilities.",
+                    "solution": "Create a dedicated private method, such as `_transition_to_next_state(self, next_state)`, to handle the logic of moving from one state to the next, including logging the transition. The main loop would then become cleaner and more focused on the execution flow.",
+                    "benefit": "Improves code readability and separation of concerns, making the state transition mechanism more explicit and easier to manage or modify."
+                }
+            ]
+        }
+    ]
+}

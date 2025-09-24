@@ -1,0 +1,81 @@
+{
+    "file_name": "error_categorization.py",
+    "description": "An error categorization system for enhanced error handling. It classifies errors into categories and determines retry behavior.",
+    "classes": [
+        {
+            "name": "ErrorCategory",
+            "docstring": "An enumeration of error categories used to determine handling behavior and retry policies.",
+            "type": "Enum",
+            "members": ["NETWORK", "SYSTEM", "CONFIGURATION", "APPLICATION", "UNKNOWN"],
+            "methods": [
+                {
+                    "name": "is_retryable",
+                    "docstring": "Determines if errors of this category are typically transient and should be retried.",
+                    "returns": "bool"
+                }
+            ]
+        },
+        {
+            "name": "BaseExecutionError",
+            "docstring": "A base class for all custom execution-related errors.",
+            "type": "Exception"
+        },
+        {
+            "name": "NetworkError",
+            "docstring": "A custom exception for network-related errors.",
+            "type": "Exception"
+        },
+        {
+            "name": "SystemExecutionError",
+            "docstring": "A custom exception for system-related errors.",
+            "type": "Exception"
+        },
+        {
+            "name": "ConfigurationError",
+            "docstring": "A custom exception for configuration-related errors.",
+            "type": "Exception"
+        },
+        {
+            "name": "ApplicationError",
+            "docstring": "A custom exception for application logic errors.",
+            "type": "Exception"
+        },
+        {
+            "name": "ErrorClassifier",
+            "docstring": "Classifies errors into categories using exception types, return codes, and message patterns.",
+            "methods": [
+                {
+                    "name": "classify",
+                    "docstring": "Classifies a given exception into an ErrorCategory.",
+                    "parameters": [{"name": "error", "type": "Exception"}],
+                    "returns": "ErrorCategory"
+                }
+            ],
+            "refactoring_suggestions": [
+                {
+                    "issue": "File Naming and Location",
+                    "description": "The file `error_categorization.py` is located in the `src` root. The refactoring plan designates a specific place for domain-level concerns like custom errors.",
+                    "solution": "Rename the file to `errors.py` and move it to the `src/domain/` package as specified in `refactor.md`. This groups it with other core business logic and models.",
+                    "benefit": "Improves project organization by placing domain-specific code in a dedicated layer, making the architecture clearer."
+                },
+                {
+                    "issue": "Reactive vs. Proactive Error Handling",
+                    "description": "The `ErrorClassifier` and `categorize_error` function are 'reactive'. They inspect generic exceptions after they have been caught. A more robust approach is to 'proactively' raise specific, custom exceptions at the source of the error.",
+                    "solution": "Transition the codebase to raise the custom exception types defined in this file (e.g., `NetworkError`, `ConfigurationError`) directly from the modules where the errors occur. For example, a remote handler should `raise NetworkError(...)` instead of letting a generic `socket.error` bubble up. The `ErrorClassifier` can then be simplified or used as a fallback for unexpected errors.",
+                    "benefit": "Makes error handling more explicit and reliable. Catching specific exception types (`except NetworkError:`) is cleaner and less error-prone than inspecting generic exception messages. It also makes the code self-documenting about the types of errors a function can produce."
+                }
+            ]
+        }
+    ],
+    "functions": [
+        {
+            "name": "categorize_error",
+            "docstring": "A convenience function to categorize an error and determine if it should be retried.",
+            "parameters": [
+                {"name": "error", "type": "Exception"},
+                {"name": "context", "type": "str", "default": ""}
+            ],
+            "returns": "Tuple[ErrorCategory, bool]"
+        }
+    ]
+}

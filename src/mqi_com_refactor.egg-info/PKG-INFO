@@ -1,0 +1,10 @@
+Metadata-Version: 2.4
+Name: mqi_com_refactor
+Version: 0.0.1
+Summary: A refactored version of the mqi communicator
+Author-email: AI <ai@example.com>
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown

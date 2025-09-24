@@ -1,0 +1,52 @@
+{
+    "file_name": "local_handler.py",
+    "description": "Handles the execution of local command-line interface (CLI) tools, such as P2 (mqi_interpreter) and P3 (RawToDCM).",
+    "classes": [
+        {
+            "name": "ExecutionResult",
+            "docstring": "A named tuple to provide a structured result from a subprocess execution.",
+            "type": "NamedTuple",
+            "properties": [
+                {"name": "success", "type": "bool", "description": "True if the command executed successfully (return code 0)."},
+                {"name": "output", "type": "str", "description": "The standard output from the command."},
+                {"name": "error", "type": "str", "description": "The standard error from the command."},
+                {"name": "return_code", "type": "int", "description": "The exit code of the process."}
+            ]
+        },
+        {
+            "name": "LocalHandler",
+            "docstring": "A handler for executing local command-line tools with robust error handling and retry logic.",
+            "properties": [
+                {"name": "config", "type": "Config", "description": "The application configuration object."},
+                {"name": "python_interpreter", "type": "str", "description": "The path to the Python interpreter executable."},
+                {"name": "logger", "type": "StructuredLogger", "description": "A logger for recording execution events."}
+            ],
+            "methods": [
+                {"name": "__init__", "docstring": "Initializes the LocalHandler."},
+                {"name": "_execute_subprocess", "docstring": "Executes a command in a subprocess, captures its output, and handles timeouts.", "returns": "ExecutionResult"},
+                {"name": "execute_mqi_interpreter", "docstring": "Executes the mqi_interpreter (P2) for a given case.", "returns": "ExecutionResult"},
+                {"name": "execute_raw_to_dicom", "docstring": "Executes the RawToDCM converter (P3) for a given case.", "returns": "ExecutionResult"}
+            ],
+            "refactoring_suggestions": [
+                {
+                    "issue": "File Location and Architectural Layering",
+                    "description": "The `LocalHandler` is a component responsible for a specific type of task (running local processes) and is currently in the `src` root.",
+                    "solution": "Move the `local_handler.py` file to the `src/handlers/` directory as specified in `refactor.md`. This groups it with other similar handlers like `RemoteHandler`.",
+                    "benefit": "Improves the project's structure by organizing files based on their architectural role, making the codebase easier to understand and maintain."
+                },
+                {
+                    "issue": "Potential for Improved Abstraction",
+                    "description": "The methods `execute_mqi_interpreter` and `execute_raw_to_dicom` are highly specific. If more local tools are added, the class will grow, potentially violating the Open/Closed Principle.",
+                    "solution": "Consider a more generic approach where the `LocalHandler` has a single `execute` method that takes a command configuration object. This would make the handler more of a general-purpose tool runner, with the specific commands defined elsewhere (e.g., in the workflow states that use them).",
+                    "benefit": "Increases the reusability and flexibility of the `LocalHandler`. Adding new tools would not require modifying the handler itself."
+                },
+                {
+                    "issue": "Adherence to Dependency Injection Principles",
+                    "description": "While this handler does not currently interact with the database, the overall refactoring plan specifies that handlers should depend on repository abstractions, not low-level handlers.",
+                    "solution": "No immediate code change is needed here, but it's important to maintain the architectural principle. If this handler ever needs to persist data, it should be injected with a repository (e.g., `ExecutionLogRepository`) rather than the `DatabaseHandler`.",
+                    "benefit": "Ensures architectural consistency across all handlers, promoting loose coupling and testability throughout the application."
+                }
+            ]
+        }
+    ]
+}

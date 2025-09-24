@@ -1,0 +1,110 @@
+
+{
+    "file_name": "retry_policy.py",
+    "description": "Implements a retry policy with exponential backoff for handling transient failures.",
+    "classes": [
+        {
+            "name": "RetryExhaustedError",
+            "docstring": "Exception raised when all retry attempts have been exhausted.",
+            "properties": [],
+            "methods": []
+        },
+        {
+            "name": "RetryPolicy",
+            "docstring": "Implements retry logic with exponential backoff for transient failures.",
+            "properties": [
+                {
+                    "name": "max_retries",
+                    "type": "int",
+                    "description": "The maximum number of retry attempts."
+                },
+                {
+                    "name": "base_delay",
+                    "type": "float",
+                    "description": "The base delay in seconds for the first retry."
+                },
+                {
+                    "name": "max_delay",
+                    "type": "float",
+                    "description": "The maximum delay in seconds between retries."
+                },
+                {
+                    "name": "backoff_multiplier",
+                    "type": "float",
+                    "description": "The multiplier for increasing the delay."
+                },
+                {
+                    "name": "logger",
+                    "type": "Optional[StructuredLogger]",
+                    "description": "The logger instance."
+                }
+            ],
+            "methods": [
+                {
+                    "name": "__init__",
+                    "docstring": "Initializes the RetryPolicy.",
+                    "parameters": [
+                        {"name": "max_retries", "type": "int", "default": "3"},
+                        {"name": "base_delay", "type": "float", "default": "1.0"},
+                        {"name": "max_delay", "type": "float", "default": "60.0"},
+                        {"name": "backoff_multiplier", "type": "float", "default": "2.0"},
+                        {"name": "logger", "type": "Optional[StructuredLogger]", "default": "None"}
+                    ]
+                },
+                {
+                    "name": "_calculate_delay",
+                    "docstring": "Calculate delay for the given attempt number.",
+                    "parameters": [
+                        {"name": "attempt", "type": "int"}
+                    ],
+                    "returns": "float"
+                },
+                {
+                    "name": "_is_transient_error",
+                    "docstring": "Determine if an exception should be treated as transient.",
+                    "parameters": [
+                        {"name": "exception", "type": "Exception"}
+                    ],
+                    "returns": "bool"
+                },
+                {
+                    "name": "execute",
+                    "docstring": "Execute a function with retry logic.",
+                    "parameters": [
+                        {"name": "func", "type": "Callable"},
+                        {"name": "args", "type": "Any"},
+                        {"name": "kwargs", "type": "Any"}
+                    ],
+                    "returns": "Any"
+                }
+            ],
+            "refactoring_suggestions": [
+                {
+                    "issue": "Code placement",
+                    "description": "This is a general utility and should not be in the root `src` directory.",
+                    "solution": "Move `retry_policy.py` to a new `src/utils/` directory as outlined in `refactor.md`.",
+                    "benefit": "Improves project structure by separating utility functions from core application logic, enhancing modularity and reusability."
+                },
+                {
+                    "issue": "Dependency on `error_categorization`",
+                    "description": "The `RetryPolicy` is tightly coupled to `error_categorization`, which is planned to be moved to `domain/errors.py`.",
+                    "solution": "Update the import statement to `from src.domain.errors import categorize_error` after the refactoring of `error_categorization.py` is complete.",
+                    "benefit": "Maintains correctness and adapts to the new, more organized project structure."
+                }
+            ]
+        }
+    ],
+    "functions": [
+        {
+            "name": "with_retry",
+            "docstring": "Decorator for applying retry logic to functions.",
+            "parameters": [
+                {"name": "max_retries", "type": "int", "default": "3"},
+                {"name": "base_delay", "type": "float", "default": "1.0"},
+                {"name": "max_delay", "type": "float", "default": "60.0"},
+                {"name": "backoff_multiplier", "type": "float", "default": "2.0"}
+            ],
+            "returns": "Callable"
+        }
+    ]
+}

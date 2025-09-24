@@ -1,0 +1,56 @@
+
+{
+    "file_name": "worker.py",
+    "description": "Entry point for a single worker process. Each worker handles exactly one case from start to finish.",
+    "functions": [
+        {
+            "name": "_update_status",
+            "docstring": "Helper function to send status updates to the master process and log them.",
+            "parameters": [
+                {"name": "queue", "type": "Queue"},
+                {"name": "case_id", "type": "str"},
+                {"name": "status", "type": "str"},
+                {"name": "progress", "type": "int"},
+                {"name": "logger", "type": "StructuredLogger"}
+            ],
+            "returns": "None"
+        },
+        {
+            "name": "worker_main",
+            "docstring": "Entry point for a worker process that handles a single case.",
+            "parameters": [
+                {"name": "case_id", "type": "str"},
+                {"name": "case_path_str", "type": "str"},
+                {"name": "status_queue", "type": "Optional[Queue]", "default": "None"},
+                {"name": "worker_log_config", "type": "Optional[dict]", "default": "None"}
+            ],
+            "returns": "NoReturn"
+        }
+    ],
+    "refactoring_suggestions": [
+        {
+            "issue": "Mixed Responsibilities (Dependency Injection and Workflow Execution)",
+            "description": "The `worker_main` function is responsible for both initializing all dependency objects (handlers, config, logger) and orchestrating the main workflow execution. This violates the Single Responsibility Principle.",
+            "solution": "As per `refactor.md`, `worker.py` should be refactored to be the 'assembly line' or 'composition root'. Its sole responsibility should be to instantiate all the necessary objects (repositories, handlers, services) and inject them into the `WorkflowManager`. The actual execution logic should be entirely contained within `WorkflowManager`.",
+            "benefit": "Separates the concerns of object creation and application logic, making the code easier to test (by injecting mocks), understand, and maintain. It clarifies the application's entry point and its core processing logic."
+        },
+        {
+            "issue": "Violation of Layered Architecture",
+            "description": "The worker is a core component of the application's execution flow but resides in the root `src` directory.",
+            "solution": "Move `worker.py` to the `src/core/` directory, alongside `workflow_manager.py`, as specified in the refactoring plan.",
+            "benefit": "Aligns the project structure with the intended layered architecture, making the roles of core components clear and distinct from infrastructure, domain, or UI concerns."
+        },
+        {
+            "issue": "Manual and Repetitive Initialization",
+            "description": "Handlers and other dependencies are manually created one by one. As the application grows, this initialization code will become increasingly complex and hard to manage.",
+            "solution": "Introduce a Dependency Injection (DI) container or a factory pattern within the refactored `worker.py`. The container would be responsible for creating and managing the lifecycle of all objects, simplifying the `worker_main` function significantly.",
+            "benefit": "Centralizes and automates dependency management, reduces boilerplate code, and makes the system more flexible and scalable."
+        },
+        {
+            "issue": "Fallback Error Handling Logic",
+            "description": "The `except` block in `worker_main` contains fallback logic to update the database status. This indicates that the primary error handling within the `WorkflowManager` might not be fully reliable or that responsibilities are blurred.",
+            "solution": "The `WorkflowManager` should be the single source of truth for a case's status. It should guarantee that the final status is always recorded correctly, even in the event of an unhandled exception. The `worker.py` should only be responsible for catching the exception and logging it, not for performing business logic like updating a database.",
+            "benefit": "Enforces the Single Responsibility Principle, making the error handling process more robust, predictable, and easier to debug."
+        }
+    ]
+}

@@ -1,0 +1,128 @@
+
+{
+    "file_name": "remote_handler.py",
+    "description": "Handles HPC communication (SSH/SFTP), managing remote execution and file transfer operations.",
+    "classes": [
+        {
+            "name": "RemoteHandler",
+            "docstring": "Handler for HPC communication via SSH/SFTP.",
+            "properties": [
+                {
+                    "name": "hpc_config",
+                    "type": "Config.HPCConnection",
+                    "description": "Configuration for the HPC connection."
+                },
+                {
+                    "name": "retry_config",
+                    "type": "Config.RetryPolicy",
+                    "description": "Configuration for the retry policy."
+                },
+                {
+                    "name": "ssh_client",
+                    "type": "Optional[paramiko.SSHClient]",
+                    "description": "The Paramiko SSH client instance."
+                },
+                {
+                    "name": "logger",
+                    "type": "Optional[StructuredLogger]",
+                    "description": "The logger instance for logging."
+                }
+            ],
+            "methods": [
+                {
+                    "name": "__init__",
+                    "docstring": "Initializes the RemoteHandler.",
+                    "parameters": [
+                        {"name": "config", "type": "Config"},
+                        {"name": "logger", "type": "Optional[StructuredLogger]", "default": "None"}
+                    ]
+                },
+                {
+                    "name": "_establish_connection",
+                    "docstring": "Establish SSH connection if not already active.",
+                    "parameters": [
+                        {"name": "log_context", "type": "Optional[LogContext]", "default": "None"}
+                    ],
+                    "returns": "None"
+                },
+                {
+                    "name": "_create_remote_directory",
+                    "docstring": "Create a remote directory recursively.",
+                    "parameters": [
+                        {"name": "sftp", "type": "paramiko.SFTPClient"},
+                        {"name": "remote_path", "type": "str"}
+                    ],
+                    "returns": "None"
+                },
+                {
+                    "name": "upload_files",
+                    "docstring": "Uploads files to the remote server.",
+                    "parameters": [
+                        {"name": "local_dir", "type": "Path"},
+                        {"name": "remote_dir", "type": "str"},
+                        {"name": "file_patterns", "type": "List[str]"},
+                        {"name": "log_context", "type": "Optional[LogContext]", "default": "None"}
+                    ],
+                    "returns": "TransferResult"
+                },
+                {
+                    "name": "download_files",
+                    "docstring": "Downloads files from the remote server.",
+                    "parameters": [
+                        {"name": "remote_dir", "type": "str"},
+                        {"name": "local_dir", "type": "Path"},
+                        {"name": "file_patterns", "type": "List[str]"},
+                        {"name": "log_context", "type": "Optional[LogContext]", "default": "None"}
+                    ],
+                    "returns": "TransferResult"
+                },
+                {
+                    "name": "execute_remote_command",
+                    "docstring": "Executes a command on the remote server.",
+                    "parameters": [
+                        {"name": "command", "type": "str"},
+                        {"name": "timeout", "type": "Optional[int]", "default": "None"},
+                        {"name": "log_context", "type": "Optional[LogContext]", "default": "None"}
+                    ],
+                    "returns": "Tuple[bool, str, str]"
+                },
+                {
+                    "name": "check_job_completion",
+                    "docstring": "Check for the existence of a completion marker file.",
+                    "parameters": [
+                        {"name": "remote_dir", "type": "str"},
+                        {"name": "completion_marker", "type": "str"},
+                        {"name": "log_context", "type": "Optional[LogContext]", "default": "None"}
+                    ],
+                    "returns": "bool"
+                },
+                {
+                    "name": "close",
+                    "docstring": "Closes the SSH connection.",
+                    "parameters": [],
+                    "returns": "None"
+                }
+            ],
+            "refactoring_suggestions": [
+                {
+                    "issue": "Violation of Layered Architecture",
+                    "description": "The handler is in the root `src` directory, mixing high-level application logic with external communication.",
+                    "solution": "Move `remote_handler.py` to a dedicated `src/handlers/` directory to better separate concerns, as suggested in `refactor.md`.",
+                    "benefit": "Improves modularity and aligns with the planned layered architecture, making the codebase easier to navigate and maintain."
+                },
+                {
+                    "issue": "Hardcoded retry logic",
+                    "description": "The `@with_retry` decorator is used directly, coupling the handler to a specific retry implementation.",
+                    "solution": "The `retry_policy.py` file should be moved to a `src/utils/` directory. The core logic can remain, but its location should be more generic.",
+                    "benefit": "Decouples the handler from the retry utility, improving reusability of the retry logic across different components."
+                },
+                {
+                    "issue": "Lack of specific exception handling",
+                    "description": "The code catches generic `Exception` for various network and file operations, which can hide specific issues.",
+                    "solution": "Introduce custom exception classes like `SSHConnectionError`, `SFTPUploadError`, `RemoteCommandError` in `domain/errors.py` and handle them specifically.",
+                    "benefit": "Allows for more granular error handling and recovery strategies, and provides clearer error logs."
+                }
+            ]
+        }
+    ]
+}

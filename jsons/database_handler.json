@@ -1,0 +1,55 @@
+{
+    "file_name": "database_handler.py",
+    "description": "Manages all database interactions with a process-safe design, handling connections, transactions, and CRUD operations for all tables.",
+    "classes": [
+        {
+            "name": "DatabaseHandler",
+            "docstring": "A handler for database interactions with a process-safe design. Each worker process instantiates its own handler to ensure connection safety.",
+            "properties": [
+                {"name": "db_path", "type": "Path", "description": "The file path to the SQLite database."},
+                {"name": "db_config", "type": "DatabaseConfig", "description": "Configuration object for database settings."},
+                {"name": "logger", "type": "Optional[StructuredLogger]", "description": "Logger for recording database events."},
+                {"name": "conn", "type": "sqlite3.Connection", "description": "The active SQLite database connection."}
+            ],
+            "methods": [
+                {"name": "__init__", "docstring": "Initializes the database handler, creates a connection, and initializes the schema."},
+                {"name": "transaction", "docstring": "A context manager for handling database transactions with thread-safe locking."},
+                {"name": "init_db", "docstring": "Initializes the database schema, creating all necessary tables and indexes."},
+                {"name": "add_case", "docstring": "Adds a new case to the 'cases' table."},
+                {"name": "update_case_status", "docstring": "Updates the status and progress of a case."},
+                {"name": "get_case", "docstring": "Retrieves a single case by its ID."},
+                {"name": "get_cases_by_status", "docstring": "Retrieves all cases with a specific status."},
+                {"name": "record_workflow_step", "docstring": "Records the start or completion of a workflow step."},
+                {"name": "get_workflow_steps", "docstring": "Retrieves all workflow steps for a given case."},
+                {"name": "assign_gpu_to_case", "docstring": "Assigns a GPU to a specific case."},
+                {"name": "release_gpu", "docstring": "Releases a GPU, making it available again."},
+                {"name": "find_and_lock_available_gpu", "docstring": "Atomically finds an idle GPU and assigns it to a case."},
+                {"name": "update_case_status_realtime", "docstring": "Updates the real-time status of a case for the dashboard."},
+                {"name": "get_all_case_status_realtime", "docstring": "Retrieves the real-time status of all active cases."},
+                {"name": "populate_gpu_resources_from_nvidia_smi", "docstring": "Parses nvidia-smi output and updates GPU resource information in the database."},
+                {"name": "get_all_gpu_resources", "docstring": "Retrieves detailed information for all tracked GPU resources."},
+                {"name": "close", "docstring": "Closes the database connection."}
+            ],
+            "refactoring_suggestions": [
+                {
+                    "issue": "Violation of Single Responsibility Principle (SRP)",
+                    "description": "The `DatabaseHandler` class is a 'God Object' responsible for too many things: database connection management, schema initialization, and CRUD operations for multiple, unrelated tables (cases, GPUs, workflow steps, system stats).",
+                    "solution": "Split the class according to its responsibilities as outlined in `refactor.md`: 1. Create a `DatabaseConnection` class in `database/connection.py` to handle only connection, transaction, and schema logic. 2. Create separate Repository classes (e.g., `CaseRepository`, `GpuRepository`) in the `repositories/` directory, with each repository managing the CRUD operations for a single table.",
+                    "benefit": "Improves code organization, making it easier to find, maintain, and test data access logic. Reduces the complexity of a single class and promotes code reuse."
+                },
+                {
+                    "issue": "Mixing Business Logic with Data Access",
+                    "description": "The `populate_gpu_resources_from_nvidia_smi` method contains logic for parsing CSV data from an external command. This is business logic, not a pure data access concern.",
+                    "solution": "Move the CSV parsing logic to `infrastructure/gpu_monitor.py` as specified in the refactoring plan. The `GpuRepository` should only receive clean data to be persisted, not raw command output.",
+                    "benefit": "Separates concerns, making the `gpu_monitor` responsible for data acquisition and parsing, while the repository is only responsible for database interaction. This improves modularity and testability."
+                },
+                {
+                    "issue": "Lack of Abstraction (Repository Pattern)",
+                    "description": "Higher-level services directly depend on the concrete `DatabaseHandler` implementation. This makes it difficult to switch the database technology or to mock the database for testing.",
+                    "solution": "Implement the Repository Pattern. Define abstract base classes for repositories and have services depend on these abstractions. The concrete SQLite repositories will implement these interfaces.",
+                    "benefit": "Decouples the application logic from the data access technology, allowing for easier testing (using mock repositories) and future migration to a different database system."
+                }
+            ]
+        }
+    ]
+}
