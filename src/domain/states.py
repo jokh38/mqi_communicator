@@ -266,6 +266,8 @@ class DownloadState(WorkflowState):
     def get_state_name(self) -> str:
         return "Download Results"
 
+import shutil
+
 class PostprocessingState(WorkflowState):
     """Postprocessing state - runs RawToDCM locally for a single beam's output."""
 
@@ -301,12 +303,54 @@ class PostprocessingState(WorkflowState):
             "dcm_files_count": len(dcm_files)
         })
 
+        # Create a zip archive of the output directory
+        zip_output_path = output_dir.parent / f"{output_dir.name}.zip"
+        shutil.make_archive(str(zip_output_path.with_suffix('')), 'zip', str(output_dir))
+
+        context.shared_context["final_result_path"] = str(zip_output_path)
+        context.logger.info("Created final result archive.", {
+            "beam_id": context.id,
+            "archive_path": str(zip_output_path)
+        })
+
         input_file.unlink()
 
-        return CompletedState()
+        return UploadResultToPCLocalDataState()
 
     def get_state_name(self) -> str:
         return "Postprocessing"
+
+
+from src.domain.errors import ProcessingError
+
+class UploadResultToPCLocalDataState(WorkflowState):
+    """State to upload the final result file to PC_localdata."""
+
+    def get_state_name(self) -> str:
+        return "UploadingResultToPCLocalData"
+
+    @handle_state_exceptions
+    def execute(self, manager: "WorkflowManager") -> Optional["WorkflowState"]:
+        final_result_file_str = manager.shared_context.get("final_result_path")
+
+        if not final_result_file_str or not Path(final_result_file_str).exists():
+            raise ProcessingError(f"Final result file not found: {final_result_file_str}")
+
+        beam = manager.case_repo.get_beam(manager.id)
+        if not beam:
+            raise ProcessingError(f"Could not retrieve beam data for beam_id: {manager.id}")
+
+        case_id = beam.parent_case_id
+        result = manager.remote_handler.upload_to_pc_localdata(
+            local_file=Path(final_result_file_str),
+            case_id=case_id
+        )
+
+        if not result.success:
+            raise ProcessingError(f"Failed to upload result to PC_localdata: {result.error}")
+
+        manager.logger.info("Successfully uploaded result to PC_localdata.", {"beam_id": manager.id})
+        return CompletedState()
 
 class CompletedState(WorkflowState):
     """Final completed state for a beam."""

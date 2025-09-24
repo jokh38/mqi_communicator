@@ -308,6 +308,12 @@ class Settings:
             return self._yaml_config['hpc_connection']
         return {}
 
+    def get_pc_localdata_connection(self) -> Dict[str, Any]:
+        """Get PC_localdata connection configuration from the YAML config."""
+        if hasattr(self, '_yaml_config') and 'pc_localdata_connection' in self._yaml_config:
+            return self._yaml_config['pc_localdata_connection']
+        return {}
+
     def get_hpc_paths(self) -> Dict[str, str]:
         """Get HPC paths from the YAML config.
 

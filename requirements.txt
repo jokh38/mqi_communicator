@@ -17,8 +17,8 @@ PyYAML>=6.0.0
 pydicom>=2.3.0
 
 # Development and optional dependencies (uncomment if needed)
-pytest>=7.0.0          # For running tests
-pytest-mock>=3.0.0     # For mocking
+pytest>=7.0.0
+pytest-mock>=3.0.0
 black>=22.0.0          # Code formatting
 flake8>=5.0.0          # Code linting
 mypy>=1.0.0            # Type checking
