@@ -321,6 +321,53 @@ class RemoteHandler:
             })
             return UploadResult(success=False, error=error_msg)
 
+    def upload_to_pc_localdata(self, local_file: Path, case_id: str) -> UploadResult:
+        """Uploads a file to the PC_localdata server."""
+        config = self.settings.get_pc_localdata_connection()
+        if not config:
+            self.logger.error("PC_localdata connection not configured.", {"case_id": case_id})
+            return UploadResult(success=False, error="PC_localdata connection not configured.")
+
+        host = config.get("host")
+        user = config.get("user")
+        key_path = config.get("ssh_key_path")
+        remote_base_dir = config.get("remote_base_dir", "/")
+
+        if not all([host, user, key_path]):
+            msg = "PC_localdata connection is missing required fields (host, user, ssh_key_path)."
+            self.logger.error(msg, {"case_id": case_id})
+            return UploadResult(success=False, error=msg)
+
+        remote_target_dir = f"{remote_base_dir}/{case_id}".replace("\\", "/")
+        remote_file_path = f"{remote_target_dir}/{local_file.name}"
+
+        try:
+            with paramiko.SSHClient() as ssh_client:
+                ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                ssh_client.connect(
+                    hostname=host,
+                    username=user,
+                    key_filename=key_path,
+                    timeout=30
+                )
+
+                with ssh_client.open_sftp() as sftp_client:
+                    self._mkdir_p(sftp_client, remote_target_dir)
+                    sftp_client.put(str(local_file), remote_file_path)
+
+            self.logger.info("Successfully uploaded file to PC_localdata.", {
+                "case_id": case_id,
+                "local_file": str(local_file),
+                "remote_file": remote_file_path
+            })
+            return UploadResult(success=True)
+        except Exception as e:
+            self.logger.error("Failed to upload file to PC_localdata", {
+                "case_id": case_id,
+                "error": str(e)
+            })
+            return UploadResult(success=False, error=str(e))
+
     def submit_simulation_job(
         self, beam_id: str, remote_beam_dir: str, gpu_uuid: str
     ) -> JobSubmissionResult:
