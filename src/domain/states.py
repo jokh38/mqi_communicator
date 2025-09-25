@@ -81,7 +81,7 @@ class InitialState(WorkflowState):
             "beam_id": context.id,
             "beam_path": str(context.path)
         })
-        context.case_repo.update_beam_status(context.id, BeamStatus.VALIDATING)
+        context.case_repo.update_beam_status(context.id, BeamStatus.TPS_GENERATION)
 
         if not context.path.is_dir():
             raise ProcessingError(f"Beam path is not a valid directory: {context.path}")
@@ -291,7 +291,7 @@ class PostprocessingState(WorkflowState):
         if not result.success:
             raise ProcessingError(f"RawToDCM failed for beam {context.id}: {result.error}")
 
-        dcm_files = list(output_dir.glob("*.dcm"))
+        dcm_files = list(output_dir.glob("**/*.dcm"))
         if not dcm_files:
             raise ProcessingError("No DCM files generated in postprocessing for beam.")
             

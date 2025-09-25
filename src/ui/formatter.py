@@ -23,6 +23,7 @@ CASE_STATUS_COLORS = {
 
 GPU_STATUS_COLORS = {
     GpuStatus.IDLE: "green",
+    GpuStatus.BUSY: "yellow",
     GpuStatus.ASSIGNED: "yellow",
     GpuStatus.UNAVAILABLE: "red",
 }

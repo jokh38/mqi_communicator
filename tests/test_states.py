@@ -80,6 +80,46 @@ def test_upload_state_failure_transitions_to_failed_state(mock_workflow_manager:
     assert isinstance(next_state, FailedState)
 
 
+def test_postprocessing_state_finds_nested_dcm_files(tmp_path: Path):
+    """
+    Tests that PostprocessingState can find .dcm files in subdirectories (recursive glob).
+    """
+    # Arrange
+    manager = MagicMock(spec=WorkflowManager)
+    manager.logger = MagicMock()
+    manager.case_repo = MagicMock()
+    manager.local_handler = MagicMock()
+    manager.id = "beam-01"
+    manager.path = tmp_path
+
+    raw_file = tmp_path / "output.raw"
+    raw_file.touch()
+
+    dcm_output_dir = tmp_path / "dcm_output"
+
+    manager.shared_context = {"raw_output_file": raw_file}
+
+    # Simulate that run_raw_to_dcm creates a nested directory and a file
+    def side_effect(*args, **kwargs):
+        output_dir = kwargs.get("output_dir")
+        nested_dir = output_dir / "nested"
+        nested_dir.mkdir(parents=True, exist_ok=True)
+        (nested_dir / "test.dcm").touch()
+        return MagicMock(success=True)
+
+    manager.local_handler.run_raw_to_dcm.side_effect = side_effect
+
+    state = PostprocessingState()
+
+    # Act
+    next_state = state.execute(manager)
+
+    # Assert
+    # This should pass if the glob is recursive, otherwise it will fail
+    assert isinstance(next_state, UploadResultToPCLocalDataState)
+    assert manager.shared_context["final_result_path"] == str(dcm_output_dir)
+
+
 def test_postprocessing_state_passes_dir(tmp_path: Path):
     """
     Tests that PostprocessingState sets the final_result_path to a directory.
