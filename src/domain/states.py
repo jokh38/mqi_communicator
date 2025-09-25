@@ -122,7 +122,7 @@ class FileUploadState(WorkflowState):
         if not beam:
             raise ProcessingError(f"Could not retrieve beam data for beam_id: {context.id}")
 
-        hpc_paths = context.local_handler.settings.get_hpc_paths()
+        hpc_paths = context.settings.get_hpc_paths()
         remote_base_dir = hpc_paths.get("remote_case_path_template")
         if not remote_base_dir:
             raise ProcessingError("`remote_case_path_template` not configured in settings.")
@@ -238,7 +238,7 @@ class DownloadState(WorkflowState):
         if not remote_beam_dir:
             raise ProcessingError("Remote beam directory not found in shared context.")
 
-        case_dirs = context.local_handler.settings.get_case_directories()
+        case_dirs = context.settings.get_case_directories()
         local_result_dir_template = case_dirs.get("final_dicom")
         if not local_result_dir_template:
              raise ProcessingError("`final_dicom_directory` not configured in settings.")
