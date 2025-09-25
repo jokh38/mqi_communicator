@@ -3,6 +3,7 @@ import shutil
 import paramiko
 import os
 import time
+import logging
 from typing import Optional, Dict, Any, NamedTuple
 from pathlib import Path
 
@@ -110,58 +111,61 @@ class ExecutionHandler:
         except Exception as e:
             return UploadResult(success=False, error=str(e))
 
-    def run_raw_to_dcm(self, input_file: Path, output_dir: Path, case_path: Path) -> ExecutionResult:
-        """Runs the raw_to_dcm conversion. Local-only for now."""
+    def run_raw_to_dcm(self, case_id: str, hpc_path: str) -> ExecutionResult:
+        """
+        Runs the raw_to_dcm conversion.
+        In local mode, hpc_path is treated as the local directory for the case.
+        """
         if self.mode == 'local':
-            # This logic would be more sophisticated, with template commands etc.
+            # NOTE: Adapting local mode to the new signature.
+            # We assume hpc_path is the local directory for the case files.
+            case_path = Path(hpc_path)
+            input_file = case_path / f"{case_id}.raw"
+            output_dir = case_path / "dicom"
             command = f"raw_to_dcm --input {input_file} --output {output_dir}"
             return self.execute_command(command, cwd=case_path)
+        elif self.mode == 'remote':
+            # This path would ideally be pulled from a configuration file.
+            script_path = "/path/to/raw_to_dcm.py"
+            command = f"python {script_path} --case_id {case_id} --hpc_path {hpc_path}"
+            # In remote mode, execute_command doesn't need a cwd, as the script path is absolute
+            # and the script itself should handle paths relative to hpc_path.
+            return self.execute_command(command)
         else:
-            raise NotImplementedError("run_raw_to_dcm is not supported in remote mode.")
+            raise ValueError(f"Invalid mode: {self.mode}")
 
-    def submit_simulation_job( self, beam_id: str, remote_beam_dir: str, gpu_uuid: str ) -> JobSubmissionResult:
-        """Submit a MOQUI simulation job to the HPC system for a single beam."""
-        if self.mode == 'remote':
+    def submit_simulation_job(self, script_path: str) -> JobSubmissionResult:
+        """Submit a simulation job to the HPC system using a pre-existing script."""
+        if self.mode == 'local':
+            raise NotImplementedError(
+                "Local mode does not support simulation job submission."
+            )
+        elif self.mode == 'remote':
             try:
-                job_script = f"""#!/bin/bash
-#SBATCH --job-name=moqui_{beam_id}
-#SBATCH --output={remote_beam_dir}/simulation.log
-#SBATCH --error={remote_beam_dir}/simulation.err
-#SBATCH --gres=gpu:1
-#SBATCH --time=01:00:00
-
-cd {remote_beam_dir}
-export CUDA_VISIBLE_DEVICES={gpu_uuid}
-/usr/local/bin/moqui_simulator --input . --output output.raw
-"""
-                job_script_path = f"{remote_beam_dir}/submit_job.sh"
-                if not self._sftp_client:
-                    self._sftp_client = self._ssh_client.open_sftp()
-                with self._sftp_client.open(job_script_path, "w") as f:
-                    f.write(job_script)
-                submit_command = f"sbatch {job_script_path}"
+                submit_command = f"sbatch {script_path}"
+                # Here we call execute_command directly, which uses the ssh_client.
                 result = self.execute_command(submit_command)
+
                 if not result.success:
                     return JobSubmissionResult(
                         success=False,
                         error=f"Job submission failed: {result.error}",
                     )
-                output_lines = result.output.strip().split("\n")
-                job_id = None
-                for line in output_lines:
-                    if "Submitted batch job" in line:
-                        job_id = line.split()[-1]
-                        break
-                if not job_id:
-                    return JobSubmissionResult(
-                        success=False,
-                        error="Could not extract job ID from sbatch output",
-                    )
-                return JobSubmissionResult(success=True, job_id=job_id)
+
+                # Extract job ID from the sbatch output.
+                output_lines = result.output.strip().split()
+                if "job" in output_lines:
+                    job_id = output_lines[-1]
+                    return JobSubmissionResult(success=True, job_id=job_id)
+
+                return JobSubmissionResult(
+                    success=False,
+                    error="Could not extract job ID from sbatch output."
+                )
             except Exception as e:
                 return JobSubmissionResult(success=False, error=str(e))
         else:
-            raise NotImplementedError("submit_simulation_job is not supported in local mode.")
+            raise ValueError(f"Invalid mode: {self.mode}")
 
     def wait_for_job_completion(self, job_id: str, timeout_seconds: int = 3600) -> JobStatus:
         """Wait for an HPC job to complete, polling at regular intervals."""
@@ -211,9 +215,11 @@ export CUDA_VISIBLE_DEVICES={gpu_uuid}
         else:
             raise NotImplementedError("cleanup_remote_directory is not supported in local mode.")
 
-    def upload_to_pc_localdata(self, local_path: Path, case_id: str, settings: Any) -> UploadResult:
+    def upload_to_pc_localdata(self, local_path: Path, case_id: str, settings: Optional[Any] = None) -> UploadResult:
         """Uploads a file or an entire directory to the PC_localdata server."""
         if self.mode == 'remote':
+            if not settings:
+                return UploadResult(success=False, error="Settings are required for remote upload.")
             if not local_path.exists():
                 return UploadResult(success=False, error=f"Local path does not exist: {local_path}")
 
@@ -257,13 +263,21 @@ export CUDA_VISIBLE_DEVICES={gpu_uuid}
             except Exception as e:
                 return UploadResult(success=False, error=str(e))
         else: # local mode
-            # For local mode, we can simulate a copy to a 'localdata' directory
+            logging.info(
+                f"Simulating upload by copying to local directory for case {case_id}"
+            )
             local_dest = Path(f"./localdata_uploads/{case_id}")
             local_dest.mkdir(parents=True, exist_ok=True)
+
+            dest_path = local_dest / local_path.name
             if local_path.is_dir():
-                shutil.copytree(local_path, local_dest / local_path.name)
+                if dest_path.exists():
+                    shutil.rmtree(dest_path)
+                shutil.copytree(local_path, dest_path)
             else:
-                shutil.copy(local_path, local_dest / local_path.name)
+                shutil.copy(local_path, dest_path)
+
+            logging.info(f"File {local_path} copied to {dest_path}")
             return UploadResult(success=True)
 
     def __enter__(self):
