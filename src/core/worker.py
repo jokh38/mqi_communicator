@@ -9,12 +9,12 @@ from pathlib import Path
 from src.database.connection import DatabaseConnection
 from src.repositories.case_repo import CaseRepository
 from src.repositories.gpu_repo import GpuRepository
-from src.handlers.local_handler import LocalHandler
-from src.handlers.remote_handler import RemoteHandler
+from src.handlers.execution_handler import ExecutionHandler
 from src.infrastructure.logging_handler import StructuredLogger
 from src.infrastructure.process_manager import CommandExecutor
 from src.utils.retry_policy import RetryPolicy
 from src.core.workflow_manager import WorkflowManager
+import paramiko
 from src.core.tps_generator import TpsGenerator
 from src.config.settings import Settings
 
@@ -54,21 +54,42 @@ def worker_main(beam_id: str, beam_path: Path, settings: Settings) -> None:
             logger, settings.processing.local_execution_timeout_seconds)
         retry_policy = RetryPolicy(logger=logger)
 
-        local_handler = LocalHandler(settings, logger, command_executor,
-                                     retry_policy)
-        remote_handler = RemoteHandler(settings, logger, retry_policy)
+        # Create ExecutionHandler based on settings
+        workflow_mode = settings.execution_handler.get("Workflow", "local")
+
+        ssh_client = None
+        if workflow_mode == "remote":
+            try:
+                hpc_config = settings.get_hpc_connection()
+                if not hpc_config:
+                    raise ConnectionError("HPC connection settings not configured.")
+
+                ssh_client = paramiko.SSHClient()
+                ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                ssh_client.connect(
+                    hostname=hpc_config.get("host"),
+                    username=hpc_config.get("user"),
+                    key_filename=hpc_config.get("ssh_key_path"),
+                    timeout=hpc_config.get("connection_timeout_seconds", 30),
+                )
+            except Exception as e:
+                logger.error("Failed to establish HPC connection", {"error": str(e)})
+                raise  # Re-raise the exception to stop the worker
+
+        execution_handler = ExecutionHandler(mode=workflow_mode, ssh_client=ssh_client)
+
         # Create TPS generator
         tps_generator = TpsGenerator(settings, logger)
 
         workflow_manager = WorkflowManager(
             case_repo=case_repo,
             gpu_repo=gpu_repo,
-            local_handler=local_handler,
-            remote_handler=remote_handler,
+            execution_handler=execution_handler,
             tps_generator=tps_generator,
             logger=logger,
             id=beam_id,
             path=beam_path,
+            settings=settings,
         )
 
         workflow_manager.run_workflow()

@@ -9,7 +9,7 @@ from datetime import datetime
 
 from src.infrastructure.logging_handler import StructuredLogger
 from src.domain.errors import GpuResourceError
-from src.handlers.remote_handler import RemoteHandler
+from src.handlers.execution_handler import ExecutionHandler
 from src.repositories.gpu_repo import GpuRepository
 
 class GpuMonitor:
@@ -17,13 +17,13 @@ class GpuMonitor:
     host and updates a local repository.
 
     This class is a stateful service that separates data
-    acquisition (via RemoteHandler) and parsing from data
+    acquisition (via ExecutionHandler) and parsing from data
     persistence (via GpuRepository).
     """
     
     def __init__(self,
                  logger: StructuredLogger,
-                 remote_handler: RemoteHandler,
+                 execution_handler: ExecutionHandler,
                  gpu_repository: GpuRepository,
                  command: str,
                  update_interval: int = 60):
@@ -31,13 +31,13 @@ class GpuMonitor:
 
         Args:
             logger (StructuredLogger): Logger for recording operations.
-            remote_handler (RemoteHandler): Handler for executing commands on the remote host.
+            execution_handler (ExecutionHandler): Handler for executing commands.
             gpu_repository (GpuRepository): Repository for persisting GPU data.
             command (str): The nvidia-smi command to execute for fetching GPU data.
             update_interval (int): Interval in seconds between GPU data fetches.
         """
         self.logger = logger
-        self.remote_handler = remote_handler
+        self.execution_handler = execution_handler
         self.gpu_repository = gpu_repository
         self.command = command
         self.update_interval = update_interval
@@ -89,8 +89,7 @@ class GpuMonitor:
         
         try:
             # Execute nvidia-smi command remotely
-            result = self.remote_handler.execute_remote_command(
-                context_id="gpu_monitoring", # A generic ID for this operation
+            result = self.execution_handler.execute_command(
                 command=self.command
             )
 
