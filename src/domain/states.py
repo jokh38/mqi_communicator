@@ -144,8 +144,8 @@ class FileUploadState(WorkflowState):
             return HpcExecutionState()
 
         for file_path in files_to_upload:
-            result = context.remote_handler.upload_file(
-                local_file=file_path, remote_dir=remote_beam_dir
+            result = context.execution_handler.upload_file(
+                local_path=str(file_path), remote_path=f"{remote_beam_dir}/{file_path.name}"
             )
             if not result.success:
                 raise ProcessingError(f"Failed to upload file {file_path.name}: {result.error}")
@@ -163,11 +163,15 @@ class FileUploadState(WorkflowState):
 
 class HpcExecutionState(WorkflowState):
     """HPC execution state - runs MOQUI simulation on HPC for a single beam."""
+    def __init__(self, execution_handler: Optional[Any] = None):
+        self.execution_handler = execution_handler
 
     @handle_state_exceptions
     def execute(self, context: 'WorkflowManager') -> WorkflowState:
         """Submits a MOQUI simulation job for the beam and polls for completion."""
         context.logger.info("Starting HPC simulation for beam", {"beam_id": context.id})
+
+        handler = self.execution_handler or context.execution_handler
 
         # GPUs are already allocated at case level, no need to allocate individually
         # The beam should use the GPU assignment from the case-level TPS file
@@ -185,7 +189,7 @@ class HpcExecutionState(WorkflowState):
             raise ProcessingError("Remote beam directory not found in shared context.")
 
         # Submit job without individual GPU allocation (GPUs managed at case level)
-        job_result = context.remote_handler.submit_simulation_job(
+        job_result = handler.submit_simulation_job(
             beam_id=context.id,
             remote_beam_dir=remote_beam_dir,
             gpu_uuid=None  # GPU allocation handled in TPS file
@@ -201,7 +205,7 @@ class HpcExecutionState(WorkflowState):
         context.logger.info("HPC job submitted, polling for completion", {"beam_id": context.id, "job_id": job_id})
 
         context.case_repo.update_beam_status(context.id, BeamStatus.HPC_RUNNING)
-        job_status = context.remote_handler.wait_for_job_completion(
+        job_status = handler.wait_for_job_completion(
             job_id=job_id,
             timeout_seconds=3600
         )
@@ -244,7 +248,7 @@ class DownloadState(WorkflowState):
         local_beam_result_dir.mkdir(parents=True, exist_ok=True)
 
         remote_file_path = f"{remote_beam_dir}/output.raw"
-        result = context.remote_handler.download_file(
+        result = context.execution_handler.download_file(
             remote_file_path=remote_file_path,
             local_dir=local_beam_result_dir
         )
@@ -258,7 +262,7 @@ class DownloadState(WorkflowState):
 
         context.shared_context["raw_output_file"] = main_output_file
 
-        context.remote_handler.cleanup_remote_directory(remote_beam_dir)
+        context.execution_handler.cleanup_remote_directory(remote_beam_dir)
 
         context.logger.info("Beam result downloaded successfully", {"beam_id": context.id})
         return PostprocessingState()
@@ -282,7 +286,7 @@ class PostprocessingState(WorkflowState):
         output_dir = input_file.parent / "dcm_output"
         output_dir.mkdir(exist_ok=True)
 
-        result = context.local_handler.run_raw_to_dcm(
+        result = context.execution_handler.run_raw_to_dcm(
             input_file=input_file,
             output_dir=output_dir,
             case_path=context.path
@@ -335,9 +339,10 @@ class UploadResultToPCLocalDataState(WorkflowState):
             raise ProcessingError(f"Could not retrieve beam data for beam_id: {manager.id}")
 
         case_id = beam.parent_case_id
-        result = manager.remote_handler.upload_to_pc_localdata(
+        result = manager.execution_handler.upload_to_pc_localdata(
             local_path=Path(final_result_path_str),
-            case_id=case_id
+            case_id=case_id,
+            settings=manager.settings
         )
 
         if not result.success:

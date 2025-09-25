@@ -18,11 +18,26 @@ def temp_config_file(tmp_path: Path) -> Path:
             "ssh_key_path": "/home/jokh38/.ssh/id_rsa_for_localdata",
             "remote_base_dir": "D:/MOQUI_RESULTS",
         },
+        "ExecutionHandler": {
+            "GpuMonitor": "local",
+            "Workflow": "remote"
+        }
     }
     config_file = tmp_path / "config.yaml"
     with open(config_file, "w") as f:
         yaml.dump(config_data, f)
     return config_file
+
+def test_load_execution_handler_settings(temp_config_file: Path):
+    """
+    Tests that the Settings class correctly loads the ExecutionHandler
+    configuration from the config file.
+    """
+    settings = Settings(config_path=temp_config_file)
+
+    assert hasattr(settings, "execution_handler")
+    assert settings.execution_handler["GpuMonitor"] == "local"
+    assert settings.execution_handler["Workflow"] == "remote"
 
 def test_get_pc_localdata_connection(temp_config_file: Path):
     """

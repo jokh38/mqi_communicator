@@ -9,8 +9,7 @@ from pathlib import Path
 
 from src.repositories.case_repo import CaseRepository
 from src.repositories.gpu_repo import GpuRepository
-from src.handlers.local_handler import LocalHandler
-from src.handlers.remote_handler import RemoteHandler
+from src.handlers.execution_handler import ExecutionHandler
 from src.infrastructure.logging_handler import StructuredLogger
 from src.core.tps_generator import TpsGenerator
 from src.domain.enums import BeamStatus
@@ -28,33 +27,33 @@ class WorkflowManager:
         self,
         case_repo: CaseRepository,
         gpu_repo: GpuRepository,
-        local_handler: LocalHandler,
-        remote_handler: RemoteHandler,
+        execution_handler: ExecutionHandler,
         tps_generator: TpsGenerator,
         logger: StructuredLogger,
         id: str,
         path: Path,
+        settings: Any,
     ):
         """Initializes the workflow manager with all required dependencies.
 
         Args:
             case_repo (CaseRepository): The case repository for database access.
             gpu_repo (GpuRepository): The GPU repository for database access.
-            local_handler (LocalHandler): The handler for local command execution.
-            remote_handler (RemoteHandler): The handler for remote command execution.
+            execution_handler (ExecutionHandler): The handler for command execution.
             tps_generator (TpsGenerator): The TPS generator service.
             logger (StructuredLogger): The structured logger.
             id (str): The unique identifier for the case or beam.
             path (Path): The path to the case or beam directory.
+            settings (Any): The application settings.
         """
         self.case_repo = case_repo
         self.gpu_repo = gpu_repo
-        self.local_handler = local_handler
-        self.remote_handler = remote_handler
+        self.execution_handler = execution_handler
         self.tps_generator = tps_generator
         self.logger = logger
         self.id = id
         self.path = path
+        self.settings = settings
         self.current_state: Optional[WorkflowState] = InitialState()
         self.shared_context: Dict[str, Any] = {}
 

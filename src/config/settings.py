@@ -98,6 +98,7 @@ class Settings:
         Args:
             config_path (Optional[Path]): Optional path to the configuration file.
         """
+        self.execution_handler: Dict[str, str] = {}
         self._load_from_env()
         if config_path and config_path.exists():
             self._load_from_file(config_path)
@@ -225,6 +226,10 @@ class Settings:
                     'structured_logging', self.logging.structured_logging)
                 self.logging.timezone_hours = logging_config.get(
                     'tz_hours', self.logging.timezone_hours)
+
+            if 'ExecutionHandler' in config_data:
+                self.execution_handler = config_data['ExecutionHandler']
+
         except Exception as e:
             # Log error but continue with defaults
             print(f"Warning: Could not load config file {config_path}: {e}")
