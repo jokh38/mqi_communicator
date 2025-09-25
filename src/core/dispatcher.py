@@ -3,16 +3,16 @@
 # =====================================================================================
 """Contains logic for dispatching cases and beams for processing."""
 
+import paramiko
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
 from src.config.settings import Settings
 from src.database.connection import DatabaseConnection
 from src.repositories.case_repo import CaseRepository
-from src.handlers.remote_handler import RemoteHandler
+from src.handlers.execution_handler import ExecutionHandler
 from src.infrastructure.logging_handler import StructuredLogger
 from src.domain.enums import CaseStatus, WorkflowStep
-from src.handlers.local_handler import LocalHandler
 from src.infrastructure.process_manager import CommandExecutor
 from src.utils.retry_policy import RetryPolicy
 from src.domain.errors import ProcessingError
@@ -37,21 +37,8 @@ def run_case_level_csv_interpreting(
     logger = StructuredLogger(f"dispatcher_{case_id}", config=settings.logging)
     db_connection = None
     try:
-        # Setup dependencies for LocalHandler
-        command_executor = CommandExecutor(logger)
-        retry_policy = RetryPolicy(
-            max_attempts=settings.retry_policy.max_retries,
-            base_delay=settings.retry_policy.initial_delay_seconds,
-            max_delay=settings.retry_policy.max_delay_seconds,
-            backoff_multiplier=settings.retry_policy.backoff_multiplier,
-            logger=logger,
-        )
-        local_handler = LocalHandler(
-            settings=settings,
-            logger=logger,
-            command_executor=command_executor,
-            retry_policy=retry_policy,
-        )
+        # Setup ExecutionHandler for local command execution
+        execution_handler = ExecutionHandler(mode="local")
 
         # Establish database connection to record workflow step
         db_path = settings.get_database_path()
@@ -77,11 +64,11 @@ def run_case_level_csv_interpreting(
         csv_output_dir.mkdir(parents=True, exist_ok=True)
 
         # The output of the case-level interpreter should go into the configured csv_output directory.
-        result = local_handler.run_mqi_interpreter(
-            beam_directory=case_path,
-            output_dir=csv_output_dir,
-            case_id=case_id
+        command = (
+            f"mqi_interpreter --input {case_path} "
+            f"--output {csv_output_dir} --case_id {case_id}"
         )
+        result = execution_handler.execute_command(command, cwd=case_path)
 
         if not result.success:
             error_message = (
@@ -131,30 +118,24 @@ def run_case_level_csv_interpreting(
             db_connection.close()
 
 
-def run_case_level_upload(case_id: str, case_path: Path, settings: Settings) -> bool:
+def run_case_level_upload(case_id: str, settings: Settings, ssh_client: paramiko.SSHClient) -> bool:
     """Uploads all generated CSV files to each beam's remote directory.
 
     Args:
         case_id (str): The ID of the case.
-        case_path (Path): The file system path to the case directory.
         settings (Settings): The application settings object.
+        ssh_client (paramiko.SSHClient): An active SSH client for remote operations.
 
     Returns:
         bool: True if the upload was successful, False otherwise.
     """
     logger = StructuredLogger(f"dispatcher_{case_id}", config=settings.logging)
     db_connection = None
-    remote_handler = None
     try:
-        # Setup dependencies
-        retry_policy = RetryPolicy(
-            max_attempts=settings.retry_policy.max_retries,
-            base_delay=settings.retry_policy.initial_delay_seconds,
-            max_delay=settings.retry_policy.max_delay_seconds,
-            backoff_multiplier=settings.retry_policy.backoff_multiplier,
-            logger=logger,
-        )
-        remote_handler = RemoteHandler(settings, logger, retry_policy)
+        if not ssh_client:
+            raise ProcessingError("SSH client is not available for upload.")
+
+        execution_handler = ExecutionHandler(mode="remote", ssh_client=ssh_client)
 
         db_path = settings.get_database_path()
         db_connection = DatabaseConnection(db_path=db_path, config=settings.database, logger=logger)
@@ -192,7 +173,8 @@ def run_case_level_upload(case_id: str, case_path: Path, settings: Settings) -> 
             remote_beam_dir = f"{remote_base_dir}/{beam.parent_case_id}/{beam.beam_id}"
             logger.info(f"Uploading {len(csv_files)} CSVs to remote dir for beam {beam.beam_id}", {"remote_dir": remote_beam_dir})
             for csv_file in csv_files:
-                result = remote_handler.upload_file(local_file=csv_file, remote_dir=remote_beam_dir)
+                remote_path = f"{remote_beam_dir}/{csv_file.name}"
+                result = execution_handler.upload_file(local_path=str(csv_file), remote_path=remote_path)
                 if not result.success:
                     raise ProcessingError(f"Failed to upload file {csv_file.name} for beam {beam.beam_id}: {result.error}")
 
@@ -210,8 +192,6 @@ def run_case_level_upload(case_id: str, case_path: Path, settings: Settings) -> 
     finally:
         if db_connection:
             db_connection.close()
-        if remote_handler:
-            remote_handler.disconnect()
 
 
 def prepare_beam_jobs(
