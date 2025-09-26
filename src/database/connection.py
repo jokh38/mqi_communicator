@@ -1,7 +1,3 @@
-# =====================================================================================
-# Target File: src/database/connection.py
-# Source Reference: src/database_handler.py (connection and transaction management)
-# =====================================================================================
 """Manages SQLite database connections, transactions, and schema initialization."""
 
 import sqlite3
@@ -10,129 +6,111 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Generator, Optional
 
-from src.config.settings import DatabaseConfig
+from src.config.settings import Settings  # Updated import
 from src.domain.errors import DatabaseError
 from src.infrastructure.logging_handler import StructuredLogger
 
 
 class DatabaseConnection:
-    """Manages SQLite database connections, transactions, and schema initialization.
+    """
+    Manages SQLite database connections, transactions, and schema initialization.
 
-    This class follows the Single Responsibility Principle by handling only
-    connection management and schema initialization. It provides thread-safe
-    transaction handling.
+    This class uses a Settings object to configure the database connection,
+    following the single-source-of-truth principle.
     """
 
-    def __init__(self, db_path: Path, config: DatabaseConfig, logger: StructuredLogger):
-        """Initializes the database connection manager.
+    def __init__(self, db_path: Path, settings: Settings, logger: StructuredLogger):
+        """
+        Initializes the database connection manager.
 
         Args:
             db_path (Path): Path to the SQLite database file.
-            config (DatabaseConfig): Database configuration settings.
+            settings (Settings): The application's settings object.
             logger (StructuredLogger): Logger for recording database events.
         """
         self.db_path = db_path
-        self.config = config
+        self.settings = settings
         self.logger = logger
         self._conn: Optional[sqlite3.Connection] = None
         self._lock = threading.RLock()
 
-        # Create database directory if it doesn't exist
         db_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # Initialize connection first, then schema
         self._connect()
 
     def _connect(self) -> None:
-        """Establishes a connection to the SQLite database with configuration settings.
+        """
+        Establishes a connection to the SQLite database using configuration from Settings.
 
         Raises:
             DatabaseError: If the connection fails.
         """
-        
+        db_config = self.settings.get_database_config()
+        timeout = db_config.get("timeout", 30)
+        journal_mode = db_config.get("journal_mode", "WAL")
+        synchronous = db_config.get("synchronous", "NORMAL")
+        cache_size = db_config.get("cache_size", -2000)
+
         try:
-            self._conn = sqlite3.connect(
-                str(self.db_path), timeout=self.config.timeout, check_same_thread=False
-            )
+            self._conn = sqlite3.connect(str(self.db_path),
+                                         timeout=timeout,
+                                         check_same_thread=False)
             self._conn.row_factory = sqlite3.Row
 
             # Apply configuration settings
-            self._conn.execute(f"PRAGMA journal_mode = {self.config.journal_mode}")
-            self._conn.execute(f"PRAGMA synchronous = {self.config.synchronous}")
-            self._conn.execute(f"PRAGMA cache_size = {self.config.cache_size}")
+            self._conn.execute(f"PRAGMA journal_mode = {journal_mode}")
+            self._conn.execute(f"PRAGMA synchronous = {synchronous}")
+            self._conn.execute(f"PRAGMA cache_size = {cache_size}")
 
             self.logger.info(
-                "Database connection established",
-                {
+                "Database connection established", {
                     "db_path": str(self.db_path),
-                    "journal_mode": self.config.journal_mode,
-                    "synchronous": self.config.synchronous,
-                },
-            )
+                    "journal_mode": journal_mode,
+                    "synchronous": synchronous,
+                })
 
         except sqlite3.Error as e:
             self.logger.error(
-                "Failed to connect to database",
-                {"db_path": str(self.db_path), "error": str(e)},
-            )
+                "Failed to connect to database", {
+                    "db_path": str(self.db_path),
+                    "error": str(e)
+                })
             raise DatabaseError(f"Failed to connect to database: {e}")
-        except Exception as e:
-            raise
 
     def __enter__(self):
-        """Enables use of the 'with' statement for resource management."""
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        """Ensures the database connection is closed when exiting a 'with' block."""
         self.close()
 
     @contextmanager
     def transaction(self) -> Generator[sqlite3.Connection, None, None]:
-        """Context manager for handling database transactions with thread-safe locking.
-
-        This implementation is re-entrant and allows for nested transactions.
-
-        Yields:
-            Generator[sqlite3.Connection, None, None]: The database connection for
-            executing queries within the transaction.
-
-        Raises:
-            DatabaseError: If the database connection is not established.
+        """
+        Context manager for handling database transactions with thread-safe locking.
         """
         with self._lock:
             if not self._conn:
                 raise DatabaseError("Database connection is not established")
 
             if self._conn.in_transaction:
-                # Already in a transaction, just yield the connection
                 yield self._conn
                 return
 
             try:
-                # Start a new transaction
                 self._conn.execute("BEGIN")
                 yield self._conn
-                # Commit if no exceptions
                 self._conn.commit()
-
             except Exception as e:
-                # Rollback on any error
                 self._conn.rollback()
-                self.logger.error("Transaction failed, rolling back", {"error": str(e)})
+                self.logger.error("Transaction failed, rolling back",
+                                  {"error": str(e)})
                 raise
 
     def init_db(self) -> None:
-        """Initializes the database schema, creating all necessary tables and indexes.
-
-        Raises:
-            DatabaseError: If schema initialization fails.
-        """
+        """Initializes the database schema, creating all necessary tables and indexes."""
         try:
             with self.transaction() as conn:
                 # Create cases table
-                conn.execute(
-                    """
+                conn.execute("""
                     CREATE TABLE IF NOT EXISTS cases (
                         case_id TEXT PRIMARY KEY,
                         case_path TEXT NOT NULL,
@@ -142,15 +120,11 @@ class DatabaseConnection:
                         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         error_message TEXT,
                         assigned_gpu TEXT,
-                        FOREIGN KEY (assigned_gpu)
-                            REFERENCES gpu_resources (uuid)
+                        FOREIGN KEY (assigned_gpu) REFERENCES gpu_resources (uuid)
                     )
-                """
-                )
-
+                """)
                 # Create beams table
-                conn.execute(
-                    """
+                conn.execute("""
                     CREATE TABLE IF NOT EXISTS beams (
                         beam_id TEXT PRIMARY KEY,
                         parent_case_id TEXT NOT NULL,
@@ -161,12 +135,9 @@ class DatabaseConnection:
                         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         FOREIGN KEY (parent_case_id) REFERENCES cases (case_id)
                     )
-                    """
-                )
-
+                """)
                 # Create gpu_resources table
-                conn.execute(
-                    """
+                conn.execute("""
                     CREATE TABLE IF NOT EXISTS gpu_resources (
                         uuid TEXT PRIMARY KEY,
                         gpu_index INTEGER NOT NULL,
@@ -179,15 +150,11 @@ class DatabaseConnection:
                         status TEXT NOT NULL,
                         assigned_case TEXT,
                         last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        FOREIGN KEY (assigned_case)
-                            REFERENCES cases (case_id)
+                        FOREIGN KEY (assigned_case) REFERENCES cases (case_id)
                     )
-                """
-                )
-
+                """)
                 # Create workflow_steps table
-                conn.execute(
-                    """
+                conn.execute("""
                     CREATE TABLE IF NOT EXISTS workflow_steps (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         case_id TEXT NOT NULL,
@@ -199,31 +166,14 @@ class DatabaseConnection:
                         metadata TEXT,
                         FOREIGN KEY (case_id) REFERENCES cases (case_id)
                     )
-                """
-                )
+                """)
+                # Create indexes
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_cases_status ON cases (status)")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_cases_updated ON cases (updated_at)")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_gpu_status ON gpu_resources (status)")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_workflow_case ON workflow_steps (case_id)")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_beams_parent_case ON beams (parent_case_id)")
 
-                # Create indexes for performance
-                conn.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_cases_status ON cases (status)"
-                )
-                conn.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_cases_updated ON "
-                    "cases (updated_at)"
-                )
-                conn.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_gpu_status ON "
-                    "gpu_resources (status)"
-                )
-                conn.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_workflow_case ON "
-                    "workflow_steps (case_id)"
-                )
-                conn.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_beams_parent_case ON "
-                    "beams (parent_case_id)"
-                )
-
-                # Migrate gpu_resources table to add gpu_index column if it doesn't exist
                 cursor = conn.execute("PRAGMA table_info(gpu_resources)")
                 columns = [column[1] for column in cursor.fetchall()]
                 if 'gpu_index' not in columns:
@@ -246,14 +196,7 @@ class DatabaseConnection:
 
     @property
     def connection(self) -> sqlite3.Connection:
-        """Provides access to the raw connection for repository classes.
-
-        Returns:
-            sqlite3.Connection: The SQLite connection object.
-
-        Raises:
-            DatabaseError: If the database connection is not established.
-        """
+        """Provides access to the raw connection for repository classes."""
         if not self._conn:
             raise DatabaseError("Database connection is not established")
         return self._conn

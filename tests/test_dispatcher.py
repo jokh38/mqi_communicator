@@ -1,35 +1,66 @@
 import pytest
 from unittest.mock import MagicMock, patch
 from pathlib import Path
+import yaml
+import paramiko
 
 from src.core import dispatcher
 from src.config.settings import Settings
 from src.handlers.execution_handler import ExecutionHandler, ExecutionResult, UploadResult
+from src.domain.models import BeamData
 
 @pytest.fixture
-def mock_settings():
-    """Fixture for mocked Settings."""
-    settings = MagicMock(spec=Settings)
-    settings.get_database_path.return_value = "dummy.db"
-    settings.get_case_directories.return_value = {
-        "csv_output": "/tmp/csv_output/{case_id}"
+def dispatcher_config_file(tmp_path: Path) -> Path:
+    """Provides a config file for dispatcher tests."""
+    config_data = {
+        "ExecutionHandler": {
+            "CsvInterpreter": "local",
+            "HpcJobSubmitter": "remote",
+        },
+        "paths": {
+            "base_directory": str(tmp_path),
+            "local": {
+                "database_path": "{base_directory}/mqi_test.db",
+                "csv_output_dir": "{base_directory}/csv_output/{case_id}",
+            },
+            "remote": {
+                "remote_case_path": "/hpc/cases/{case_id}",
+                "remote_beam_path": "{remote_case_path}/{beam_id}",
+            },
+        },
+        "executables": {
+            "local": {
+                "python": "/usr/bin/python3",
+                "mqi_interpreter_script": "scripts/interpreter.py",
+            },
+        },
+        "command_templates": {
+            "local": {
+                "interpret_csv": "{python} {mqi_interpreter_script} --input {input_path} --output {csv_output_dir}",
+            },
+        },
+        "logging": {"log_level": "DEBUG", "log_dir": str(tmp_path / "logs")},
+        "database": {"journal_mode": "WAL"},
     }
-    mock_logging_config = MagicMock()
-    mock_logging_config.log_level = "INFO"
-    mock_logging_config.log_dir = Path("/tmp/logs")
-    mock_logging_config.max_file_size = 10
-    mock_logging_config.backup_count = 5
-    settings.logging = mock_logging_config
-    settings.database = {}
-    return settings
+    config_file = tmp_path / "config.yaml"
+    with open(config_file, "w") as f:
+        yaml.dump(config_data, f)
+    return config_file
+
+@pytest.fixture
+def settings(dispatcher_config_file: Path) -> Settings:
+    """Fixture to provide a real Settings instance for dispatcher tests."""
+    return Settings(config_path=dispatcher_config_file)
 
 @patch("src.core.dispatcher.DatabaseConnection")
 @patch("src.core.dispatcher.CaseRepository")
 @patch("src.core.dispatcher.ExecutionHandler")
-def test_run_case_level_csv_interpreting_success(mock_exec_handler_cls, mock_case_repo_cls, mock_db_conn_cls, mock_settings):
+def test_run_csv_interpreting_uses_settings(
+        mock_exec_handler_cls, mock_case_repo_cls,
+        mock_db_conn_cls, settings):
     """
-    Tests that run_case_level_csv_interpreting successfully calls
-    the execution handler with the correct command.
+    Tests that run_case_level_csv_interpreting uses Settings to get the
+    command and paths, and correctly overrides the input path.
     """
     # Arrange
     mock_exec_handler_instance = MagicMock(spec=ExecutionHandler)
@@ -37,60 +68,72 @@ def test_run_case_level_csv_interpreting_success(mock_exec_handler_cls, mock_cas
     mock_exec_handler_cls.return_value = mock_exec_handler_instance
 
     case_id = "test_case_01"
-    case_path = Path("/dummypath/test_case_01")
+    case_path = Path(f"/dummypath/{case_id}")
+
+    # The dispatcher should call get_command with the correct `input_path`
+    expected_command = settings.get_command(
+        "interpret_csv",
+        handler_name="CsvInterpreter",
+        case_id=case_id,
+        input_path=str(case_path)
+    )
 
     # Act
-    success = dispatcher.run_case_level_csv_interpreting(case_id, case_path, mock_settings)
+    success = dispatcher.run_case_level_csv_interpreting(case_id, case_path, settings)
 
     # Assert
     assert success is True
-    mock_exec_handler_instance.execute_command.assert_called_once()
-    call_args, call_kwargs = mock_exec_handler_instance.execute_command.call_args
-    assert f"mqi_interpreter --input {case_path}" in call_args[0]
-    assert f"--output /tmp/csv_output/{case_id}" in call_args[0]
-    assert f"--case_id {case_id}" in call_args[0]
-    assert call_kwargs["cwd"] == case_path
+    db_path_from_settings = settings.get_path("database_path", handler_name="CsvInterpreter")
+    mock_db_conn_cls.assert_called_once()
+    db_call_args = mock_db_conn_cls.call_args[1]
+    assert db_call_args['db_path'] == Path(db_path_from_settings)
+    assert db_call_args['settings'] is settings
+
+    mock_exec_handler_instance.execute_command.assert_called_once_with(expected_command, cwd=case_path)
+
 
 @patch("src.core.dispatcher.DatabaseConnection")
 @patch("src.core.dispatcher.CaseRepository")
 @patch("src.core.dispatcher.ExecutionHandler")
-def test_run_case_level_upload_success(mock_exec_handler_cls, mock_case_repo_cls, mock_db_conn_cls, mock_settings):
+@patch("src.core.dispatcher.Path.glob")
+def test_run_upload_uses_settings(
+        mock_glob, mock_exec_handler_cls, mock_case_repo_cls,
+        mock_db_conn_cls, settings, tmp_path):
     """
-    Tests that run_case_level_upload successfully calls the execution handler's
-    upload_file method for each CSV file.
+    Tests that run_case_level_upload uses Settings to generate the remote path.
     """
     # Arrange
     mock_exec_handler_instance = MagicMock(spec=ExecutionHandler)
     mock_exec_handler_instance.upload_file.return_value = UploadResult(success=True)
     mock_exec_handler_cls.return_value = mock_exec_handler_instance
-
-    mock_ssh_client = MagicMock()
-
-    # Mock settings for HPC paths
-    mock_settings.get_hpc_paths.return_value = {
-        "remote_case_path_template": "/remote/cases"
-    }
-
-    # Mock CaseRepository to return beams
-    mock_beam = MagicMock()
-    mock_beam.parent_case_id = "test_case_01"
-    mock_beam.beam_id = "beam_01"
-    mock_case_repo_instance = mock_case_repo_cls.return_value
-    mock_case_repo_instance.get_beams_for_case.return_value = [mock_beam]
+    mock_ssh_client = MagicMock(spec=paramiko.SSHClient)
 
     case_id = "test_case_01"
 
-    # Create dummy CSV files to be "uploaded"
-    with patch("src.core.dispatcher.Path.glob") as mock_glob:
-        mock_csv_file = Path(f"/tmp/csv_output/{case_id}/test.csv")
-        mock_glob.return_value = [mock_csv_file]
+    csv_output_dir = Path(settings.get_path("csv_output_dir", handler_name="CsvInterpreter", case_id=case_id))
+    csv_output_dir.mkdir(parents=True, exist_ok=True)
+    mock_csv_file = csv_output_dir / "test.csv"
+    mock_csv_file.touch()
+    mock_glob.return_value = [mock_csv_file]
 
-        # Act
-        success = dispatcher.run_case_level_upload(case_id, mock_settings, mock_ssh_client)
+    mock_beam = BeamData(beam_id=f"{case_id}_beam_01", parent_case_id=case_id, beam_path=Path("."), status="pending", created_at="now", updated_at="now")
+    mock_case_repo_instance = mock_case_repo_cls.return_value
+    mock_case_repo_instance.get_beams_for_case.return_value = [mock_beam]
 
-        # Assert
-        assert success is True
-        mock_exec_handler_instance.upload_file.assert_called_once_with(
-            local_path=str(mock_csv_file),
-            remote_path=f"/remote/cases/{case_id}/beam_01/{mock_csv_file.name}"
-        )
+    # Act
+    success = dispatcher.run_case_level_upload(case_id, settings, mock_ssh_client)
+
+    # Assert
+    assert success is True
+
+    expected_remote_path = settings.get_path(
+        "remote_beam_path",
+        handler_name="HpcJobSubmitter",
+        case_id=case_id,
+        beam_id=mock_beam.beam_id
+    ) + f"/{mock_csv_file.name}"
+
+    mock_exec_handler_instance.upload_file.assert_called_once_with(
+        local_path=str(mock_csv_file),
+        remote_path=expected_remote_path
+    )
