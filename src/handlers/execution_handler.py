@@ -14,6 +14,7 @@ from typing import Any, NamedTuple, Optional
 import paramiko
 
 from src.config.settings import Settings
+from src.infrastructure.logging_handler import LoggerFactory
 
 
 class ExecutionResult(NamedTuple):
@@ -64,6 +65,7 @@ class ExecutionHandler:
         self.mode = mode
         self._ssh_client = ssh_client
         self._sftp_client: Optional[paramiko.SFTPClient] = None
+        self.logger = LoggerFactory.get_logger("ExecutionHandler")
 
     def execute_command(self,
                         command: str,
@@ -149,7 +151,7 @@ class ExecutionHandler:
                 self._sftp_client.put(local_path, remote_path)
             return UploadResult(success=True)
         except Exception as e:
-            logging.error(f"File upload failed: {e}")
+            self.logger.error("File upload failed", context={"error": str(e)})
             return UploadResult(success=False, error=str(e))
 
     def download_file(self, remote_path: str, local_path: str) -> DownloadResult:
@@ -171,7 +173,7 @@ class ExecutionHandler:
                 self._sftp_client.get(remote_path, local_path)
             return DownloadResult(success=True)
         except Exception as e:
-            logging.error(f"File download failed: {e}")
+            self.logger.error("File download failed", context={"error": str(e)})
             return DownloadResult(success=False, error=str(e))
 
     def cleanup(self, handler_name: str, **context: Any) -> ExecutionResult:

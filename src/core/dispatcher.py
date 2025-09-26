@@ -12,6 +12,7 @@ from src.infrastructure.logging_handler import StructuredLogger
 from src.domain.enums import CaseStatus, WorkflowStep
 from src.domain.errors import ProcessingError
 from src.core.data_integrity_validator import DataIntegrityValidator
+from src.infrastructure.logging_handler import LoggerFactory
 from src.core.tps_generator import TpsGenerator
 from src.repositories.gpu_repo import GpuRepository
 
@@ -29,7 +30,7 @@ def run_case_level_csv_interpreting(case_id: str, case_path: Path,
     Returns:
         bool: True if CSV interpreting was successful, False otherwise.
     """
-    logger = StructuredLogger(f"dispatcher_{case_id}", config=settings.get_logging_config())
+    logger = LoggerFactory.get_logger(f"dispatcher_{case_id}")
     db_connection = None
     handler_name = "CsvInterpreter"  # This handler is local
 
@@ -108,7 +109,7 @@ def run_case_level_upload(case_id: str, settings: Settings,
     """
     Uploads all generated CSV files to each beam's remote directory.
     """
-    logger = StructuredLogger(f"dispatcher_{case_id}", config=settings.get_logging_config())
+    logger = LoggerFactory.get_logger(f"dispatcher_{case_id}")
     db_connection = None
     # Use a remote handler context for getting remote paths
     remote_handler_name = "HpcJobSubmitter"
@@ -195,7 +196,7 @@ def prepare_beam_jobs(
         List[Dict[str, Any]]: A list of dictionaries, each representing a beam job to be executed.
         Returns an empty list if no beams are found, validation fails, or an error occurs.
     """
-    logger = StructuredLogger(f"dispatcher_{case_id}", config=settings.get_logging_config())
+    logger = LoggerFactory.get_logger(f"dispatcher_{case_id}")
     beam_jobs = []
 
     try:
