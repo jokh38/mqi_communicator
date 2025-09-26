@@ -1,6 +1,3 @@
-# =====================================================================================
-# Target File: src/core/dispatcher.py
-# =====================================================================================
 """Contains logic for dispatching cases and beams for processing."""
 
 import paramiko
@@ -13,18 +10,16 @@ from src.repositories.case_repo import CaseRepository
 from src.handlers.execution_handler import ExecutionHandler
 from src.infrastructure.logging_handler import StructuredLogger
 from src.domain.enums import CaseStatus, WorkflowStep
-from src.infrastructure.process_manager import CommandExecutor
-from src.utils.retry_policy import RetryPolicy
 from src.domain.errors import ProcessingError
 from src.core.data_integrity_validator import DataIntegrityValidator
 from src.core.tps_generator import TpsGenerator
 from src.repositories.gpu_repo import GpuRepository
 
 
-def run_case_level_csv_interpreting(
-        case_id: str, case_path: Path,
-        settings: Settings) -> bool:
-    """Runs the mqi_interpreter for the entire case to generate CSV files.
+def run_case_level_csv_interpreting(case_id: str, case_path: Path,
+                                    settings: Settings) -> bool:
+    """
+    Runs the mqi_interpreter for the entire case to generate CSV files.
 
     Args:
         case_id (str): The ID of the case.
@@ -34,40 +29,34 @@ def run_case_level_csv_interpreting(
     Returns:
         bool: True if CSV interpreting was successful, False otherwise.
     """
-    logger = StructuredLogger(f"dispatcher_{case_id}", config=settings.logging)
+    logger = StructuredLogger(f"dispatcher_{case_id}", config=settings.get_logging_config())
     db_connection = None
-    try:
-        # Setup ExecutionHandler for local command execution
-        execution_handler = ExecutionHandler(mode="local")
+    handler_name = "CsvInterpreter"  # This handler is local
 
-        # Establish database connection to record workflow step
-        db_path = settings.get_database_path()
-        db_connection = DatabaseConnection(
-            db_path=db_path, config=settings.database, logger=logger
-        )
+    try:
+        execution_handler = ExecutionHandler(settings=settings, mode="local")
+
+        db_path_str = settings.get_path("database_path", handler_name=handler_name)
+        db_connection = DatabaseConnection(db_path=Path(db_path_str),
+                                           settings=settings,
+                                           logger=logger)
         case_repo = CaseRepository(db_connection, logger)
 
         logger.info(f"Starting case-level CSV interpreting for: {case_id}")
         case_repo.record_workflow_step(
             case_id=case_id,
             step=WorkflowStep.CSV_INTERPRETING,
-            status="started",  # This status is for the workflow history, not the beam status
-            metadata={"message": "Running mqi_interpreter for the whole case."}
+            status="started",
+            metadata={"message": "Running mqi_interpreter for the whole case."})
+
+        # The command template now uses {input_path} for clarity.
+        command = settings.get_command(
+            "interpret_csv",
+            handler_name=handler_name,
+            case_id=case_id, # Still needed to resolve {csv_output_dir}
+            input_path=str(case_path)
         )
 
-        # Get the configured output directory for CSVs and ensure it exists
-        case_dirs = settings.get_case_directories()
-        csv_output_dir_template = case_dirs.get("csv_output")
-        if not csv_output_dir_template:
-            raise ProcessingError("'csv_output_directory' not found in configuration.")
-        csv_output_dir = Path(str(csv_output_dir_template).format(case_id=case_id))
-        csv_output_dir.mkdir(parents=True, exist_ok=True)
-
-        # The output of the case-level interpreter should go into the configured csv_output directory.
-        command = (
-            f"mqi_interpreter --input {case_path} "
-            f"--output {csv_output_dir} --case_id {case_id}"
-        )
         result = execution_handler.execute_command(command, cwd=case_path)
 
         if not result.success:
@@ -76,23 +65,18 @@ def run_case_level_csv_interpreting(
                 f"Error: {result.error}")
             raise ProcessingError(error_message)
 
-        # Verify that CSV files were created for each beam
-        if not any(csv_output_dir.glob("*.csv")):
+        csv_output_dir = settings.get_path("csv_output_dir", handler_name=handler_name, case_id=case_id)
+        if not any(Path(csv_output_dir).glob("*.csv")):
             logger.warning(
                 f"No CSV files found in the output directory {csv_output_dir} "
                 f"after case-level CSV interpreting.")
-            # Depending on requirements, this could be a fatal error.
-            # For now, we log a warning and proceed, but a stricter check might be needed.
 
-        logger.info(
-            f"Case-level CSV interpreting completed successfully for: {case_id}")
+        logger.info(f"Case-level CSV interpreting completed for: {case_id}")
         case_repo.record_workflow_step(
             case_id=case_id,
             step=WorkflowStep.CSV_INTERPRETING,
             status="completed",
-            metadata={
-                "message": "mqi_interpreter finished successfully for the whole case."
-            })
+            metadata={"message": "mqi_interpreter finished successfully."})
         return True
 
     except Exception as e:
@@ -104,13 +88,14 @@ def run_case_level_csv_interpreting(
                 case_repo.update_case_status(case_id,
                                              CaseStatus.FAILED,
                                              error_message=str(e))
-                case_repo.record_workflow_step(case_id=case_id,
-                                               step=WorkflowStep.CSV_INTERPRETING,
-                                               status="failed",
-                                               metadata={"error": str(e)})
+                case_repo.record_workflow_step(
+                    case_id=case_id,
+                    step=WorkflowStep.CSV_INTERPRETING,
+                    status="failed",
+                    metadata={"error": str(e)})
             except Exception as db_e:
                 logger.error(
-                    "Failed to update case status during CSV interpreting error",
+                    "Failed to update case status during error",
                     {"case_id": case_id, "db_error": str(db_e)})
         return False
     finally:
@@ -118,81 +103,80 @@ def run_case_level_csv_interpreting(
             db_connection.close()
 
 
-def run_case_level_upload(case_id: str, settings: Settings, ssh_client: paramiko.SSHClient) -> bool:
-    """Uploads all generated CSV files to each beam's remote directory.
-
-    Args:
-        case_id (str): The ID of the case.
-        settings (Settings): The application settings object.
-        ssh_client (paramiko.SSHClient): An active SSH client for remote operations.
-
-    Returns:
-        bool: True if the upload was successful, False otherwise.
+def run_case_level_upload(case_id: str, settings: Settings,
+                          ssh_client: paramiko.SSHClient) -> bool:
     """
-    logger = StructuredLogger(f"dispatcher_{case_id}", config=settings.logging)
+    Uploads all generated CSV files to each beam's remote directory.
+    """
+    logger = StructuredLogger(f"dispatcher_{case_id}", config=settings.get_logging_config())
     db_connection = None
+    # Use a remote handler context for getting remote paths
+    remote_handler_name = "HpcJobSubmitter"
+    local_handler_name = "CsvInterpreter"
+
     try:
         if not ssh_client:
             raise ProcessingError("SSH client is not available for upload.")
 
-        execution_handler = ExecutionHandler(mode="remote", ssh_client=ssh_client)
+        execution_handler = ExecutionHandler(settings=settings,
+                                             mode="remote",
+                                             ssh_client=ssh_client)
 
-        db_path = settings.get_database_path()
-        db_connection = DatabaseConnection(db_path=db_path, config=settings.database, logger=logger)
+        db_path_str = settings.get_path("database_path", handler_name=local_handler_name)
+        db_connection = DatabaseConnection(db_path=Path(db_path_str),
+                                           settings=settings,
+                                           logger=logger)
         case_repo = CaseRepository(db_connection, logger)
 
         logger.info(f"Starting case-level file upload for: {case_id}")
-        case_repo.record_workflow_step(
-            case_id=case_id,
-            step=WorkflowStep.UPLOADING,
-            status="started",
-            metadata={"message": "Uploading all CSV files for the case."}
-        )
+        case_repo.record_workflow_step(case_id=case_id,
+                                       step=WorkflowStep.UPLOADING,
+                                       status="started")
 
-        # Get CSV files from the configured output directory
-        case_dirs = settings.get_case_directories()
-        csv_output_dir_template = case_dirs.get("csv_output")
-        csv_output_dir = Path(str(csv_output_dir_template).format(case_id=case_id))
-        csv_files = list(csv_output_dir.glob("*.csv"))
+        csv_dir = settings.get_path("csv_output_dir",
+                                    handler_name=local_handler_name,
+                                    case_id=case_id)
+        csv_files = list(Path(csv_dir).glob("*.csv"))
 
         if not csv_files:
-            logger.warning(f"No CSV files found to upload for case {case_id}", {"directory": str(csv_output_dir)})
-            return True  # Not a failure if no files to upload
+            logger.warning(f"No CSV files found to upload for case {case_id}",
+                           {"directory": csv_dir})
+            return True
 
         beams = case_repo.get_beams_for_case(case_id)
         if not beams:
-            raise ProcessingError(f"No beams found in database for case {case_id} during upload.")
+            raise ProcessingError(
+                f"No beams found in database for case {case_id} during upload.")
 
-        hpc_paths = settings.get_hpc_paths()
-        remote_base_dir = hpc_paths.get("remote_case_path_template")
-        if not remote_base_dir:
-            raise ProcessingError("`remote_case_path_template` not configured.")
-
-        # Upload all CSVs to each beam's remote directory
         for beam in beams:
-            remote_beam_dir = f"{remote_base_dir}/{beam.parent_case_id}/{beam.beam_id}"
-            logger.info(f"Uploading {len(csv_files)} CSVs to remote dir for beam {beam.beam_id}", {"remote_dir": remote_beam_dir})
+            remote_beam_dir = settings.get_path("remote_beam_path",
+                                                handler_name=remote_handler_name,
+                                                case_id=beam.parent_case_id,
+                                                beam_id=beam.beam_id)
+            logger.info(
+                f"Uploading {len(csv_files)} CSVs to remote dir for beam {beam.beam_id}",
+                {"remote_dir": remote_beam_dir})
             for csv_file in csv_files:
                 remote_path = f"{remote_beam_dir}/{csv_file.name}"
-                result = execution_handler.upload_file(local_path=str(csv_file), remote_path=remote_path)
+                result = execution_handler.upload_file(
+                    local_path=str(csv_file), remote_path=remote_path)
                 if not result.success:
-                    raise ProcessingError(f"Failed to upload file {csv_file.name} for beam {beam.beam_id}: {result.error}")
+                    raise ProcessingError(
+                        f"Failed to upload {csv_file.name}: {result.error}")
 
-        case_repo.record_workflow_step(
-            case_id=case_id,
-            step=WorkflowStep.UPLOADING,
-            status="completed",
-            metadata={"message": f"Uploaded {len(csv_files)} CSV files to {len(beams)} beam directories."}
-        )
+        case_repo.record_workflow_step(case_id=case_id,
+                                       step=WorkflowStep.UPLOADING,
+                                       status="completed")
         return True
     except Exception as e:
-        logger.error("Case-level file upload failed", {"case_id": case_id, "error": str(e)})
-        # Further error handling to update DB status can be added here
+        logger.error("Case-level file upload failed",
+                     {"case_id": case_id, "error": str(e)})
         return False
     finally:
         if db_connection:
             db_connection.close()
 
+# ... (rest of the file remains the same, but fixing db connection in tps_generation)
 
 def prepare_beam_jobs(
     case_id: str, case_path: Path, settings: Settings
@@ -211,7 +195,7 @@ def prepare_beam_jobs(
         List[Dict[str, Any]]: A list of dictionaries, each representing a beam job to be executed.
         Returns an empty list if no beams are found, validation fails, or an error occurs.
     """
-    logger = StructuredLogger(f"dispatcher_{case_id}", config=settings.logging)
+    logger = StructuredLogger(f"dispatcher_{case_id}", config=settings.get_logging_config())
     beam_jobs = []
 
     try:
@@ -258,34 +242,22 @@ def prepare_beam_jobs(
 def run_case_level_tps_generation(
     case_id: str, case_path: Path, beam_count: int, settings: Settings
 ) -> Optional[List[Dict[str, Any]]]:
-    """Generates moqui_tps.in file at case level with dynamic GPU assignments.
-
-    Args:
-        case_id (str): The ID of the case.
-        case_path (Path): The file system path to the case directory.
-        beam_count (int): Number of beams in the case.
-        settings (Settings): The application settings object.
-
-    Returns:
-        Optional[List[Dict[str, Any]]]: List of GPU assignments if successful, None otherwise.
-    """
-    logger = StructuredLogger(f"tps_dispatcher_{case_id}", config=settings.logging)
+    """Generates moqui_tps.in file at case level with dynamic GPU assignments."""
+    logger = LoggerFactory.get_logger(f"tps_dispatcher_{case_id}")
     db_connection = None
-
+    handler_name = "CsvInterpreter" # local handler for db path
     try:
         logger.info(f"Starting case-level TPS generation for case: {case_id}")
 
-        # Setup database connection and repositories
-        db_path = settings.get_database_path()
-        db_connection = DatabaseConnection(
-            db_path=db_path, config=settings.database, logger=logger
-        )
+        db_path_str = settings.get_path("database_path", handler_name=handler_name)
+        db_connection = DatabaseConnection(db_path=Path(db_path_str),
+                                           settings=settings,
+                                           logger=logger)
         db_connection.init_db()
 
         gpu_repo = GpuRepository(db_connection, logger)
         case_repo = CaseRepository(db_connection, logger)
 
-        # Record workflow step
         case_repo.record_workflow_step(
             case_id=case_id,
             step=WorkflowStep.TPS_GENERATION,
@@ -293,7 +265,6 @@ def run_case_level_tps_generation(
             metadata={"message": f"Generating TPS file with {beam_count} beam assignments."}
         )
 
-        # Allocate multiple GPUs for all beams
         logger.info(f"Allocating {beam_count} GPUs for case {case_id}")
         gpu_assignments = gpu_repo.find_and_lock_multiple_gpus(
             case_id=case_id,
@@ -311,7 +282,6 @@ def run_case_level_tps_generation(
             )
             return None
 
-        # Generate TPS file with GPU assignments
         tps_generator = TpsGenerator(settings, logger)
         success = tps_generator.generate_tps_file_with_gpu_assignments(
             case_path=case_path,
@@ -323,7 +293,6 @@ def run_case_level_tps_generation(
         if not success:
             error_message = f"TPS file generation failed for case {case_id}"
             logger.error(error_message)
-            # Release allocated GPUs on failure
             gpu_repo.release_all_for_case(case_id)
             case_repo.record_workflow_step(
                 case_id=case_id,
@@ -348,7 +317,6 @@ def run_case_level_tps_generation(
 
     except Exception as e:
         logger.error("Case-level TPS generation failed", {"case_id": case_id, "error": str(e)})
-        # Release any allocated GPUs on error
         if db_connection:
             try:
                 gpu_repo = GpuRepository(db_connection, logger)
