@@ -1,0 +1,73 @@
+{
+    "file_name": "main.py",
+    "description": "\nMain entry point for the MQI Communicator application.\n\nThis script is responsible for:\n- Watching for new case directories.\n- Managing a worker process pool to handle case processing.\n- Coordinating the application startup and shutdown.\n- Handling top-level error recovery.\n",
+    "classes": [
+        {
+            "name": "CaseDetectionHandler",
+            "docstring": "Handles file system events to detect new case directories.\n    This handler watches for directory creation events and queues new cases for processing.\n    ",
+            "properties": [],
+            "methods": [
+                {
+                    "name": "__init__",
+                    "docstring": "Initializes the CaseDetectionHandler.\n        Args:\n            case_queue (mp.Queue): The queue for new cases.\n            logger (StructuredLogger): The logger for recording events.\n        "
+                },
+                {
+                    "name": "on_created",
+                    "docstring": "Handles the 'created' event from the file system watcher.\n        Checks if a directory was created and, if so, queues it as a new case.\n        Args:\n            event: The file system event.\n        "
+                }
+            ]
+        },
+        {
+            "name": "MQIApplication",
+            "docstring": "Main application controller for the MQI Communicator.\n    Manages the lifecycle of the application, including initialization,\n    coordination of components, and graceful shutdown.\n    ",
+            "properties": [],
+            "methods": [
+                {
+                    "name": "__init__",
+                    "docstring": "Initializes the MQIApplication instance.\n        Args:\n            config_path (Optional[Path]): The path to the configuration file.\n        "
+                },
+                {
+                    "name": "initialize_logging",
+                    "docstring": "Initializes the structured logging for the application.\n        Exits the application if logging cannot be initialized.\n        "
+                },
+                {
+                    "name": "initialize_database",
+                    "docstring": "Initializes the database connection and schema.\n        Exits the application if the database cannot be initialized.\n        "
+                },
+                {
+                    "name": "start_file_watcher",
+                    "docstring": "Starts the file system watcher to detect new cases."
+                },
+                {
+                    "name": "start_dashboard",
+                    "docstring": "Starts the dashboard UI in a separate process if configured."
+                },
+                {
+                    "name": "start_gpu_monitor",
+                    "docstring": "Starts the GPU monitoring service in a background thread."
+                },
+                {
+                    "name": "run_worker_loop",
+                    "docstring": "The main loop for processing cases from the queue.\n        Manages a process pool to handle cases concurrently.\n        "
+                },
+                {
+                    "name": "_monitor_services",
+                    "docstring": "Periodically monitors the health of critical background services."
+                },
+                {
+                    "name": "initialize_ssh_client",
+                    "docstring": "Initializes the SSH client for remote connections."
+                },
+                {
+                    "name": "shutdown",
+                    "docstring": "Performs a graceful shutdown of all application components."
+                },
+                {
+                    "name": "run",
+                    "docstring": "The main entry point for running the application.\n        Initializes and starts all components, then enters the main processing loop.\n        "
+                }
+            ]
+        }
+    ],
+    "refactoring_suggestions": []
+}

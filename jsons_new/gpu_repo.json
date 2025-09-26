@@ -1,0 +1,54 @@
+{
+    "file_name": "gpu_repo.py",
+    "description": "Manages all CRUD operations for the 'gpu_resources' table.",
+    "classes": [
+        {
+            "name": "GpuRepository",
+            "docstring": "Manages CRUD operations for the 'gpu_resources' table and handles GPU\n    allocation/deallocation.\n\n    This class separates GPU data persistence from nvidia-smi parsing.\n    ",
+            "properties": [],
+            "methods": [
+                {
+                    "name": "__init__",
+                    "docstring": "Initializes the GPU repository with an injected database connection.\n\n        Args:\n            db_connection (DatabaseConnection): The database connection manager.\n            logger (StructuredLogger): The logger for recording operations.\n        "
+                },
+                {
+                    "name": "update_resources",
+                    "docstring": "Updates the GPU resources table with data from the GPU monitor using an\n        atomic UPSERT operation.\n\n        This method uses a single transactional UPSERT for efficiency and atomicity.\n\n        Args:\n            gpu_data (List[Dict[str, Any]]): A list of dictionaries containing GPU information.\n\n        Raises:\n            GpuResourceError: If the update fails.\n        "
+                },
+                {
+                    "name": "assign_gpu_to_case",
+                    "docstring": "Assigns a GPU to a specific case.\n\n        Args:\n            gpu_uuid (str): The UUID of the GPU to assign.\n            case_id (str): The case identifier to assign the GPU to.\n        "
+                },
+                {
+                    "name": "release_gpu",
+                    "docstring": "Releases a GPU, making it available again.\n\n        Args:\n            gpu_uuid (str): The UUID of the GPU to release.\n        "
+                },
+                {
+                    "name": "find_and_lock_multiple_gpus",
+                    "docstring": "Atomically finds multiple idle GPUs with sufficient memory and assigns them to a case.\n\n        Args:\n            case_id (str): The case identifier requesting the GPUs.\n            num_gpus (int): Number of GPUs to allocate.\n            min_memory_mb (int, optional): The minimum required memory in MB. Defaults to 1000.\n\n        Returns:\n            Optional[List[Dict[str, Any]]]: A list of dictionaries with gpu_uuid and gpu_id if successful, None otherwise.\n\n        Raises:\n            GpuResourceError: If the allocation fails.\n        "
+                },
+                {
+                    "name": "find_and_lock_available_gpu",
+                    "docstring": "Atomically finds an idle GPU with sufficient memory and assigns it to a case.\n\n        Args:\n            case_id (str): The case identifier requesting the GPU.\n            min_memory_mb (int, optional): The minimum required memory in MB. Defaults to 1000.\n\n        Returns:\n            Optional[Dict[str, str]]: A dictionary with the gpu_uuid if successful, None otherwise.\n\n        Raises:\n            GpuResourceError: If the allocation fails.\n        "
+                },
+                {
+                    "name": "get_all_gpu_resources",
+                    "docstring": "Retrieves detailed information for all tracked GPU resources.\n\n        Returns:\n            List[GpuResource]: A list of GpuResource objects.\n        "
+                },
+                {
+                    "name": "get_gpu_by_uuid",
+                    "docstring": "Get a specific GPU resource by its UUID.\n\n        Args:\n            uuid (str): The GPU UUID to retrieve.\n\n        Returns:\n            Optional[GpuResource]: A GpuResource object if found, None otherwise.\n        "
+                },
+                {
+                    "name": "get_available_gpu_count",
+                    "docstring": "Get the count of available (idle) GPUs.\n\n        Returns:\n            int: The number of idle GPUs.\n        "
+                },
+                {
+                    "name": "release_all_for_case",
+                    "docstring": "Release all GPUs allocated to a specific case.\n\n        Args:\n            case_id (str): The case identifier.\n\n        Returns:\n            int: The number of GPUs released.\n        "
+                }
+            ]
+        }
+    ],
+    "refactoring_suggestions": []
+}

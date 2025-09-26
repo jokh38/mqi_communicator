@@ -1,0 +1,46 @@
+{
+    "file_name": "ui_process_manager.py",
+    "description": "Manages the UI subprocess lifecycle, handling its creation, monitoring, and termination.",
+    "classes": [
+        {
+            "name": "UIProcessManager",
+            "docstring": "A professional manager for the UI subprocess lifecycle, handling its creation,\n    monitoring, and clean termination with separate console window support.\n\n    This class is responsible for launching and managing the UI as a separate process\n    with proper console window handling on Windows systems.\n    ",
+            "properties": [],
+            "methods": [
+                {
+                    "name": "__init__",
+                    "docstring": "Initializes the UIProcessManager.\n\n        Args:\n            database_path (str): The resolved path to the SQLite database file.\n            config (Settings): The application configuration object.\n            logger (StructuredLogger): A logger instance for status messages.\n        "
+                },
+                {
+                    "name": "start",
+                    "docstring": "Starts the UI as an independent process.\n\n        Creates a new console window on Windows systems as per original behavior.\n\n        Returns:\n            bool: True if the process started successfully, False otherwise.\n        "
+                },
+                {
+                    "name": "stop",
+                    "docstring": "Stops the UI process gracefully, with a specified timeout.\n\n        Args:\n            timeout (float, optional): The maximum time to wait for graceful shutdown. Defaults to 10.0.\n\n        Returns:\n            bool: True if the process stopped successfully, False otherwise.\n        "
+                },
+                {
+                    "name": "is_running",
+                    "docstring": "Checks if the UI process is currently running.\n\n        Returns:\n            bool: True if the process is running, False otherwise.\n        "
+                },
+                {
+                    "name": "get_process_info",
+                    "docstring": "Returns a dictionary with information about the managed process.\n\n        Returns:\n            Dict[str, Any]: A dictionary containing process information.\n        "
+                },
+                {
+                    "name": "restart",
+                    "docstring": "Restarts the UI process.\n\n        Returns:\n            bool: True if the restart was successful, False otherwise.\n        "
+                },
+                {
+                    "name": "_get_ui_command",
+                    "docstring": "Constructs the command to launch the UI process.\n\n        Returns:\n            list[str]: A list of command arguments.\n        "
+                },
+                {
+                    "name": "_get_process_creation_flags",
+                    "docstring": "Gets the appropriate process creation flags based on the platform.\n\n        Returns:\n            int: The process creation flags.\n        "
+                }
+            ]
+        }
+    ],
+    "refactoring_suggestions": []
+}

@@ -1,0 +1,66 @@
+{
+    "file_name": "path_manager.py",
+    "description": "Manages file system paths and operations in a centralized, reusable way.",
+    "classes": [
+        {
+            "name": "PathManager",
+            "docstring": "Manages file system paths and operations in a centralized, reusable way.",
+            "properties": [],
+            "methods": [
+                {
+                    "name": "__init__",
+                    "docstring": "Initializes the path manager.\n\n        Args:\n            logger (Optional[StructuredLogger], optional): An optional logger instance. Defaults to None.\n        "
+                },
+                {
+                    "name": "validate_case_path",
+                    "docstring": "Validates and normalizes a case directory path.\n\n        Args:\n            case_path (Union[str, Path]): The path to the case directory.\n\n        Raises:\n            ValidationError: If the path does not exist or is not a directory.\n\n        Returns:\n            Path: The validated Path object.\n        "
+                },
+                {
+                    "name": "ensure_directory_exists",
+                    "docstring": "Ensures that a directory exists, creating it if necessary.\n\n        Args:\n            directory_path (Union[str, Path]): The path to the directory.\n\n        Raises:\n            ValidationError: If the directory could not be created.\n\n        Returns:\n            Path: The Path object of the directory.\n        "
+                },
+                {
+                    "name": "get_temp_directory",
+                    "docstring": "Creates and returns a temporary directory path.\n\n        Args:\n            prefix (str, optional): The prefix for the temporary directory name. Defaults to \"mqi_temp\".\n\n        Returns:\n            Path: The path to the temporary directory.\n        "
+                },
+                {
+                    "name": "cleanup_temp_directory",
+                    "docstring": "Safely removes a temporary directory and its contents.\n\n        Args:\n            temp_path (Path): The path to the temporary directory.\n        "
+                },
+                {
+                    "name": "find_files_by_pattern",
+                    "docstring": "Finds files in a directory matching a glob pattern.\n\n        Args:\n            directory (Union[str, Path]): The directory to search in.\n            pattern (str): The glob pattern to match.\n\n        Returns:\n            List[Path]: A list of matching file paths.\n        "
+                },
+                {
+                    "name": "get_file_size",
+                    "docstring": "Gets the size of a file in bytes.\n\n        Args:\n            file_path (Union[str, Path]): The path to the file.\n\n        Raises:\n            ValidationError: If the file is not found.\n\n        Returns:\n            int: The size of the file in bytes.\n        "
+                },
+                {
+                    "name": "is_directory_writable",
+                    "docstring": "Checks if a directory is writable.\n\n        Args:\n            directory_path (Union[str, Path]): The path to the directory.\n\n        Returns:\n            bool: True if the directory is writable, False otherwise.\n        "
+                },
+                {
+                    "name": "get_relative_path",
+                    "docstring": "Gets the relative path from a base path.\n\n        Args:\n            path (Union[str, Path]): The path to make relative.\n            base_path (Union[str, Path]): The base path.\n\n        Returns:\n            Path: The relative path.\n        "
+                },
+                {
+                    "name": "safe_copy_file",
+                    "docstring": "Safely copies a file with error handling and logging.\n\n        Args:\n            source (Union[str, Path]): The source file path.\n            destination (Union[str, Path]): The destination file path.\n\n        Raises:\n            ValidationError: If the copy operation fails.\n        "
+                },
+                {
+                    "name": "safe_move_file",
+                    "docstring": "Safely moves a file with error handling and logging.\n\n        Args:\n            source (Union[str, Path]): The source file path.\n            destination (Union[str, Path]): The destination file path.\n\n        Raises:\n            ValidationError: If the move operation fails.\n        "
+                },
+                {
+                    "name": "get_case_metadata",
+                    "docstring": "Extracts metadata from a case directory.\n\n        Args:\n            case_path (Path): The path to the case directory.\n\n        Returns:\n            Dict[str, Any]: A dictionary containing metadata about the case directory.\n        "
+                },
+                {
+                    "name": "_log_path_operation",
+                    "docstring": "Logs a path operation for debugging and auditing.\n\n        Args:\n            operation (str): The name of the operation.\n            path (Union[str, Path]): The path involved in the operation.\n            success (bool, optional): Whether the operation was successful. Defaults to True.\n        "
+                }
+            ]
+        }
+    ],
+    "refactoring_suggestions": []
+}

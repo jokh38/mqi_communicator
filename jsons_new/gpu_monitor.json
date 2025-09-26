@@ -1,0 +1,62 @@
+{
+    "file_name": "gpu_monitor.py",
+    "description": "A long-running service that periodically fetches GPU resource data.",
+    "classes": [
+        {
+            "name": "GpuMonitor",
+            "docstring": "A long-running service that periodically fetches GPU resource data from a remote\n    host and updates a local repository.\n\n    This class is a stateful service that separates data\n    acquisition (via ExecutionHandler) and parsing from data\n    persistence (via GpuRepository).\n    ",
+            "properties": [],
+            "methods": [
+                {
+                    "name": "__init__",
+                    "docstring": "Initialize the GpuMonitor service.\n\n        Args:\n            logger (StructuredLogger): Logger for recording operations.\n            execution_handler (ExecutionHandler): Handler for executing commands.\n            gpu_repository (GpuRepository): Repository for persisting GPU data.\n            command (str): The nvidia-smi command to execute for fetching GPU data.\n            update_interval (int): Interval in seconds between GPU data fetches.\n        "
+                },
+                {
+                    "name": "start",
+                    "docstring": "Starts the GPU monitoring service in a background thread."
+                },
+                {
+                    "name": "stop",
+                    "docstring": "Stops the GPU monitoring service."
+                },
+                {
+                    "name": "_monitor_loop",
+                    "docstring": "The main monitoring loop that runs in a separate thread."
+                },
+                {
+                    "name": "_fetch_and_update_gpus",
+                    "docstring": "Fetches GPU data from the remote host, parses it, and updates the repository."
+                },
+                {
+                    "name": "_parse_nvidia_smi_output",
+                    "docstring": "Parse the CSV output from nvidia-smi into structured data.\n\n        Args:\n            raw_output (str): Raw CSV output from nvidia-smi.\n\n        Returns:\n            List[Dict[str, Any]]: A list of dictionaries with parsed GPU data.\n\n        Raises:\n            GpuResourceError: If the CSV output cannot be parsed.\n        "
+                },
+                {
+                    "name": "_parse_gpu_name",
+                    "docstring": "Parses the GPU name, removing the 'NVIDIA ' prefix if it exists."
+                },
+                {
+                    "name": "_parse_memory_value",
+                    "docstring": "Parse a memory value, handling 'N/A' and converting to MB.\n\n        Args:\n            value (str): The string value to parse.\n\n        Returns:\n            int: The memory value in MB as an integer.\n\n        Raises:\n            ValueError: If the value is invalid.\n        "
+                },
+                {
+                    "name": "_parse_temperature_value",
+                    "docstring": "Parse a temperature value, handling 'N/A' cases.\n\n        Args:\n            value (str): The string value to parse.\n\n        Returns:\n            int: The temperature value as an integer.\n\n        Raises:\n            ValueError: If the value is invalid.\n        "
+                },
+                {
+                    "name": "_parse_utilization_value",
+                    "docstring": "Parse a utilization percentage, handling 'N/A' cases.\n\n        Args:\n            value (str): The string value to parse.\n\n        Returns:\n            int: The utilization percentage as an integer.\n\n        Raises:\n            ValueError: If the value is invalid.\n        "
+                },
+                {
+                    "name": "_validate_gpu_data",
+                    "docstring": "Validate parsed GPU data for consistency.\n\n        Args:\n            gpu_info (Dict[str, Any]): A dictionary of parsed GPU information.\n\n        Raises:\n            ValueError: If any of the data is invalid.\n        "
+                },
+                {
+                    "name": "check_nvidia_smi_available",
+                    "docstring": "Check if the nvidia-smi command is available and working.\n\n        Returns:\n            bool: True if nvidia-smi is available and working, False otherwise.\n        "
+                }
+            ]
+        }
+    ],
+    "refactoring_suggestions": []
+}

@@ -1,0 +1,76 @@
+{
+    "file_name": "logging_handler.py",
+    "description": "Provides structured logging capabilities and a logger factory.",
+    "classes": [
+        {
+            "name": "StructuredLogger",
+            "docstring": "Provides structured logging capabilities with JSON formatting and context management.",
+            "properties": [],
+            "methods": [
+                {
+                    "name": "__init__",
+                    "docstring": "\n        Initialize structured logger with a configuration dictionary.\n\n        Args:\n            name (str): The logger name (usually the module name).\n            config (Dict[str, Any]): The logging configuration settings dictionary.\n        "
+                },
+                {
+                    "name": "_setup_handlers",
+                    "docstring": "Setup file and console handlers with appropriate formatting."
+                },
+                {
+                    "name": "_create_json_formatter",
+                    "docstring": "Create a JSON formatter for structured logging."
+                },
+                {
+                    "name": "_log_with_context",
+                    "docstring": "Log a message with structured context."
+                },
+                {
+                    "name": "debug",
+                    "docstring": ""
+                },
+                {
+                    "name": "info",
+                    "docstring": ""
+                },
+                {
+                    "name": "warning",
+                    "docstring": ""
+                },
+                {
+                    "name": "error",
+                    "docstring": ""
+                },
+                {
+                    "name": "critical",
+                    "docstring": ""
+                }
+            ]
+        },
+        {
+            "name": "LoggerFactory",
+            "docstring": "Factory for creating configured logger instances.",
+            "properties": [],
+            "methods": [
+                {
+                    "name": "configure",
+                    "docstring": "\n        Configure the logger factory with a Settings object.\n\n        Args:\n            settings (Settings): The application's settings object.\n        "
+                },
+                {
+                    "name": "get_logger",
+                    "docstring": "\n        Get or create a logger instance.\n\n        Args:\n            name (str): The name of the logger.\n\n        Raises:\n            RuntimeError: If the factory has not been configured.\n\n        Returns:\n            StructuredLogger: A configured StructuredLogger instance.\n        "
+                }
+            ]
+        },
+        {
+            "name": "JsonFormatter",
+            "docstring": "",
+            "properties": [],
+            "methods": [
+                {
+                    "name": "format",
+                    "docstring": ""
+                }
+            ]
+        }
+    ],
+    "refactoring_suggestions": []
+}

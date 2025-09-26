@@ -1,0 +1,6 @@
+{
+    "file_name": "case_aggregator.py",
+    "description": "Contains logic for aggregating beam statuses to update case status.",
+    "classes": [],
+    "refactoring_suggestions": []
+}
