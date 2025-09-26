@@ -45,6 +45,12 @@ connections:
   pc_localdata:
     ip: "192.168.1.100" # placeholder IP
     user: "moqui_user"    # placeholder user
+  hpc:
+    host: "hpc.example.com"
+    user: "hpc_user"
+    ssh_key_path: "/path/to/ssh/key"
+    port: 22
+    connection_timeout_seconds: 30
 
 # =====================================================================================
 # Command Templates - 실행 명령어 템플릿
@@ -52,7 +58,7 @@ connections:
 command_templates:
   local:
     interpret_csv: >-
-      {python} {mqi_interpreter_script} --logdir {beam_directory} --outputdir {output_dir}
+      {python} {mqi_interpreter_script} --logdir {input_path} --outputdir {csv_output_dir}
     post_process: >-
       {python} {raw_to_dicom_script} --input {input_file} --output {output_dir} --dosetype 2d
     upload_result: "scp -r {local_path} {pc_user}@{pc_ip}:{pc_localdata_remote_base_dir}"
@@ -88,9 +94,9 @@ logging:
   console_level: "INFO"
   tz_hours: 9
 
-curator:
+gpu:
   gpu_monitor_command: "nvidia-smi --query-gpu=index,uuid,name,memory.total,memory.used,memory.free,temperature.gpu,utilization.gpu --format=csv,noheader,nounits"
-  gpu_monitor_interval_seconds: 10
+  monitor_interval: 10
 
 # =====================================================================================
 # UI - Dashboard 설정

@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, Callable, Optional
 from src.core.case_aggregator import update_case_status_from_beams
 from src.domain.enums import BeamStatus, CaseStatus, WorkflowStep
 from src.domain.errors import ProcessingError
+from src.handlers.execution_handler import ExecutionHandler
 
 if TYPE_CHECKING:
     from src.core.workflow_manager import WorkflowManager
@@ -309,8 +310,6 @@ class PostprocessingState(WorkflowState):
     def get_state_name(self) -> str:
         return "Postprocessing"
 
-
-from src.handlers.execution_handler import ExecutionHandler
 
 class UploadResultToPCLocalDataState(WorkflowState):
     """Uploads the final result to PC_localdata by executing a local command."""
