@@ -1,0 +1,53 @@
+{
+    "file_name": "process_manager.py",
+    "description": "Manages process pools and subprocess execution for the application.",
+    "classes": [
+        {
+            "name": "ProcessManager",
+            "docstring": "Manages a ProcessPoolExecutor for running concurrent tasks.",
+            "properties": [],
+            "methods": [
+                {
+                    "name": "__init__",
+                    "docstring": "\n        Initialize the process manager with a settings object.\n\n        Args:\n            settings (Settings): The application's settings object.\n            logger (StructuredLogger): The logger for recording operations.\n        "
+                },
+                {
+                    "name": "start",
+                    "docstring": "Start the process pool executor."
+                },
+                {
+                    "name": "shutdown",
+                    "docstring": "\n        Shutdown the process manager and clean up resources.\n\n        Args:\n            wait (bool): Whether to wait for active processes to complete.\n        "
+                },
+                {
+                    "name": "submit_task",
+                    "docstring": "\n        Submit a task to the worker pool.\n\n        Args:\n            task_id (str): A unique identifier for the task.\n            worker_func (Callable): The worker function to execute.\n            *args (Any): Arguments for the worker function.\n\n        Raises:\n            RuntimeError: If the process manager is not started or is shutting down.\n        "
+                },
+                {
+                    "name": "_process_completed",
+                    "docstring": "Handle process completion and cleanup."
+                },
+                {
+                    "name": "get_active_process_count",
+                    "docstring": "Get the count of currently active processes."
+                }
+            ]
+        },
+        {
+            "name": "CommandExecutor",
+            "docstring": "Handles subprocess command execution with proper error handling and logging.",
+            "properties": [],
+            "methods": [
+                {
+                    "name": "__init__",
+                    "docstring": "\n        Initialize the command executor.\n\n        Args:\n            logger (StructuredLogger): The logger for recording operations.\n            default_timeout (int): The default timeout for commands in seconds.\n        "
+                },
+                {
+                    "name": "execute_command",
+                    "docstring": "\n        Execute a command with proper error handling and logging.\n\n        Args:\n            command (List[str]): The command and arguments as a list.\n            cwd (Optional[Path]): The working directory for the command.\n            timeout (Optional[int]): The command timeout.\n            capture_output (bool): Whether to capture stdout/stderr.\n            env (Optional[Dict[str, str]]): Environment variables.\n\n        Raises:\n            ProcessingError: If the command fails or times out.\n\n        Returns:\n            subprocess.CompletedProcess: The result of the execution.\n        "
+                }
+            ]
+        }
+    ],
+    "refactoring_suggestions": []
+}

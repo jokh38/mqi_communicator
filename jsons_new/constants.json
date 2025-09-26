@@ -1,0 +1,6 @@
+{
+    "file_name": "constants.py",
+    "description": "Defines developer-managed constants for the application.\n\nThese constants are fixed values that are not meant to be configured\nby users. They represent hardcoded application behavior and data\nstructures.\n",
+    "classes": [],
+    "refactoring_suggestions": []
+}

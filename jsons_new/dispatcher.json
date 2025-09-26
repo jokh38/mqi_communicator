@@ -1,0 +1,6 @@
+{
+    "file_name": "dispatcher.py",
+    "description": "Contains logic for dispatching cases and beams for processing.",
+    "classes": [],
+    "refactoring_suggestions": []
+}

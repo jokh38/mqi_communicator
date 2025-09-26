@@ -36,6 +36,11 @@ class ProcessingError(MQIError):
         super().__init__(message, context)
         self.case_id = case_id
 
+
+class FileUploadError(MQIError):
+    """Exception raised for file upload errors."""
+    pass
+
 class ValidationError(MQIError):
     """Exception raised for input validation errors."""
     pass

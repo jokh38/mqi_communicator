@@ -1,0 +1,37 @@
+{
+    "file_name": "models.py",
+    "description": "Defines Data Transfer Objects (DTOs) for the application's domain models.",
+    "classes": [
+        {
+            "name": "CaseData",
+            "docstring": "Data Transfer Object for case information.",
+            "properties": [],
+            "methods": []
+        },
+        {
+            "name": "BeamData",
+            "docstring": "Data Transfer Object for beam information.",
+            "properties": [],
+            "methods": []
+        },
+        {
+            "name": "GpuResource",
+            "docstring": "Data Transfer Object for GPU resource information.",
+            "properties": [],
+            "methods": []
+        },
+        {
+            "name": "WorkflowStepRecord",
+            "docstring": "Data Transfer Object for workflow step tracking.",
+            "properties": [],
+            "methods": []
+        },
+        {
+            "name": "SystemStats",
+            "docstring": "Data Transfer Object for system statistics.",
+            "properties": [],
+            "methods": []
+        }
+    ],
+    "refactoring_suggestions": []
+}

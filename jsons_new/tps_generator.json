@@ -1,0 +1,46 @@
+{
+    "file_name": "tps_generator.py",
+    "description": "Contains the TpsGenerator service for creating moqui_tps.in files.",
+    "classes": [
+        {
+            "name": "TpsGenerator",
+            "docstring": "Service for generating dynamic moqui_tps.in configuration files for cases.\n\n    This service replaces the static input.mqi dependency by generating case-specific\n    configuration files at runtime based on parameters from config.yaml and dynamic\n    case data such as GPU allocation and file paths.\n    ",
+            "properties": [],
+            "methods": [
+                {
+                    "name": "__init__",
+                    "docstring": "Initialize TPS generator with configuration settings and logger.\n\n        Args:\n            settings (Settings): Application settings containing moqui_tps_parameters.\n            logger (StructuredLogger): Structured logger for error reporting and debugging.\n        "
+                },
+                {
+                    "name": "generate_tps_file_with_gpu_assignments",
+                    "docstring": "Generate moqui_tps.in file for a case with multiple beam-to-GPU assignments.\n\n        Args:\n            case_path (Path): Path to the case directory.\n            case_id (str): Unique identifier for the case.\n            gpu_assignments (List[Dict[str, Any]]): List of GPU assignments with beam numbers and GPU IDs.\n            execution_mode (str): \"local\" or \"remote\" - determines path construction.\n\n        Returns:\n            bool: True if file was generated successfully, False otherwise.\n        "
+                },
+                {
+                    "name": "generate_tps_file",
+                    "docstring": "Generate moqui_tps.in file for a specific case.\n\n        Args:\n            case_path (Path): Path to the case directory.\n            case_id (str): Unique identifier for the case.\n            gpu_id (int): GPU ID to be assigned for this case (0, 1, 2, etc.).\n            execution_mode (str): \"local\" or \"remote\" - determines path construction.\n\n        Returns:\n            bool: True if file was generated successfully, False otherwise.\n        "
+                },
+                {
+                    "name": "_generate_dynamic_paths",
+                    "docstring": "Generate dynamic file paths based on execution mode.\n\n        Args:\n            case_path (Path): Path to the case directory.\n            case_id (str): Unique identifier for the case.\n            execution_mode (str): \"local\" or \"remote\" execution mode.\n\n        Returns:\n            Dict[str, Any]: Dictionary containing dynamic path parameters.\n        "
+                },
+                {
+                    "name": "_extract_case_data",
+                    "docstring": "Extract case-specific data from DICOM files or other sources.\n\n        Args:\n            case_path (Path): Path to the case directory.\n            case_id (str): Unique identifier for the case.\n\n        Returns:\n            Dict[str, Any]: Dictionary containing case-specific parameters.\n        "
+                },
+                {
+                    "name": "_count_treatment_beams",
+                    "docstring": "Count the number of treatment beams from DICOM files or metadata.\n\n        This is a simplified implementation that could be enhanced to parse\n        DICOM files properly using pydicom or similar libraries.\n\n        Args:\n            case_path (Path): Path to the case directory.\n\n        Returns:\n            int: Number of treatment beams (default to 1 if cannot determine).\n        "
+                },
+                {
+                    "name": "_validate_parameters",
+                    "docstring": "Validate that all required parameters are present and valid.\n\n        Args:\n            parameters (Dict[str, Any]): Dictionary of parameters to validate.\n            case_id (str): Case ID for logging context.\n\n        Returns:\n            bool: True if validation passes, False otherwise.\n        "
+                },
+                {
+                    "name": "_format_parameters_to_string",
+                    "docstring": "Format parameters dictionary into the moqui_tps.in file format.\n\n        The format is: key value\n for each parameter.\n\n        Args:\n            parameters (Dict[str, Any]): Dictionary of parameters.\n\n        Returns:\n            str: Formatted string content for the file.\n        "
+                }
+            ]
+        }
+    ],
+    "refactoring_suggestions": []
+}

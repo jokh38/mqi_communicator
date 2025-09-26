@@ -1,0 +1,82 @@
+{
+    "file_name": "errors.py",
+    "description": "Defines custom exception classes for the application.",
+    "classes": [
+        {
+            "name": "MQIError",
+            "docstring": "Base exception class for all MQI application errors.",
+            "properties": [],
+            "methods": [
+                {
+                    "name": "__init__",
+                    "docstring": ""
+                }
+            ]
+        },
+        {
+            "name": "DatabaseError",
+            "docstring": "Exception raised for database-related errors.",
+            "properties": [],
+            "methods": []
+        },
+        {
+            "name": "GpuResourceError",
+            "docstring": "Exception raised for GPU resource management errors.",
+            "properties": [],
+            "methods": []
+        },
+        {
+            "name": "WorkflowError",
+            "docstring": "Exception raised for workflow execution errors.",
+            "properties": [],
+            "methods": [
+                {
+                    "name": "__init__",
+                    "docstring": ""
+                }
+            ]
+        },
+        {
+            "name": "ConfigurationError",
+            "docstring": "Exception raised for configuration-related errors.",
+            "properties": [],
+            "methods": []
+        },
+        {
+            "name": "ProcessingError",
+            "docstring": "Exception raised for case processing errors.",
+            "properties": [],
+            "methods": [
+                {
+                    "name": "__init__",
+                    "docstring": ""
+                }
+            ]
+        },
+        {
+            "name": "FileUploadError",
+            "docstring": "Exception raised for file upload errors.",
+            "properties": [],
+            "methods": []
+        },
+        {
+            "name": "ValidationError",
+            "docstring": "Exception raised for input validation errors.",
+            "properties": [],
+            "methods": []
+        },
+        {
+            "name": "RetryableError",
+            "docstring": "Exception raised for errors that can be safely retried.",
+            "properties": [],
+            "methods": []
+        },
+        {
+            "name": "CircuitBreakerOpenError",
+            "docstring": "Exception raised when the circuit breaker is open.",
+            "properties": [],
+            "methods": []
+        }
+    ],
+    "refactoring_suggestions": []
+}

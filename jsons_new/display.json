@@ -1,0 +1,54 @@
+{
+    "file_name": "display.py",
+    "description": "Handles rendering the UI with the `rich` library.",
+    "classes": [
+        {
+            "name": "DisplayManager",
+            "docstring": "Exclusively handles rendering the UI with the `rich` library, using data\n    received from the provider.\n\n    This class is responsible for pure UI rendering without any data fetching or business logic.\n    ",
+            "properties": [],
+            "methods": [
+                {
+                    "name": "__init__",
+                    "docstring": "Initializes the display manager with an injected data provider.\n\n        Args:\n            provider (DashboardDataProvider): The data provider for the dashboard.\n            logger (StructuredLogger): The logger for recording operations.\n            refresh_rate (int, optional): The refresh rate for the display in seconds. Defaults to 2.\n            timezone_hours (int, optional): The timezone hours offset from UTC (Seoul = 9). Defaults to 9.\n        "
+                },
+                {
+                    "name": "_create_layout",
+                    "docstring": "Creates and returns the main layout structure for the dashboard.\n\n        Returns:\n            Layout: The main layout structure.\n        "
+                },
+                {
+                    "name": "start",
+                    "docstring": "Starts the display update loop in a separate thread."
+                },
+                {
+                    "name": "_handle_resize",
+                    "docstring": "Handle terminal resize signal."
+                },
+                {
+                    "name": "stop",
+                    "docstring": "Stops the display update loop and cleans up resources."
+                },
+                {
+                    "name": "_update_loop",
+                    "docstring": "The main update loop that runs in a separate thread."
+                },
+                {
+                    "name": "update_display",
+                    "docstring": "Updates the display with fresh data from the provider."
+                },
+                {
+                    "name": "_create_system_stats_panel",
+                    "docstring": "Creates a panel for system statistics.\n\n        Args:\n            stats_data (dict): A dictionary of system statistics.\n\n        Returns:\n            Panel: A `rich` Panel object.\n        "
+                },
+                {
+                    "name": "_create_gpu_panel",
+                    "docstring": "Creates a panel for GPU resources.\n\n        Args:\n            gpu_data (list): A list of GPU resource data.\n\n        Returns:\n            Panel: A `rich` Panel object.\n        "
+                },
+                {
+                    "name": "_create_cases_panel",
+                    "docstring": "Creates a panel for active cases.\n\n        Args:\n            cases_data (list): A list of active case data.\n\n        Returns:\n            Panel: A `rich` Panel object.\n        "
+                }
+            ]
+        }
+    ],
+    "refactoring_suggestions": []
+}

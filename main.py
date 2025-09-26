@@ -18,6 +18,7 @@ import sys
 import signal
 import time
 import multiprocessing as mp
+import paramiko
 from pathlib import Path
 from typing import Optional, NoReturn
 import threading
@@ -27,13 +28,13 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
 from src.config.settings import Settings
-from src.infrastructure.logging_handler import StructuredLogger
+from src.infrastructure.logging_handler import StructuredLogger, LoggerFactory
 from src.infrastructure.ui_process_manager import UIProcessManager
 from src.database.connection import DatabaseConnection
 from src.repositories.gpu_repo import GpuRepository
 from src.repositories.case_repo import CaseRepository
 from src.infrastructure.gpu_monitor import GpuMonitor
-from src.handlers.remote_handler import RemoteHandler
+from src.handlers.execution_handler import ExecutionHandler
 from src.utils.retry_policy import RetryPolicy
 from src.core.worker import worker_main
 from src.core.dispatcher import prepare_beam_jobs, run_case_level_csv_interpreting, run_case_level_upload, run_case_level_tps_generation
@@ -168,6 +169,7 @@ class MQIApplication:
         self.ui_process_manager: Optional[UIProcessManager] = None
         self.gpu_monitor: Optional[GpuMonitor] = None
         self.monitor_db_connection: Optional[DatabaseConnection] = None
+        self.ssh_client: Optional[paramiko.SSHClient] = None
         self.shutdown_event = threading.Event()
         self.service_monitor_thread: Optional[threading.Thread] = None
 
@@ -176,8 +178,9 @@ class MQIApplication:
         Exits the application if logging cannot be initialized.
         """
         try:
-            self.logger = StructuredLogger(name="main",
-                                           config=self.settings.logging)
+            # Configure the logger factory globally
+            LoggerFactory.configure(self.settings)
+            self.logger = LoggerFactory.get_logger("main")
             self.logger.info("MQI Communicator starting up")
         except Exception as e:
             print(f"Failed to initialize logging: {e}")
@@ -253,21 +256,19 @@ class MQIApplication:
                 config=self.settings.database,
                 logger=self.logger)
             gpu_repo = GpuRepository(self.monitor_db_connection, self.logger)
-            # Create dependencies for RemoteHandler
-            retry_policy = RetryPolicy(
-                max_attempts=self.settings.retry_policy.max_retries,
-                base_delay=self.settings.retry_policy.initial_delay_seconds,
-                max_delay=self.settings.retry_policy.max_delay_seconds,
-                backoff_multiplier=self.settings.retry_policy.backoff_multiplier,
-                logger=self.logger)
-            remote_handler = RemoteHandler(self.settings, self.logger,
-                                           retry_policy)
+            if not self.ssh_client:
+                self.logger.error("SSH client not available. Cannot start GPU monitor.")
+                return
+
+            # Create ExecutionHandler for remote commands
+            execution_handler = ExecutionHandler(mode="remote", ssh_client=self.ssh_client)
+
             # Get interval from settings
             gpu_config = self.settings.gpu
             interval = gpu_config.monitor_interval
             command = gpu_config.gpu_monitor_command
             self.gpu_monitor = GpuMonitor(logger=self.logger,
-                                          remote_handler=remote_handler,
+                                          execution_handler=execution_handler,
                                           gpu_repository=gpu_repo,
                                           command=command,
                                           update_interval=interval)
@@ -337,7 +338,7 @@ class MQIApplication:
                             # Step 4: Run case-level file upload to HPC
                             case_repo.update_beams_status_by_case_id(case_id, BeamStatus.UPLOADING.value)
                             self.logger.info(f"Starting case-level file upload for {case_id}")
-                            upload_success = run_case_level_upload(case_id, case_path, self.settings)
+                            upload_success = run_case_level_upload(case_id, self.settings, self.ssh_client)
                             if not upload_success:
                                 self.logger.error(f"Case-level upload failed for {case_id}. Skipping.")
                                 case_repo.update_case_status(case_id, CaseStatus.FAILED, error_message="File upload failed.")
@@ -401,6 +402,29 @@ class MQIApplication:
 
             self.shutdown_event.wait(timeout=30)  # Check every 30 seconds
 
+    def initialize_ssh_client(self) -> None:
+        """Initializes the SSH client for remote connections."""
+        try:
+            hpc_config = self.settings.get_hpc_connection()
+            if not all(k in hpc_config for k in ["host", "user", "ssh_key_path"]):
+                self.logger.warning("HPC connection details are not fully configured. Remote operations will be disabled.")
+                return
+
+            self.ssh_client = paramiko.SSHClient()
+            self.ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            self.logger.info("Connecting to HPC...", {"host": hpc_config["host"]})
+            self.ssh_client.connect(
+                hostname=hpc_config["host"],
+                username=hpc_config["user"],
+                key_filename=hpc_config["ssh_key_path"],
+                port=hpc_config.get("port", 22),
+                timeout=20
+            )
+            self.logger.info("Successfully connected to HPC.")
+        except Exception as e:
+            self.logger.error("Failed to establish SSH connection to HPC.", {"error": str(e)})
+            self.ssh_client = None # Ensure client is None on failure
+
     def shutdown(self) -> None:
         """Performs a graceful shutdown of all application components."""
         self.logger.info("Shutting down MQI Communicator")
@@ -419,6 +443,10 @@ class MQIApplication:
             self.gpu_monitor.stop()
         if self.monitor_db_connection:
             self.monitor_db_connection.close()
+        # Close SSH connection
+        if self.ssh_client:
+            self.logger.info("Closing HPC connection.")
+            self.ssh_client.close()
         # Stop dashboard UI process
         if self.ui_process_manager:
             self.ui_process_manager.stop()
@@ -433,6 +461,7 @@ class MQIApplication:
             # Initialize core components
             self.initialize_logging()
             self.initialize_database()
+            self.initialize_ssh_client()
             # Scan for existing cases that haven't been processed yet
             self.logger.info("Scanning for existing cases at startup")
             scan_existing_cases(self.case_queue, self.settings, self.logger)

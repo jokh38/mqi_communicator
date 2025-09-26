@@ -1,0 +1,46 @@
+{
+    "file_name": "data_integrity_validator.py",
+    "description": "\nData integrity validation module for ensuring complete data transfer.\n\nThis module provides functionality to:\n1. Read RT plan DICOM files to determine expected beam/field count\n2. Validate that all expected subfolders are present after data transfer\n3. Ensure data transfer completion before processing begins\n",
+    "classes": [
+        {
+            "name": "DataIntegrityValidator",
+            "docstring": "Validates data integrity for case processing.",
+            "properties": [],
+            "methods": [
+                {
+                    "name": "__init__",
+                    "docstring": "\n        Initialize the data integrity validator.\n\n        Args:\n            logger: The structured logger instance\n        "
+                },
+                {
+                    "name": "find_rtplan_file",
+                    "docstring": "\n        Find RT plan DICOM file in the case directory.\n\n        Args:\n            case_path: Path to the case directory\n\n        Returns:\n            Path to RT plan file if found, None otherwise\n        "
+                },
+                {
+                    "name": "parse_rtplan_beam_count",
+                    "docstring": "\n        Parse RT plan file to get expected beam count.\n\n        Args:\n            rtplan_path: Path to the RT plan DICOM file\n\n        Returns:\n            Number of beams expected from the RT plan\n\n        Raises:\n            ProcessingError: If RT plan cannot be parsed or beam count cannot be determined\n        "
+                },
+                {
+                    "name": "count_beam_subdirectories",
+                    "docstring": "\n        Count the number of beam subdirectories in the case directory.\n\n        Args:\n            case_path: Path to the case directory\n\n        Returns:\n            Number of subdirectories found\n        "
+                },
+                {
+                    "name": "validate_data_transfer_completion",
+                    "docstring": "\n        Validate that data transfer is complete for a case.\n\n        This function:\n        1. Finds and parses the RT plan file to get expected beam count\n        2. Counts actual beam subdirectories present\n        3. Validates that the counts match\n\n        Args:\n            case_id: The case identifier\n            case_path: Path to the case directory\n\n        Returns:\n            Tuple of (is_valid, error_message)\n            - is_valid: True if data transfer appears complete\n            - error_message: Error description if validation fails, empty string if valid\n        "
+                },
+                {
+                    "name": "get_beam_information",
+                    "docstring": "\n        Extract detailed beam information from RT plan for validation and processing.\n\n        Args:\n            case_path: Path to the case directory\n\n        Returns:\n            Dictionary containing beam information from RT plan\n        "
+                },
+                {
+                    "name": "_extract_gantry_number_from_machine_name",
+                    "docstring": "\n        Extract gantry number from machine name containing G1/G2 pattern.\n\n        Args:\n            machine_name: Treatment machine name from DICOM\n                (e.g., \"Gantry_G1\", \"ProtonBeam_G2\")\n\n        Returns:\n            int: Gantry number (1 or 2)\n\n        Raises:\n            ProcessingError: If G1/G2 pattern not found\n        "
+                },
+                {
+                    "name": "extract_gantry_number_from_rtplan",
+                    "docstring": "\n        Extract and validate gantry number from RT Plan file.\n\n        Returns:\n            int: Gantry number from first treatment beam\n\n        Raises:\n            ProcessingError: If validation fails (multiple gantries,\n                no G1/G2, no DICOM, etc.)\n        "
+                }
+            ]
+        }
+    ],
+    "refactoring_suggestions": []
+}

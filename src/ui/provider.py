@@ -63,8 +63,7 @@ class DashboardDataProvider:
     def refresh_all_data(self) -> None:
         """Triggers a refresh of all data by fetching from repositories and processing it."""
         try:
-            self.logger.info("Refreshing all dashboard data")
-
+            
             # Fetch raw data
             raw_gpus = self.gpu_repo.get_all_gpu_resources()
             raw_cases = self.case_repo.get_all_active_cases()

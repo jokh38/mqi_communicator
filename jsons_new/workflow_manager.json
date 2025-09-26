@@ -1,0 +1,30 @@
+{
+    "file_name": "workflow_manager.py",
+    "description": "Manages and orchestrates the entire workflow for a case using a state pattern.",
+    "classes": [
+        {
+            "name": "WorkflowManager",
+            "docstring": "Manages and orchestrates the entire workflow for a case according to the State pattern.\n\n    This class is responsible for executing each `State` and transitioning to the next,\n    using the injected `repositories` and `handlers`.\n    ",
+            "properties": [],
+            "methods": [
+                {
+                    "name": "__init__",
+                    "docstring": "Initializes the workflow manager with all required dependencies.\n\n        Args:\n            case_repo (CaseRepository): The case repository for database access.\n            gpu_repo (GpuRepository): The GPU repository for database access.\n            execution_handler (ExecutionHandler): The handler for command execution.\n            tps_generator (TpsGenerator): The TPS generator service.\n            logger (StructuredLogger): The structured logger.\n            id (str): The unique identifier for the case or beam.\n            path (Path): The path to the case or beam directory.\n            settings (Any): The application settings.\n        "
+                },
+                {
+                    "name": "run_workflow",
+                    "docstring": "Executes the complete workflow by managing state transitions."
+                },
+                {
+                    "name": "_transition_to_next_state",
+                    "docstring": "Handles the transition from the current state to the next state.\n\n        Args:\n            next_state (WorkflowState): The next state in the workflow.\n        "
+                },
+                {
+                    "name": "_handle_workflow_error",
+                    "docstring": "Handles errors that occur during workflow execution.\n\n        Args:\n            error (Exception): The exception that occurred.\n            context (str): A string describing the context in which the error occurred.\n        "
+                }
+            ]
+        }
+    ],
+    "refactoring_suggestions": []
+}
