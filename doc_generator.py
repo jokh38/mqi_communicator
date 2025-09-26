@@ -66,7 +66,15 @@ def main():
     for py_file in py_files:
         file_info = parse_python_file(py_file)
         if file_info:
-            json_filename = os.path.basename(py_file).replace(".py", ".json")
+            
+            # src 디렉토리 기준으로 상대 경로 계산
+            if py_file.startswith("src/"):
+                relative_path = Path(py_file).relative_to("src")
+                json_filename = f"{relative_path.parent}/{relative_path.stem}.json"
+            else:
+                # src 디렉토리가 아닌 경우 파일명만 사용
+                json_filename = f"{Path(py_file).stem}.json"
+            
             json_filepath = output_dir / json_filename
             with open(json_filepath, "w", encoding="utf-8") as f:
                 json.dump(file_info, f, indent=4)
