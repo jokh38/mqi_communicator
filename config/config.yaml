@@ -5,7 +5,7 @@ ExecutionHandler:
   GpuMonitor: "local"
   CsvInterpreter: "local"
   HpcFileHandler: "local"
-  HpcJobSubmitter: "remote"
+  HpcJobSubmitter: "local"
   PostProcessor: "local"
   ResultUploader: "local" # ResultUploader는 로컬에서 scp 명령을 실행해야 함
 
@@ -13,13 +13,13 @@ ExecutionHandler:
 # Paths - 환경별 경로 설정
 # =====================================================================================
 paths:
-  base_directory: "/path/to/your/mqi/data"
+  base_directory: "/home/jokh38/MOQUI_SMC"
   pc_localdata_remote_base_dir: "D:/MOQUI_RESULTS/{case_id}" # ResultUploader용 원격 경로
   local:
     scan_directory: "{base_directory}/dicom_input"
-    csv_output_dir: "{base_directory}/temp_files/{case_id}/csv"
-    simulation_output_dir: "{base_directory}/temp_files/{case_id}/raw_output"
-    final_dicom_dir: "{base_directory}/final_dicom_output/{case_id}"
+    csv_output_dir: "{base_directory}/Dose_raw/cases/{case_id}/output_csv"
+    simulation_output_dir: "{base_directory}/Dose_raw/{case_id}"
+    final_dicom_dir: "{base_directory}/Dose_dcm/{case_id}"
     database_path: "{base_directory}/database/mqi_communicator.db"
   remote:
     remote_case_path: "placeholder/remote/path/cases/{case_id}"
@@ -52,9 +52,9 @@ connections:
 command_templates:
   local:
     interpret_csv: >-
-      {python} {mqi_interpreter_script} --input {input_path} --output {csv_output_dir}
+      {python} {mqi_interpreter_script} --logdir {beam_directory} --outputdir {output_dir}
     post_process: >-
-      {python} {raw_to_dicom_script} --input {input_file} --output {output_dir}
+      {python} {raw_to_dicom_script} --input {input_file} --output {output_dir} --dosetype 2d
     upload_result: "scp -r {local_path} {pc_user}@{pc_ip}:{pc_localdata_remote_base_dir}"
   remote:
     remote_submit_simulation: "sbatch {remote_script_path}/run_moqui.sh --case-id {case_id}"
@@ -66,11 +66,11 @@ command_templates:
 # Database - SQLite 데이터베이스 설정
 # =====================================================================================
 database:
-  timeout: 30
-  journal_mode: "WAL"
-  synchronous: "NORMAL"
-  cache_size: -2000
+  cache_size_mb: 64
   busy_timeout_ms: 5000
+  journal_mode: "WAL"
+  synchronous_mode: "NORMAL"
+  enable_foreign_keys: true
 
 # =====================================================================================
 # Processing - 워커 및 타임아웃 설정
@@ -81,3 +81,64 @@ processing:
   scan_interval_seconds: 60
   hpc_poll_interval_seconds: 30
   hpc_job_timeout_seconds: 3600
+
+logging:
+  log_dir: "{base_directory}/mqi_communicator/logs/"
+  log_level: "INFO"
+  console_level: "INFO"
+  tz_hours: 9
+
+curator:
+  gpu_monitor_command: "nvidia-smi --query-gpu=index,uuid,name,memory.total,memory.used,memory.free,temperature.gpu,utilization.gpu --format=csv,noheader,nounits"
+  gpu_monitor_interval_seconds: 10
+
+# =====================================================================================
+# moqui_tps.in - MC simulation 설정파일 생성용 파라미터
+# =====================================================================================
+tps_generator:
+  validation:
+    required_params:
+      - 'GPUID'
+      - 'DicomDir'
+      - 'logFilePath'
+      - 'OutputDir'
+      - 'BeamNumbers'
+  default_paths:
+    base_directory: "/home/jokh38/MOQUI_SMC"
+    interpreter_outputs_dir: "{paths.local.csv_output_dir}"
+    outputs_dir: "{paths.local.simulation_output_dir}"
+
+moqui_tps_parameters:
+  GPUID: 0
+  RandomSeed: -1932780356
+  UseAbsolutePath: false
+  TotalThreads: -1
+  MaxHistoriesPerBatch: 10000000
+  Verbosity: 0
+  ParentDir: ""
+  DicomDir: ""
+  logFilePath: ""
+  GantryNum: 0
+  UsingPhantomGeo: true
+  TwoCentimeterMode: true
+  PhantomDimX: 400
+  PhantomDimY: 400
+  PhantomDimZ: 400
+  PhantomUnitX: 1
+  PhantomUnitY: 1
+  PhantomUnitZ: 1
+  PhantomPositionX: -200.0
+  PhantomPositionY: -200.0
+  PhantomPositionZ: -380.0
+  Scorer: Dose
+  SupressStd: true
+  ReadStructure: true
+  ROIName: External
+  SourceType: FluenceMap
+  SimulationType: perBeam
+  BeamNumbers: 1
+  ParticlesPerHistory: 0.1
+  ScoreToCTGrid: true
+  OutputDir: ""
+  OutputFormat: raw
+  OverwriteResults: true
