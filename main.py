@@ -28,7 +28,7 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
 from src.config.settings import Settings
-from src.infrastructure.logging_handler import StructuredLogger
+from src.infrastructure.logging_handler import StructuredLogger, LoggerFactory
 from src.infrastructure.ui_process_manager import UIProcessManager
 from src.database.connection import DatabaseConnection
 from src.repositories.gpu_repo import GpuRepository
@@ -178,8 +178,9 @@ class MQIApplication:
         Exits the application if logging cannot be initialized.
         """
         try:
-            self.logger = StructuredLogger(name="main",
-                                           config=self.settings.logging)
+            # Configure the logger factory globally
+            LoggerFactory.configure(self.settings)
+            self.logger = LoggerFactory.get_logger("main")
             self.logger.info("MQI Communicator starting up")
         except Exception as e:
             print(f"Failed to initialize logging: {e}")

@@ -63,6 +63,7 @@ def test_run_csv_interpreting_uses_settings(
     command and paths, and correctly overrides the input path.
     """
     # Arrange
+    dispatcher.LoggerFactory.configure(settings) # Configure logger for the test
     mock_exec_handler_instance = MagicMock(spec=ExecutionHandler)
     mock_exec_handler_instance.execute_command.return_value = ExecutionResult(success=True, output="", error="", return_code=0)
     mock_exec_handler_cls.return_value = mock_exec_handler_instance
@@ -89,6 +90,8 @@ def test_run_csv_interpreting_uses_settings(
     assert db_call_args['db_path'] == Path(db_path_from_settings)
     assert db_call_args['settings'] is settings
 
+    # Assert that ExecutionHandler was called correctly
+    mock_exec_handler_cls.assert_called_once_with(settings=settings, mode="local")
     mock_exec_handler_instance.execute_command.assert_called_once_with(expected_command, cwd=case_path)
 
 
@@ -103,6 +106,7 @@ def test_run_upload_uses_settings(
     Tests that run_case_level_upload uses Settings to generate the remote path.
     """
     # Arrange
+    dispatcher.LoggerFactory.configure(settings) # Configure logger for the test
     mock_exec_handler_instance = MagicMock(spec=ExecutionHandler)
     mock_exec_handler_instance.upload_file.return_value = UploadResult(success=True)
     mock_exec_handler_cls.return_value = mock_exec_handler_instance
@@ -137,3 +141,5 @@ def test_run_upload_uses_settings(
         local_path=str(mock_csv_file),
         remote_path=expected_remote_path
     )
+    # Assert that ExecutionHandler was called correctly
+    mock_exec_handler_cls.assert_called_once_with(settings=settings, mode="remote", ssh_client=mock_ssh_client)

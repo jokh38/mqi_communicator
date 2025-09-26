@@ -10,7 +10,7 @@ from src.database.connection import DatabaseConnection
 from src.repositories.case_repo import CaseRepository
 from src.repositories.gpu_repo import GpuRepository
 from src.handlers.execution_handler import ExecutionHandler
-from src.infrastructure.logging_handler import StructuredLogger
+from src.infrastructure.logging_handler import StructuredLogger, LoggerFactory
 from src.infrastructure.process_manager import CommandExecutor
 from src.utils.retry_policy import RetryPolicy
 from src.core.workflow_manager import WorkflowManager
@@ -30,7 +30,9 @@ def worker_main(beam_id: str, beam_path: Path, settings: Settings) -> None:
         beam_path (Path): Path to the beam directory.
         settings (Settings): Settings object containing all configuration.
     """
-    logger = StructuredLogger(f"worker_{beam_id}", config=settings.logging)
+    # Since workers run in separate processes, the factory must be configured here.
+    LoggerFactory.configure(settings)
+    logger = LoggerFactory.get_logger(f"worker_{beam_id}")
 
     db_connection = None
     try:
@@ -76,7 +78,7 @@ def worker_main(beam_id: str, beam_path: Path, settings: Settings) -> None:
                 logger.error("Failed to establish HPC connection", {"error": str(e)})
                 raise  # Re-raise the exception to stop the worker
 
-        execution_handler = ExecutionHandler(mode=workflow_mode, ssh_client=ssh_client)
+        execution_handler = ExecutionHandler(settings=settings, mode=workflow_mode, ssh_client=ssh_client)
 
         # Create TPS generator
         tps_generator = TpsGenerator(settings, logger)
