@@ -42,7 +42,7 @@ def worker_main(beam_id: str, beam_path: Path, settings: Settings) -> None:
         db_path = settings.get_database_path()
         db_connection = DatabaseConnection(
             db_path=db_path,
-            config=settings.database,
+            settings=settings,
             logger=logger
         )
         # Initialize database schema

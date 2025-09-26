@@ -33,6 +33,13 @@ class Settings:
         else:
             print(f"Warning: Configuration file not found at {config_path}")
 
+        # Compatibility attributes
+        self.database = self.get_database_config()
+        self.processing = self.get_processing_config()
+        self.ui = self._yaml_config.get("ui", {})
+        self.gpu = self._yaml_config.get("curator", {})
+        self.logging = self.get_logging_config()
+
     def _load_from_file(self, config_path: Path) -> None:
         """
         Loads the entire configuration from a YAML file into a dictionary.
@@ -180,3 +187,26 @@ class Settings:
         Gets the connections configuration dictionary from the YAML file.
         """
         return self._yaml_config.get("connections", {})
+
+    def get_database_path(self) -> Path:
+        """
+        Returns the database path as a Path object.
+        """
+        db_path = self.get_path("database_path", handler_name="CsvInterpreter")
+        return Path(db_path)
+
+    def get_case_directories(self) -> Dict[str, Path]:
+        """
+        Returns the case directory paths.
+        """
+        local_paths = self._yaml_config.get("paths", {}).get("local", {})
+        base_directory = self._yaml_config.get("paths", {}).get("base_directory", "")
+        return {
+            "scan": Path(local_paths.get("scan_directory", "").format(base_directory=base_directory))
+        }
+
+    def get_hpc_connection(self) -> Optional[Dict[str, Any]]:
+        """
+        Returns HPC connection information.
+        """
+        return self._yaml_config.get("hpc", None)

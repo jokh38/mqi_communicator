@@ -62,7 +62,7 @@ def scan_existing_cases(case_queue: mp.Queue,
         # Initialize database connection and case repository
         db_path = settings.get_database_path()
         with DatabaseConnection(db_path=db_path,
-                                config=settings.database,
+                                settings=settings,
                                 logger=logger) as db_connection:
             case_repo = CaseRepository(db_connection, logger)
             # Get all case IDs from database
@@ -193,7 +193,7 @@ class MQIApplication:
         try:
             db_path = self.settings.get_database_path()
             with DatabaseConnection(db_path=db_path,
-                                    config=self.settings.database,
+                                    settings=self.settings,
                                     logger=self.logger) as db_connection:
                 db_connection.init_db()
             self.logger.info("Database initialized successfully", {"path": str(db_path)})
@@ -253,7 +253,7 @@ class MQIApplication:
             db_path = self.settings.get_database_path()
             self.monitor_db_connection = DatabaseConnection(
                 db_path=db_path,
-                config=self.settings.database,
+                settings=self.settings,
                 logger=self.logger)
             gpu_repo = GpuRepository(self.monitor_db_connection, self.logger)
             if not self.ssh_client:
@@ -261,7 +261,9 @@ class MQIApplication:
                 return
 
             # Create ExecutionHandler for remote commands
-            execution_handler = ExecutionHandler(mode="remote", ssh_client=self.ssh_client)
+            execution_handler = ExecutionHandler(settings=self.settings,
+                                             mode="remote",
+                                             ssh_client=self.ssh_client)
 
             # Get interval from settings
             gpu_config = self.settings.gpu
@@ -299,7 +301,7 @@ class MQIApplication:
                         # The main process now orchestrates the initial case-level steps
                         # and updates the database so the UI can reflect the status.
                         with DatabaseConnection(db_path=self.settings.get_database_path(),
-                                                config=self.settings.database,
+                                                settings=self.settings,
                                                 logger=self.logger) as db_conn:
                             case_repo = CaseRepository(db_conn, self.logger)
                             # Step 1: Discover beams and validate data transfer completion
