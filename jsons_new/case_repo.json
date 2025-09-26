@@ -1,0 +1,82 @@
+{
+    "file_name": "case_repo.py",
+    "description": "Manages all CRUD operations for the 'cases' and related tables.",
+    "classes": [
+        {
+            "name": "CaseRepository",
+            "docstring": "Manages all CRUD operations for the 'cases' table.\n\n    This class implements the Repository Pattern for case data access.\n    ",
+            "properties": [],
+            "methods": [
+                {
+                    "name": "__init__",
+                    "docstring": "Initializes the case repository with an injected database connection.\n\n        Args:\n            db_connection (DatabaseConnection): The database connection manager.\n            logger (StructuredLogger): The logger for recording operations.\n        "
+                },
+                {
+                    "name": "add_case",
+                    "docstring": "Adds a new case to the 'cases' table.\n\n        Args:\n            case_id (str): The unique identifier for the case.\n            case_path (Path): The path to the case directory.\n        "
+                },
+                {
+                    "name": "update_case_status",
+                    "docstring": "Updates the status and progress of a case.\n\n        Args:\n            case_id (str): The case identifier.\n            status (CaseStatus): The new case status.\n            progress (float, optional): An optional progress percentage (0-100). Defaults to None.\n            error_message (str, optional): An optional error message for failed cases. Defaults to None.\n        "
+                },
+                {
+                    "name": "get_case",
+                    "docstring": "Retrieves a single case by its ID.\n\n        Args:\n            case_id (str): The case identifier.\n\n        Returns:\n            Optional[CaseData]: A CaseData object if found, None otherwise.\n        "
+                },
+                {
+                    "name": "get_cases_by_status",
+                    "docstring": "Retrieves all cases with a specific status.\n\n        Args:\n            status (CaseStatus): The case status to filter by.\n\n        Returns:\n            List[CaseData]: A list of CaseData objects matching the status.\n        "
+                },
+                {
+                    "name": "get_all_case_ids",
+                    "docstring": "Retrieves all case IDs from the database.\n\n        This is an optimized method for startup scanning that only fetches case IDs\n        instead of full case data for better performance.\n\n        Returns:\n            List[str]: A list of case IDs currently in the database.\n        "
+                },
+                {
+                    "name": "record_workflow_step",
+                    "docstring": "Records the start or completion of a workflow step.\n\n        Args:\n            case_id (str): The case identifier.\n            step (WorkflowStep): The workflow step being recorded.\n            status (str): The step status ('started', 'completed', 'failed').\n            error_message (str, optional): An optional error message for failed steps. Defaults to None.\n            metadata (Dict[str, Any], optional): An optional metadata dictionary. Defaults to None.\n            step_name (str, optional): (Backward compatibility) The name of the step. Defaults to None.\n            details (str, optional): (Backward compatibility) The details of the step. Defaults to None.\n        "
+                },
+                {
+                    "name": "get_workflow_steps",
+                    "docstring": "Retrieves all workflow steps for a given case.\n\n        Args:\n            case_id (str): The case identifier.\n\n        Returns:\n            List[WorkflowStepRecord]: A list of WorkflowStepRecord objects.\n        "
+                },
+                {
+                    "name": "assign_gpu_to_case",
+                    "docstring": "Assigns a GPU to a specific case.\n\n        Args:\n            case_id (str): The case identifier.\n            gpu_uuid (str): The UUID of the GPU to assign.\n        "
+                },
+                {
+                    "name": "create_beam_record",
+                    "docstring": "Adds a new beam to the 'beams' table.\n\n        Args:\n            beam_id (str): The unique identifier for the beam.\n            parent_case_id (str): The ID of the parent case.\n            beam_path (Path): The path to the beam directory.\n        "
+                },
+                {
+                    "name": "update_beam_status",
+                    "docstring": "Updates the status of a beam.\n\n        Args:\n            beam_id (str): The beam identifier.\n            status (BeamStatus): The new beam status.\n            error_message (Optional[str], optional): An optional error message for failed beams. Defaults to None.\n        "
+                },
+                {
+                    "name": "get_beam",
+                    "docstring": "Retrieves a single beam by its ID.\n\n        Args:\n            beam_id (str): The beam identifier.\n\n        Returns:\n            Optional[BeamData]: A BeamData object if found, None otherwise.\n        "
+                },
+                {
+                    "name": "assign_hpc_job_id_to_beam",
+                    "docstring": "Assigns an HPC job ID to a specific beam.\n\n        Args:\n            beam_id (str): The beam identifier.\n            hpc_job_id (str): The HPC job ID to assign.\n        "
+                },
+                {
+                    "name": "get_beams_for_case",
+                    "docstring": "Retrieves all beams associated with a given case.\n\n        Args:\n            case_id (str): The case identifier.\n\n        Returns:\n            List[BeamData]: A list of BeamData objects.\n        "
+                },
+                {
+                    "name": "get_all_active_cases",
+                    "docstring": "Retrieves all cases that are currently active (not completed or failed).\n\n        Returns:\n            List[CaseData]: A list of active CaseData objects.\n        "
+                },
+                {
+                    "name": "create_case_with_beams",
+                    "docstring": "Atomically creates a case and its associated beam records.\n\n        Args:\n            case_id (str): The unique identifier for the case.\n            case_path (str): The path to the case directory.\n            beam_jobs (List[Dict[str, Any]]): A list of dictionaries, each containing 'beam_id' and 'beam_path'.\n        "
+                },
+                {
+                    "name": "update_beams_status_by_case_id",
+                    "docstring": "Updates the status for all beams associated with a given case.\n\n        Args:\n            case_id (str): The parent case identifier.\n            status (str): The new status for the beams (e.g., \"CSV_INTERPRETING\", \"UPLOADING\").\n        "
+                }
+            ]
+        }
+    ],
+    "refactoring_suggestions": []
+}

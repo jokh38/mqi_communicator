@@ -1,0 +1,6 @@
+{
+    "file_name": "worker.py",
+    "description": "Main entry point for a worker process that handles a single beam.",
+    "classes": [],
+    "refactoring_suggestions": []
+}

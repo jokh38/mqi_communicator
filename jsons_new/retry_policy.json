@@ -1,0 +1,59 @@
+{
+    "file_name": "retry_policy.py",
+    "description": "Provides a configurable retry policy and a circuit breaker pattern.",
+    "classes": [
+        {
+            "name": "RetryStrategy",
+            "docstring": "Defines different retry strategies.",
+            "properties": [],
+            "methods": []
+        },
+        {
+            "name": "RetryPolicy",
+            "docstring": "Configurable retry policy for handling transient failures.\n\n    This class provides a reusable, configurable retry mechanism with different strategies.\n    ",
+            "properties": [],
+            "methods": [
+                {
+                    "name": "__init__",
+                    "docstring": "Initializes the retry policy with configuration parameters.\n\n        Args:\n            max_attempts (int, optional): The maximum number of retry attempts. Defaults to 3.\n            base_delay (float, optional): The base delay between retries in seconds. Defaults to 1.0.\n            max_delay (float, optional): The maximum delay between retries in seconds. Defaults to 60.0.\n            backoff_multiplier (float, optional): The multiplier for exponential backoff. Defaults to 2.0.\n            strategy (RetryStrategy, optional): The retry strategy to use. Defaults to RetryStrategy.EXPONENTIAL_BACKOFF.\n            retryable_exceptions (Optional[List[Type[Exception]]], optional): A list of exception types that should trigger retries. Defaults to None.\n            logger (Optional[StructuredLogger], optional): A logger instance for retry events. Defaults to None.\n        "
+                },
+                {
+                    "name": "execute",
+                    "docstring": "Executes a function with retry logic.\n\n        Args:\n            func (Callable[..., Any]): The function to execute.\n            operation_name (str, optional): The name of the operation for logging purposes. Defaults to \"default_operation\".\n            context (Optional[dict], optional): An optional dictionary of context data for logging. Defaults to None.\n\n        Raises:\n            Exception: The last exception if all retries fail.\n\n        Returns:\n            Any: The result of the function if successful.\n        "
+                },
+                {
+                    "name": "_should_retry",
+                    "docstring": "Determines if an exception should trigger a retry.\n\n        Args:\n            exception (Exception): The exception that occurred.\n            attempt (int): The current attempt number.\n\n        Returns:\n            bool: True if a retry should be attempted, False otherwise.\n        "
+                },
+                {
+                    "name": "_calculate_delay",
+                    "docstring": "Calculates the delay before the next retry attempt.\n\n        Args:\n            attempt (int): The current attempt number.\n\n        Returns:\n            float: The delay in seconds.\n        "
+                },
+                {
+                    "name": "_log_retry_attempt",
+                    "docstring": "Logs a retry attempt with relevant context.\n\n        Args:\n            exception (Exception): The exception that occurred.\n            attempt (int): The current attempt number.\n            delay (float): The delay before the next attempt.\n            operation_name (str): The name of the operation being retried.\n            context (Optional[dict]): An optional dictionary of context data.\n        "
+                }
+            ]
+        },
+        {
+            "name": "CircuitBreaker",
+            "docstring": "Implements the Circuit Breaker pattern for handling cascading failures.",
+            "properties": [],
+            "methods": [
+                {
+                    "name": "__init__",
+                    "docstring": "Initializes the circuit breaker.\n\n        Args:\n            failure_threshold (int, optional): The number of failures required to open the circuit. Defaults to 5.\n            timeout (float, optional): The time in seconds to wait before moving to the half-open state. Defaults to 60.0.\n            expected_exception (Type[Exception], optional): The type of exception to count as a failure. Defaults to Exception.\n            logger (Optional[StructuredLogger], optional): A logger instance for circuit breaker events. Defaults to None.\n        "
+                },
+                {
+                    "name": "call",
+                    "docstring": "Executes a function through the circuit breaker.\n\n        Args:\n            func (Callable[..., Any]): The function to execute.\n\n        Raises:\n            CircuitBreakerOpenError: If the circuit is open.\n            Exception: The exception from the function if it fails.\n\n        Returns:\n            Any: The result of the function if successful.\n        "
+                },
+                {
+                    "name": "reset",
+                    "docstring": "Resets the circuit breaker to a closed state."
+                }
+            ]
+        }
+    ],
+    "refactoring_suggestions": []
+}

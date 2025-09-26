@@ -1,0 +1,146 @@
+{
+    "file_name": "states.py",
+    "description": "Defines the state machine for the workflow using the State pattern.",
+    "classes": [
+        {
+            "name": "WorkflowState",
+            "docstring": "Abstract base class for workflow states implementing the State pattern.",
+            "properties": [],
+            "methods": [
+                {
+                    "name": "execute",
+                    "docstring": "Execute the current state and return the next state."
+                },
+                {
+                    "name": "get_state_name",
+                    "docstring": "Return the human-readable name of this state."
+                }
+            ]
+        },
+        {
+            "name": "InitialState",
+            "docstring": "Initial state: validates beam structure and TPS file existence.",
+            "properties": [],
+            "methods": [
+                {
+                    "name": "execute",
+                    "docstring": ""
+                },
+                {
+                    "name": "get_state_name",
+                    "docstring": ""
+                }
+            ]
+        },
+        {
+            "name": "FileUploadState",
+            "docstring": "File upload state - uploads beam-specific files to a dedicated directory on the HPC.",
+            "properties": [],
+            "methods": [
+                {
+                    "name": "execute",
+                    "docstring": "Uploads moqui_tps.in to the remote beam directory."
+                },
+                {
+                    "name": "get_state_name",
+                    "docstring": ""
+                }
+            ]
+        },
+        {
+            "name": "HpcExecutionState",
+            "docstring": "HPC execution state: runs simulation and polls for completion.",
+            "properties": [],
+            "methods": [
+                {
+                    "name": "execute",
+                    "docstring": "Submits a MOQUI job and polls for completion."
+                },
+                {
+                    "name": "_wait_for_job_completion",
+                    "docstring": "Polls HPC for job completion using commands from Settings."
+                },
+                {
+                    "name": "get_state_name",
+                    "docstring": ""
+                }
+            ]
+        },
+        {
+            "name": "DownloadState",
+            "docstring": "Downloads the raw result file from the HPC and cleans up the remote directory.",
+            "properties": [],
+            "methods": [
+                {
+                    "name": "execute",
+                    "docstring": ""
+                },
+                {
+                    "name": "get_state_name",
+                    "docstring": ""
+                }
+            ]
+        },
+        {
+            "name": "PostprocessingState",
+            "docstring": "Runs RawToDCM locally on the beam's output.",
+            "properties": [],
+            "methods": [
+                {
+                    "name": "execute",
+                    "docstring": ""
+                },
+                {
+                    "name": "get_state_name",
+                    "docstring": ""
+                }
+            ]
+        },
+        {
+            "name": "UploadResultToPCLocalDataState",
+            "docstring": "Uploads the final result to PC_localdata by executing a local command.",
+            "properties": [],
+            "methods": [
+                {
+                    "name": "execute",
+                    "docstring": ""
+                },
+                {
+                    "name": "get_state_name",
+                    "docstring": ""
+                }
+            ]
+        },
+        {
+            "name": "CompletedState",
+            "docstring": "Final completed state for a beam.",
+            "properties": [],
+            "methods": [
+                {
+                    "name": "execute",
+                    "docstring": ""
+                },
+                {
+                    "name": "get_state_name",
+                    "docstring": ""
+                }
+            ]
+        },
+        {
+            "name": "FailedState",
+            "docstring": "Failed state for beam error handling.",
+            "properties": [],
+            "methods": [
+                {
+                    "name": "execute",
+                    "docstring": ""
+                },
+                {
+                    "name": "get_state_name",
+                    "docstring": ""
+                }
+            ]
+        }
+    ],
+    "refactoring_suggestions": []
+}

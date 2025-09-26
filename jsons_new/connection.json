@@ -1,0 +1,46 @@
+{
+    "file_name": "connection.py",
+    "description": "Manages SQLite database connections, transactions, and schema initialization.",
+    "classes": [
+        {
+            "name": "DatabaseConnection",
+            "docstring": "\n    Manages SQLite database connections, transactions, and schema initialization.\n\n    This class uses a Settings object to configure the database connection,\n    following the single-source-of-truth principle.\n    ",
+            "properties": [],
+            "methods": [
+                {
+                    "name": "__init__",
+                    "docstring": "\n        Initializes the database connection manager.\n\n        Args:\n            db_path (Path): Path to the SQLite database file.\n            settings (Settings): The application's settings object.\n            logger (StructuredLogger): Logger for recording database events.\n        "
+                },
+                {
+                    "name": "_connect",
+                    "docstring": "\n        Establishes a connection to the SQLite database using configuration from Settings.\n\n        Raises:\n            DatabaseError: If the connection fails.\n        "
+                },
+                {
+                    "name": "__enter__",
+                    "docstring": ""
+                },
+                {
+                    "name": "__exit__",
+                    "docstring": ""
+                },
+                {
+                    "name": "transaction",
+                    "docstring": "\n        Context manager for handling database transactions with thread-safe locking.\n        "
+                },
+                {
+                    "name": "init_db",
+                    "docstring": "Initializes the database schema, creating all necessary tables and indexes."
+                },
+                {
+                    "name": "close",
+                    "docstring": "Closes the database connection."
+                },
+                {
+                    "name": "connection",
+                    "docstring": "Provides access to the raw connection for repository classes."
+                }
+            ]
+        }
+    ],
+    "refactoring_suggestions": []
+}

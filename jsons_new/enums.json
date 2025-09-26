@@ -1,0 +1,37 @@
+{
+    "file_name": "enums.py",
+    "description": "Defines enumerations for statuses and modes used throughout the application.",
+    "classes": [
+        {
+            "name": "CaseStatus",
+            "docstring": "Enumeration of possible case statuses.",
+            "properties": [],
+            "methods": []
+        },
+        {
+            "name": "BeamStatus",
+            "docstring": "Enumeration of possible beam statuses.\n\n    Mirrors CaseStatus but is specific to a beam's lifecycle.\n    ",
+            "properties": [],
+            "methods": []
+        },
+        {
+            "name": "WorkflowStep",
+            "docstring": "Enumeration of workflow steps.",
+            "properties": [],
+            "methods": []
+        },
+        {
+            "name": "GpuStatus",
+            "docstring": "Enumeration of GPU resource statuses.",
+            "properties": [],
+            "methods": []
+        },
+        {
+            "name": "ProcessingMode",
+            "docstring": "Enumeration of processing modes.",
+            "properties": [],
+            "methods": []
+        }
+    ],
+    "refactoring_suggestions": []
+}

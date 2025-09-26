@@ -1,0 +1,54 @@
+{
+    "file_name": "settings.py",
+    "description": "\nManages application configuration settings by loading them from a central YAML file.\n\nThis module provides a `Settings` class that acts as an intelligent interpreter\nfor the `config.yaml` file. It dynamically constructs paths and commands based\non the execution modes defined in the configuration.\n",
+    "classes": [
+        {
+            "name": "Settings",
+            "docstring": "\n    Main configuration class that loads and interprets all settings from a YAML file.\n    ",
+            "properties": [],
+            "methods": [
+                {
+                    "name": "__init__",
+                    "docstring": "\n        Initializes settings by loading the specified configuration file.\n        "
+                },
+                {
+                    "name": "_load_from_file",
+                    "docstring": "\n        Loads the entire configuration from a YAML file into a dictionary.\n        "
+                },
+                {
+                    "name": "_get_mode_for_handler",
+                    "docstring": "\n        Determines the execution mode ('local' or 'remote') for a given handler.\n        "
+                },
+                {
+                    "name": "get_path",
+                    "docstring": "\n        Gets a fully resolved and formatted path for a given handler and context.\n        "
+                },
+                {
+                    "name": "get_executable",
+                    "docstring": "\n        Gets a fully resolved path to an executable for a given handler.\n        "
+                },
+                {
+                    "name": "get_command",
+                    "docstring": "\n        Constructs a fully resolved and executable command string.\n        "
+                },
+                {
+                    "name": "get_database_config",
+                    "docstring": "\n        Gets the database configuration dictionary from the YAML file.\n        "
+                },
+                {
+                    "name": "get_logging_config",
+                    "docstring": "\n        Gets the logging configuration dictionary from the YAML file.\n        "
+                },
+                {
+                    "name": "get_processing_config",
+                    "docstring": "\n        Gets the processing configuration dictionary from the YAML file.\n        "
+                },
+                {
+                    "name": "get_connection_config",
+                    "docstring": "\n        Gets the connections configuration dictionary from the YAML file.\n        "
+                }
+            ]
+        }
+    ],
+    "refactoring_suggestions": []
+}

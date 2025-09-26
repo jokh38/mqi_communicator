@@ -1,0 +1,96 @@
+{
+    "file_name": "dashboard.py",
+    "description": "UI Process Entry Point for the MQI Communicator Dashboard.\n\nThis script initializes all necessary components and starts the display\nmanager in its own process space.\n",
+    "classes": [
+        {
+            "name": "DashboardLogger",
+            "docstring": "A logger that only writes to files, not console, for dashboard UI.",
+            "properties": [],
+            "methods": [
+                {
+                    "name": "__init__",
+                    "docstring": "Initialize dashboard logger with file-only output.\n\n        Args:\n            name (str): The logger name.\n            config (LoggingConfig): The logging configuration settings.\n        "
+                },
+                {
+                    "name": "_setup_file_handler_only",
+                    "docstring": "Setup only file handler, no console output."
+                },
+                {
+                    "name": "_create_json_formatter",
+                    "docstring": "Create a JSON formatter for structured logging."
+                },
+                {
+                    "name": "_log_with_context",
+                    "docstring": "Log a message with structured context."
+                },
+                {
+                    "name": "debug",
+                    "docstring": "Log a debug message with optional context."
+                },
+                {
+                    "name": "info",
+                    "docstring": "Log an info message with optional context."
+                },
+                {
+                    "name": "warning",
+                    "docstring": "Log a warning message with optional context."
+                },
+                {
+                    "name": "error",
+                    "docstring": "Log an error message with optional context."
+                },
+                {
+                    "name": "critical",
+                    "docstring": "Log a critical message with optional context."
+                }
+            ]
+        },
+        {
+            "name": "DashboardProcess",
+            "docstring": "Main dashboard process controller.\n\n    This class is responsible for initializing and managing the UI components\n    in a separate process.\n    ",
+            "properties": [],
+            "methods": [
+                {
+                    "name": "__init__",
+                    "docstring": "Initialize the dashboard process.\n\n        Args:\n            database_path (str): The path to the SQLite database file.\n            config_path (Optional[str]): Path to the YAML configuration file.\n        "
+                },
+                {
+                    "name": "initialize_logging",
+                    "docstring": "Initialize logging for the UI process."
+                },
+                {
+                    "name": "setup_database_components",
+                    "docstring": "Setup the database connection and repositories.\n\n        Returns:\n            tuple[CaseRepository, GpuRepository]: A tuple containing the case and GPU repositories.\n        "
+                },
+                {
+                    "name": "start_display",
+                    "docstring": "Start the display manager."
+                },
+                {
+                    "name": "stop_display",
+                    "docstring": "Stop the display manager."
+                },
+                {
+                    "name": "run",
+                    "docstring": "The main run loop for the dashboard process."
+                },
+                {
+                    "name": "cleanup",
+                    "docstring": "Clean up resources."
+                }
+            ]
+        },
+        {
+            "name": "JsonFormatter",
+            "docstring": "",
+            "properties": [],
+            "methods": [
+                {
+                    "name": "format",
+                    "docstring": ""
+                }
+            ]
+        }
+    ],
+    "refactoring_suggestions": []
+}

@@ -1,0 +1,26 @@
+{
+    "file_name": "base.py",
+    "description": "Contains the abstract base class for all repository implementations.",
+    "classes": [
+        {
+            "name": "BaseRepository",
+            "docstring": "Abstract base class for all repository implementations.\n\n    This class provides common database access patterns and error handling.\n    ",
+            "properties": [],
+            "methods": [
+                {
+                    "name": "__init__",
+                    "docstring": "Initialize the repository with a database connection and logger.\n\n        Args:\n            db_connection (DatabaseConnection): The database connection manager.\n            logger (StructuredLogger): The logger for recording repository operations.\n        "
+                },
+                {
+                    "name": "_execute_query",
+                    "docstring": "Execute a database query with error handling and logging.\n\n        Args:\n            query (str): The SQL query to execute.\n            params (tuple, optional): The parameters for the query. Defaults to ().\n            fetch_one (bool, optional): Whether to fetch one result. Defaults to False.\n            fetch_all (bool, optional): Whether to fetch all results. Defaults to False.\n\n        Returns:\n            Optional[Any]: The query results based on the fetch parameters.\n        "
+                },
+                {
+                    "name": "_log_operation",
+                    "docstring": "Log repository operations for debugging and monitoring.\n\n        Args:\n            operation (str): A description of the operation.\n            entity_id (str, optional): The ID of the entity being operated on. Defaults to None.\n            **context: Additional context for logging.\n        "
+                }
+            ]
+        }
+    ],
+    "refactoring_suggestions": []
+}

@@ -1,0 +1,46 @@
+{
+    "file_name": "provider.py",
+    "description": "Fetches and processes data required for the UI dashboard.",
+    "classes": [
+        {
+            "name": "DashboardDataProvider",
+            "docstring": "Fetches and processes data required for the UI dashboard from the repositories.\n\n    This class is responsible for pure data fetching and processing without any UI rendering logic.\n    ",
+            "properties": [],
+            "methods": [
+                {
+                    "name": "__init__",
+                    "docstring": "Initializes the provider with injected repositories.\n\n        Args:\n            case_repo (CaseRepository): The case repository.\n            gpu_repo (GpuRepository): The GPU repository.\n            logger (StructuredLogger): The logger for recording operations.\n        "
+                },
+                {
+                    "name": "get_system_stats",
+                    "docstring": "Returns the latest system-level statistics.\n\n        Returns:\n            Dict[str, Any]: A dictionary of system statistics.\n        "
+                },
+                {
+                    "name": "get_gpu_data",
+                    "docstring": "Returns the latest GPU resource data.\n\n        Returns:\n            List[Dict[str, Any]]: A list of dictionaries, where each dictionary represents a GPU.\n        "
+                },
+                {
+                    "name": "get_active_cases_data",
+                    "docstring": "Returns the latest data for active cases.\n\n        Returns:\n            List[Dict[str, Any]]: A list of dictionaries, where each dictionary represents an active case.\n        "
+                },
+                {
+                    "name": "refresh_all_data",
+                    "docstring": "Triggers a refresh of all data by fetching from repositories and processing it."
+                },
+                {
+                    "name": "_calculate_system_metrics",
+                    "docstring": "Calculates derived system metrics from raw repository data.\n\n        Args:\n            cases (List[CaseData]): A list of raw case data.\n            gpus (List[GpuResource]): A list of raw GPU data.\n\n        Returns:\n            Dict[str, Any]: A dictionary of system metrics.\n        "
+                },
+                {
+                    "name": "_process_case_data",
+                    "docstring": "Processes raw case data into a format suitable for display.\n\n        Args:\n            raw_cases (List[CaseData]): A list of raw case data.\n\n        Returns:\n            List[Dict[str, Any]]: A list of processed case data.\n        "
+                },
+                {
+                    "name": "_process_gpu_data",
+                    "docstring": "Processes raw GPU data into a format suitable for display.\n\n        Args:\n            raw_gpu_data (List[GpuResource]): A list of raw GPU data.\n\n        Returns:\n            List[Dict[str, Any]]: A list of processed GPU data.\n        "
+                }
+            ]
+        }
+    ],
+    "refactoring_suggestions": []
+}
