@@ -42,7 +42,7 @@ class DashboardLogger:
         """
         self.config = config
         self.logger = logging.getLogger(name)
-        self.logger.setLevel(getattr(logging, config.log_level.upper()))
+        self.logger.setLevel(getattr(logging, config['log_level'].upper()))
         
         # Prevent duplicate handlers
         if not self.logger.handlers:
@@ -50,15 +50,16 @@ class DashboardLogger:
     
     def _setup_file_handler_only(self) -> None:
         """Setup only file handler, no console output."""
+        log_dir = Path(self.config['log_dir'])
         # Ensure log directory exists
-        self.config.log_dir.mkdir(parents=True, exist_ok=True)
+        log_dir.mkdir(parents=True, exist_ok=True)
         
         # File handler with rotation - NO console handler
-        log_file = self.config.log_dir / f"{self.logger.name}.log"
+        log_file = log_dir / f"{self.logger.name}.log"
         file_handler = RotatingFileHandler(
             log_file,
-            maxBytes=self.config.max_file_size * 1024 * 1024,  # MB to bytes
-            backupCount=self.config.backup_count
+            maxBytes=self.config['max_file_size'] * 1024 * 1024,  # MB to bytes
+            backupCount=self.config['backup_count']
         )
         
         # Set formatter
@@ -78,7 +79,7 @@ class DashboardLogger:
         
         class JsonFormatter(logging.Formatter):
             def format(self, record):
-                local_tz = timezone(timedelta(hours=config.timezone_hours))
+                local_tz = timezone(timedelta(hours=config['timezone_hours']))
                 log_data = {
                     'timestamp': datetime.now(local_tz).isoformat(),
                     'logger': record.name,
@@ -102,7 +103,7 @@ class DashboardLogger:
     def _log_with_context(self, level: int, message: str, context: Dict[str, Any] = None, exc_info=False):
         """Log a message with structured context."""
         extra = {}
-        if context and self.config.structured_logging:
+        if context and self.config.get('structured_logging', False):
             extra['context'] = context
         
         self.logger.log(level, message, extra=extra, exc_info=exc_info)
@@ -152,15 +153,8 @@ class DashboardProcess:
     def initialize_logging(self) -> None:
         """Initialize logging for the UI process."""
         try:
-            # Create a custom logger configuration for dashboard that only logs to file
-            dashboard_logging_config = type(self.settings.logging)(
-                log_level=self.settings.logging.log_level,
-                log_dir=self.settings.logging.log_dir,
-                max_file_size=self.settings.logging.max_file_size,
-                backup_count=self.settings.logging.backup_count,
-                structured_logging=self.settings.logging.structured_logging,
-                timezone_hours=self.settings.logging.timezone_hours
-            )
+            # settings.logging is already a dictionary, so copy it.
+            dashboard_logging_config = self.settings.logging.copy()
             
             self.logger = DashboardLogger(
                 name="ui_dashboard",

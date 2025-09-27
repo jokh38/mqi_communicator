@@ -272,8 +272,8 @@ class MQIApplication:
 
             # Get interval from settings
             gpu_config = self.settings.gpu
-            interval = gpu_config.monitor_interval
-            command = gpu_config.gpu_monitor_command
+            interval = gpu_config.get('monitor_interval')
+            command = gpu_config.get('gpu_monitor_command')
             self.gpu_monitor = GpuMonitor(logger=self.logger,
                                           execution_handler=execution_handler,
                                           gpu_repository=gpu_repo,
@@ -288,7 +288,7 @@ class MQIApplication:
         """The main loop for processing cases from the queue.
         Manages a process pool to handle cases concurrently.
         """
-        max_workers = self.settings.processing.max_workers
+        max_workers = self.settings.processing.get('max_workers')
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
             self.executor = executor
             self.logger.info(f"Started worker pool with {max_workers} processes")

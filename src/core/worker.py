@@ -53,7 +53,7 @@ def worker_main(beam_id: str, beam_path: Path, settings: Settings) -> None:
 
         # Create handler dependencies
         command_executor = CommandExecutor(
-            logger, settings.processing.local_execution_timeout_seconds)
+            logger, settings.processing.get('local_execution_timeout_seconds'))
         retry_policy = RetryPolicy(logger=logger, settings=settings)
 
         # Create ExecutionHandler based on settings
