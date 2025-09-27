@@ -52,7 +52,7 @@ class Settings:
             print(f"Warning: Could not load or parse config file {config_path}: {e}")
             self._yaml_config = {}
 
-    def _get_mode_for_handler(self, handler_name: str) -> str:
+    def get_handler_mode(self, handler_name: str) -> str:
         """
         Determines the execution mode ('local' or 'remote') for a given handler.
         """
@@ -67,7 +67,7 @@ class Settings:
         """
         Gets a fully resolved and formatted path for a given handler and context.
         """
-        mode = self._get_mode_for_handler(handler_name)
+        mode = self.get_handler_mode(handler_name)
         paths_config = self._yaml_config.get("paths", {})
 
         path_template = paths_config.get(mode, {}).get(path_name)
@@ -106,7 +106,7 @@ class Settings:
         """
         Gets a fully resolved path to an executable for a given handler.
         """
-        mode = self._get_mode_for_handler(handler_name)
+        mode = self.get_handler_mode(handler_name)
         exec_config = self._yaml_config.get("executables", {})
 
         exec_template = exec_config.get(mode, {}).get(exec_name)
@@ -122,7 +122,7 @@ class Settings:
         """
         Constructs a fully resolved and executable command string.
         """
-        mode = self._get_mode_for_handler(handler_name)
+        mode = self.get_handler_mode(handler_name)
         templates = self._yaml_config.get("command_templates", {}).get(mode, {})
 
         command_template = templates.get(command_key)

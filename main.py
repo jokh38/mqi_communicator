@@ -337,15 +337,19 @@ class MQIApplication:
                                 case_repo.update_beams_status_by_case_id(case_id, BeamStatus.FAILED.value)
                                 continue
 
-                            # Step 4: Run case-level file upload to HPC
-                            case_repo.update_beams_status_by_case_id(case_id, BeamStatus.UPLOADING.value)
-                            self.logger.info(f"Starting case-level file upload for {case_id}")
-                            upload_success = run_case_level_upload(case_id, self.settings, self.ssh_client)
-                            if not upload_success:
-                                self.logger.error(f"Case-level upload failed for {case_id}. Skipping.")
-                                case_repo.update_case_status(case_id, CaseStatus.FAILED, error_message="File upload failed.")
-                                case_repo.update_beams_status_by_case_id(case_id, BeamStatus.FAILED.value)
-                                continue
+                            # Step 4: Run case-level file upload to HPC if any handler is remote
+                            handler_modes = self.settings.get("ExecutionHandler", {}).values()
+                            if "remote" in handler_modes:
+                                case_repo.update_beams_status_by_case_id(case_id, BeamStatus.UPLOADING.value)
+                                self.logger.info(f"Starting case-level file upload for {case_id}")
+                                upload_success = run_case_level_upload(case_id, self.settings, self.ssh_client)
+                                if not upload_success:
+                                    self.logger.error(f"Case-level upload failed for {case_id}. Skipping.")
+                                    case_repo.update_case_status(case_id, CaseStatus.FAILED, error_message="File upload failed.")
+                                    case_repo.update_beams_status_by_case_id(case_id, BeamStatus.FAILED.value)
+                                    continue
+                            else:
+                                self.logger.info("No remote handlers configured. Skipping case-level file upload.")
 
                             # Step 5: Dispatch individual workers for simulation
                             case_repo.update_beams_status_by_case_id(case_id, BeamStatus.PENDING.value)  # Workers will pick this up
@@ -463,7 +467,10 @@ class MQIApplication:
             # Initialize core components
             self.initialize_logging()
             self.initialize_database()
-            self.initialize_ssh_client()
+            # Conditionally initialize SSH if any handler is remote
+            handler_modes = self.settings.get("ExecutionHandler", {}).values()
+            if "remote" in handler_modes:
+                self.initialize_ssh_client()
             # Scan for existing cases that haven't been processed yet
             self.logger.info("Scanning for existing cases at startup")
             scan_existing_cases(self.case_queue, self.settings, self.logger)
