@@ -43,7 +43,7 @@ class UIProcessManager:
         self._process: Optional[subprocess.Popen] = None
         self._stdout_log_file: Optional[IO[str]] = None
         self._is_running = False
-        self.log_dir = self.project_root / self.config.logging.log_dir
+        self.log_dir = self.project_root / self.config.get_logging_config()['log_dir']
     
     def start(self) -> bool:
         """Starts the UI as an independent process.

@@ -256,15 +256,19 @@ class MQIApplication:
                 settings=self.settings,
                 logger=self.logger)
             gpu_repo = GpuRepository(self.monitor_db_connection, self.logger, self.settings)
-            if not self.ssh_client:
-                self.logger.error("SSH client not available. Cannot start GPU monitor.")
+
+            # GpuMonitor의 실행 모드를 먼저 확인
+            handler_mode = self.settings.execution_handler.get("GpuMonitor", "local")
+
+            # remote 모드일 경우에만 ssh_client를 확인
+            if handler_mode == "remote" and not self.ssh_client:
+                self.logger.error("SSH client not available. Cannot start remote GPU monitor.")
                 return
 
-            # Create ExecutionHandler for remote commands
-            handler_mode = self.settings.execution_handler.get("GpuMonitor", "local")
+            # ExecutionHandler 생성 시 ssh_client를 조건부로 전달
             execution_handler = ExecutionHandler(settings=self.settings,
                                              mode=handler_mode,
-                                             ssh_client=self.ssh_client)
+                                             ssh_client=self.ssh_client if handler_mode == "remote" else None)
 
             # Get interval from settings
             gpu_config = self.settings.gpu
