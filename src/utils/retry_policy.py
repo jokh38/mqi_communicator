@@ -11,6 +11,7 @@ from enum import Enum
 
 from src.infrastructure.logging_handler import StructuredLogger
 from src.domain.errors import RetryableError, CircuitBreakerOpenError
+from src.config.settings import Settings
 
 
 class RetryStrategy(Enum):
@@ -28,30 +29,40 @@ class RetryPolicy:
 
     def __init__(
         self,
-        max_attempts: int = 3,
-        base_delay: float = 1.0,
-        max_delay: float = 60.0,
-        backoff_multiplier: float = 2.0,
-        strategy: RetryStrategy = RetryStrategy.EXPONENTIAL_BACKOFF,
+        max_attempts: Optional[int] = None,
+        base_delay: Optional[float] = None,
+        max_delay: Optional[float] = None,
+        backoff_multiplier: Optional[float] = None,
+        strategy: Optional[RetryStrategy] = None,
         retryable_exceptions: Optional[List[Type[Exception]]] = None,
-        logger: Optional[StructuredLogger] = None
+        logger: Optional[StructuredLogger] = None,
+        settings: Optional[Settings] = None
     ):
         """Initializes the retry policy with configuration parameters.
 
         Args:
-            max_attempts (int, optional): The maximum number of retry attempts. Defaults to 3.
-            base_delay (float, optional): The base delay between retries in seconds. Defaults to 1.0.
-            max_delay (float, optional): The maximum delay between retries in seconds. Defaults to 60.0.
-            backoff_multiplier (float, optional): The multiplier for exponential backoff. Defaults to 2.0.
-            strategy (RetryStrategy, optional): The retry strategy to use. Defaults to RetryStrategy.EXPONENTIAL_BACKOFF.
-            retryable_exceptions (Optional[List[Type[Exception]]], optional): A list of exception types that should trigger retries. Defaults to None.
-            logger (Optional[StructuredLogger], optional): A logger instance for retry events. Defaults to None.
+            max_attempts (Optional[int]): The maximum number of retry attempts. If None, uses config.
+            base_delay (Optional[float]): The base delay in seconds. If None, uses config.
+            max_delay (Optional[float]): The maximum delay in seconds. If None, uses config.
+            backoff_multiplier (Optional[float]): The multiplier for exponential backoff. If None, uses config.
+            strategy (Optional[RetryStrategy]): The retry strategy to use. If None, uses config.
+            retryable_exceptions (Optional[List[Type[Exception]]]): Exceptions that trigger retries.
+            logger (Optional[StructuredLogger]): A logger instance.
+            settings (Optional[Settings]): Application settings object for default values.
         """
-        self.max_attempts = max_attempts
-        self.base_delay = base_delay
-        self.max_delay = max_delay
-        self.backoff_multiplier = backoff_multiplier
-        self.strategy = strategy
+        retry_config = settings.retry_policy if settings else {}
+
+        self.max_attempts = max_attempts if max_attempts is not None else retry_config.get("max_retries", 3)
+        self.base_delay = base_delay if base_delay is not None else retry_config.get("base_delay", 1.0)
+        self.max_delay = max_delay if max_delay is not None else retry_config.get("max_delay", 60.0)
+        self.backoff_multiplier = backoff_multiplier if backoff_multiplier is not None else retry_config.get("backoff_multiplier", 2.0)
+
+        if strategy:
+            self.strategy = strategy
+        else:
+            strategy_name = retry_config.get("strategy", "exponential_backoff")
+            self.strategy = RetryStrategy(strategy_name)
+
         self.retryable_exceptions = retryable_exceptions or [RetryableError]
         self.logger = logger
 

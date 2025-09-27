@@ -176,8 +176,8 @@ class HpcExecutionState(WorkflowState):
                                  job_id: str, handler_name: str):
         """Polls HPC for job completion using commands from Settings."""
         proc_config = context.settings.get_processing_config()
-        timeout = proc_config.get("hpc_job_timeout_seconds", 3600)
-        interval = proc_config.get("hpc_poll_interval_seconds", 30)
+        timeout = proc_config.get("hpc_job_timeout_seconds")
+        interval = proc_config.get("hpc_poll_interval_seconds")
         start_time = time.time()
 
         while time.time() - start_time < timeout:

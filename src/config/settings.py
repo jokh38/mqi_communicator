@@ -39,6 +39,7 @@ class Settings:
         self.ui = self._yaml_config.get("ui", {})
         self.gpu = self._yaml_config.get("curator", {})
         self.logging = self.get_logging_config()
+        self.retry_policy = self._yaml_config.get("retry_policy", {})
 
     def _load_from_file(self, config_path: Path) -> None:
         """

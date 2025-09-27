@@ -4,7 +4,7 @@
 # =====================================================================================
 """Handles rendering the UI with the `rich` library."""
 
-from typing import Optional
+from typing import Any, Optional
 import threading
 import time
 import signal
@@ -29,13 +29,13 @@ class DisplayManager:
     This class is responsible for pure UI rendering without any data fetching or business logic.
     """
 
-    def __init__(self, provider: DashboardDataProvider, logger: StructuredLogger, refresh_rate: int = 2, timezone_hours: int = 9):
+    def __init__(self, provider: DashboardDataProvider, logger: StructuredLogger, settings: Any, timezone_hours: int = 9):
         """Initializes the display manager with an injected data provider.
 
         Args:
             provider (DashboardDataProvider): The data provider for the dashboard.
             logger (StructuredLogger): The logger for recording operations.
-            refresh_rate (int, optional): The refresh rate for the display in seconds. Defaults to 2.
+            settings (Any): The application settings object.
             timezone_hours (int, optional): The timezone hours offset from UTC (Seoul = 9). Defaults to 9.
         """
         self.provider = provider
@@ -46,7 +46,10 @@ class DisplayManager:
         self.live: Optional[Live] = None
         self.running = False
         self._update_thread: Optional[threading.Thread] = None
-        self._refresh_rate = refresh_rate
+
+        ui_config = getattr(settings, "ui", {})
+        self._refresh_rate = ui_config.get("refresh_interval", 2)
+
         self._local_tz = timezone(timedelta(hours=timezone_hours))
         self._resize_needed = False
 
