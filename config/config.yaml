@@ -62,6 +62,10 @@ command_templates:
     post_process: >-
       {python} {raw_to_dicom_script} --input {input_file} --output {output_dir} --dosetype 2d
     upload_result: "scp -r {local_path} {pc_user}@{pc_ip}:{pc_localdata_remote_base_dir}"
+    remote_submit_simulation: "sbatch {remote_script_path}/run_moqui.sh --case-id {case_id}"
+    check_job_status: "squeue -j {job_id} -h -o \"%T\""
+    check_job_history: "sacct -j {job_id} --noheader --format='State' | head -n 1"
+    cleanup: "rm -rf {remote_path}"
   remote:
     remote_submit_simulation: "sbatch {remote_script_path}/run_moqui.sh --case-id {case_id}"
     check_job_status: "squeue -j {job_id} -h -o \"%T\""

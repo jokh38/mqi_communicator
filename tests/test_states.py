@@ -94,17 +94,40 @@ def test_initial_state_success(mock_workflow_manager):
     assert mock_workflow_manager.shared_context["tps_file_path"] == tps_file
 
 @patch("src.domain.states.Path.exists", return_value=True)
-def test_file_upload_state_success(mock_exists, mock_workflow_manager):
+def test_file_upload_state_remote_mode(mock_exists, mock_workflow_manager):
+    # ARRANGE: Simulate remote mode
+    mock_workflow_manager.settings.get_handler_mode = MagicMock(return_value='remote')
+
     state = FileUploadState()
     handler = mock_workflow_manager.execution_handler
     handler.upload_file.return_value = UploadResult(success=True)
     tps_file = mock_workflow_manager.path.parent / "moqui_tps.in"
     mock_workflow_manager.shared_context["tps_file_path"] = tps_file
 
+    # ACT
     next_state = state.execute(mock_workflow_manager)
 
+    # ASSERT
     handler.upload_file.assert_called_once()
     assert isinstance(next_state, HpcExecutionState)
+
+@patch("src.domain.states.Path.exists", return_value=True)
+def test_file_upload_state_local_mode(mock_exists, mock_workflow_manager):
+    # ARRANGE: Simulate local mode
+    mock_workflow_manager.settings.get_handler_mode = MagicMock(return_value='local')
+
+    state = FileUploadState()
+    handler = mock_workflow_manager.execution_handler
+    tps_file = mock_workflow_manager.path.parent / "moqui_tps.in"
+    mock_workflow_manager.shared_context["tps_file_path"] = tps_file
+
+    # ACT
+    next_state = state.execute(mock_workflow_manager)
+
+    # ASSERT
+    handler.upload_file.assert_not_called()
+    assert isinstance(next_state, HpcExecutionState)
+
 
 @patch("time.sleep")
 def test_hpc_execution_state_polling_logic(mock_sleep, mock_workflow_manager):
@@ -120,17 +143,43 @@ def test_hpc_execution_state_polling_logic(mock_sleep, mock_workflow_manager):
     assert handler.execute_command.call_count == 2
 
 @patch("src.domain.states.Path.exists", return_value=True)
-def test_download_state_success(mock_exists, mock_workflow_manager):
+def test_download_state_remote_mode(mock_exists, mock_workflow_manager):
+    # ARRANGE: Simulate remote mode for HPC, but local for PostProcessor
+    handler_modes = {
+        "HpcJobSubmitter": "remote",
+        "PostProcessor": "local",
+    }
+    mock_workflow_manager.settings.get_handler_mode = MagicMock(side_effect=lambda name: handler_modes.get(name, 'local'))
+
     state = DownloadState()
     handler = mock_workflow_manager.execution_handler
     handler.download_file.return_value = DownloadResult(success=True)
     handler.cleanup.return_value = ExecutionResult(success=True, output="", error="", return_code=0)
     mock_workflow_manager.shared_context["remote_beam_dir"] = "/hpc/cases/case_01/beam_01"
 
+    # ACT
     next_state = state.execute(mock_workflow_manager)
 
+    # ASSERT
     handler.download_file.assert_called_once()
     handler.cleanup.assert_called_once()
+    assert "raw_output_file" in mock_workflow_manager.shared_context
+    assert isinstance(next_state, PostprocessingState)
+
+@patch("src.domain.states.Path.exists", return_value=True)
+def test_download_state_local_mode(mock_exists, mock_workflow_manager):
+    # ARRANGE: Simulate local mode for all handlers
+    mock_workflow_manager.settings.get_handler_mode = MagicMock(return_value='local')
+
+    state = DownloadState()
+    handler = mock_workflow_manager.execution_handler
+
+    # ACT
+    next_state = state.execute(mock_workflow_manager)
+
+    # ASSERT
+    handler.download_file.assert_not_called()
+    handler.cleanup.assert_not_called()
     assert "raw_output_file" in mock_workflow_manager.shared_context
     assert isinstance(next_state, PostprocessingState)
 

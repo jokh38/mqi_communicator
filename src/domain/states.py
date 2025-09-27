@@ -90,38 +90,45 @@ class InitialState(WorkflowState):
 
 
 class FileUploadState(WorkflowState):
-    """File upload state - uploads beam-specific files to a dedicated directory on the HPC."""
+    """ conditionally uploads beam-specific files to a dedicated directory on the HPC."""
 
     @handle_state_exceptions
     def execute(self, context: 'WorkflowManager') -> WorkflowState:
-        """Uploads moqui_tps.in to the remote beam directory."""
-        context.logger.info("Uploading beam files to HPC", {"beam_id": context.id})
-        context.case_repo.update_beam_status(context.id, BeamStatus.UPLOADING)
-        handler_name = "HpcJobSubmitter" # For remote paths
+        # Get the execution mode for the HpcJobSubmitter
+        handler_name = "HpcJobSubmitter"
+        mode = context.settings.get_handler_mode(handler_name)
 
-        beam = context.case_repo.get_beam(context.id)
-        if not beam:
-            raise ProcessingError(f"Could not retrieve beam data for beam_id: {context.id}")
+        if mode == 'remote':
+            context.logger.info("Remote mode: Uploading beam files to HPC", {"beam_id": context.id})
+            context.case_repo.update_beam_status(context.id, BeamStatus.UPLOADING)
 
-        remote_beam_dir = context.settings.get_path(
-            "remote_beam_path",
-            handler_name=handler_name,
-            case_id=beam.parent_case_id,
-            beam_id=context.id
-        )
-        context.shared_context["remote_beam_dir"] = remote_beam_dir
+            beam = context.case_repo.get_beam(context.id)
+            if not beam:
+                raise ProcessingError(f"Could not retrieve beam data for beam_id: {context.id}")
 
-        tps_file = context.shared_context.get("tps_file_path")
-        if not tps_file or not tps_file.exists():
-            raise ProcessingError(f"TPS file not found in shared context: {tps_file}")
+            remote_beam_dir = context.settings.get_path(
+                "remote_beam_path",
+                handler_name=handler_name,
+                case_id=beam.parent_case_id,
+                beam_id=context.id
+            )
+            context.shared_context["remote_beam_dir"] = remote_beam_dir
 
-        result = context.execution_handler.upload_file(
-            local_path=str(tps_file), remote_path=f"{remote_beam_dir}/{tps_file.name}"
-        )
-        if not result.success:
-            raise ProcessingError(f"Failed to upload file {tps_file.name}: {result.error}")
+            tps_file = context.shared_context.get("tps_file_path")
+            if not tps_file or not tps_file.exists():
+                raise ProcessingError(f"TPS file not found in shared context: {tps_file}")
 
-        context.logger.info("Successfully uploaded files for beam", {"beam_id": context.id})
+            result = context.execution_handler.upload_file(
+                local_path=str(tps_file), remote_path=f"{remote_beam_dir}/{tps_file.name}"
+            )
+            if not result.success:
+                raise ProcessingError(f"Failed to upload file {tps_file.name}: {result.error}")
+
+            context.logger.info("Successfully uploaded files for beam", {"beam_id": context.id})
+        else:
+            # In local mode, skip the upload
+            context.logger.info("Local mode: Skipping file upload.", {"beam_id": context.id})
+
         return HpcExecutionState()
 
     def get_state_name(self) -> str:
@@ -212,23 +219,14 @@ class DownloadState(WorkflowState):
 
     @handle_state_exceptions
     def execute(self, context: 'WorkflowManager') -> WorkflowState:
-        context.logger.info("Downloading results from HPC for beam", {"beam_id": context.id})
+        context.logger.info("Starting result handling for beam", {"beam_id": context.id})
         context.case_repo.update_beam_status(context.id, BeamStatus.DOWNLOADING)
-
-        remote_handler_name = "HpcJobSubmitter"
-        local_handler_name = "PostProcessor"
 
         beam = context.case_repo.get_beam(context.id)
         if not beam:
             raise ProcessingError(f"Could not retrieve beam data for beam_id: {context.id}")
 
-        remote_file_path = context.settings.get_path(
-            "remote_beam_result_path",
-            handler_name=remote_handler_name,
-            case_id=beam.parent_case_id,
-            beam_id=context.id
-        )
-
+        local_handler_name = "PostProcessor"
         local_raw_dir = context.settings.get_path(
             "simulation_output_dir",
             handler_name=local_handler_name,
@@ -236,29 +234,47 @@ class DownloadState(WorkflowState):
         )
         local_file_path = Path(local_raw_dir) / "output.raw"
 
-        result = context.execution_handler.download_file(
-            remote_path=remote_file_path,
-            local_path=str(local_file_path)
-        )
-        if not result.success:
-            raise ProcessingError(f"Failed to download result file: {result.error}")
+        remote_handler_name = "HpcJobSubmitter"
+        mode = context.settings.get_handler_mode(remote_handler_name)
+
+        if mode == 'remote':
+            context.logger.info("Remote mode: Downloading results from HPC", {"beam_id": context.id})
+
+            remote_file_path = context.settings.get_path(
+                "remote_beam_result_path",
+                handler_name=remote_handler_name,
+                case_id=beam.parent_case_id,
+                beam_id=context.id
+            )
+
+            result = context.execution_handler.download_file(
+                remote_path=remote_file_path,
+                local_path=str(local_file_path)
+            )
+            if not result.success:
+                raise ProcessingError(f"Failed to download result file: {result.error}")
+
+            context.logger.info("Beam result downloaded successfully", {"beam_id": context.id, "path": str(local_file_path)})
+
+            # Cleanup remote directory
+            remote_beam_dir = context.shared_context.get("remote_beam_dir")
+            if remote_beam_dir:
+                cleanup_result = context.execution_handler.cleanup(
+                    handler_name=remote_handler_name,
+                    remote_path=remote_beam_dir
+                )
+                if cleanup_result.success:
+                    context.logger.info("Cleaned up remote directory", {"beam_id": context.id, "remote_dir": remote_beam_dir})
+                else:
+                    context.logger.warning("Failed to cleanup remote directory", {"beam_id": context.id, "error": cleanup_result.error})
+
+        else: # local mode
+            context.logger.info("Local mode: Skipping download, using local file.", {"beam_id": context.id})
 
         if not local_file_path.exists():
-            raise ProcessingError("Result file 'output.raw' was not downloaded.")
+            raise ProcessingError(f"Result file 'output.raw' not found at expected local path: {local_file_path}")
 
         context.shared_context["raw_output_file"] = local_file_path
-        context.logger.info("Beam result downloaded successfully", {"beam_id": context.id, "path": str(local_file_path)})
-
-        remote_beam_dir = context.shared_context.get("remote_beam_dir")
-        if remote_beam_dir:
-            cleanup_result = context.execution_handler.cleanup(
-                handler_name=remote_handler_name,
-                remote_path=remote_beam_dir
-            )
-            if cleanup_result.success:
-                context.logger.info("Cleaned up remote directory", {"beam_id": context.id, "remote_dir": remote_beam_dir})
-            else:
-                context.logger.warning("Failed to cleanup remote directory", {"beam_id": context.id, "error": cleanup_result.error})
 
         return PostprocessingState()
 
