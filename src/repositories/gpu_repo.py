@@ -2,6 +2,7 @@
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+from src.config.settings import Settings
 from src.database.connection import DatabaseConnection
 from src.domain.enums import GpuStatus
 from src.domain.errors import GpuResourceError
@@ -17,14 +18,21 @@ class GpuRepository(BaseRepository):
     This class separates GPU data persistence from nvidia-smi parsing.
     """
 
-    def __init__(self, db_connection: DatabaseConnection, logger: StructuredLogger):
+    def __init__(
+        self,
+        db_connection: DatabaseConnection,
+        logger: StructuredLogger,
+        settings: Settings,
+    ):
         """Initializes the GPU repository with an injected database connection.
 
         Args:
             db_connection (DatabaseConnection): The database connection manager.
             logger (StructuredLogger): The logger for recording operations.
+            settings (Settings): The application settings object.
         """
         super().__init__(db_connection, logger)
+        self.settings = settings
 
     def update_resources(self, gpu_data: List[Dict[str, Any]]) -> None:
         """Updates the GPU resources table with data from the GPU monitor using an
@@ -122,14 +130,14 @@ class GpuRepository(BaseRepository):
         self.logger.info("GPU released", {"gpu_uuid": gpu_uuid})
 
     def find_and_lock_multiple_gpus(
-        self, case_id: str, num_gpus: int, min_memory_mb: int = 1000
+        self, case_id: str, num_gpus: int, min_memory_mb: Optional[int] = None
     ) -> Optional[List[Dict[str, Any]]]:
         """Atomically finds multiple idle GPUs with sufficient memory and assigns them to a case.
 
         Args:
             case_id (str): The case identifier requesting the GPUs.
             num_gpus (int): Number of GPUs to allocate.
-            min_memory_mb (int, optional): The minimum required memory in MB. Defaults to 1000.
+            min_memory_mb (Optional[int]): The minimum required memory in MB. Overrides config if set.
 
         Returns:
             Optional[List[Dict[str, Any]]]: A list of dictionaries with gpu_uuid and gpu_id if successful, None otherwise.
@@ -137,6 +145,10 @@ class GpuRepository(BaseRepository):
         Raises:
             GpuResourceError: If the allocation fails.
         """
+        if min_memory_mb is None:
+            gpu_config = self.settings.gpu
+            min_memory_mb = gpu_config.get("min_memory_mb", 1000)
+
         self._log_operation(
             "find_and_lock_multiple_gpus", case_id, num_gpus=num_gpus, min_memory_mb=min_memory_mb
         )
@@ -216,13 +228,13 @@ class GpuRepository(BaseRepository):
             raise GpuResourceError(f"Failed to allocate {num_gpus} GPUs for case {case_id}: {e}")
 
     def find_and_lock_available_gpu(
-        self, case_id: str, min_memory_mb: int = 1000
+        self, case_id: str, min_memory_mb: Optional[int] = None
     ) -> Optional[Dict[str, str]]:
         """Atomically finds an idle GPU with sufficient memory and assigns it to a case.
 
         Args:
             case_id (str): The case identifier requesting the GPU.
-            min_memory_mb (int, optional): The minimum required memory in MB. Defaults to 1000.
+            min_memory_mb (Optional[int]): The minimum required memory in MB. Overrides config if set.
 
         Returns:
             Optional[Dict[str, str]]: A dictionary with the gpu_uuid if successful, None otherwise.
@@ -230,6 +242,10 @@ class GpuRepository(BaseRepository):
         Raises:
             GpuResourceError: If the allocation fails.
         """
+        if min_memory_mb is None:
+            gpu_config = self.settings.gpu
+            min_memory_mb = gpu_config.get("min_memory_mb", 1000)
+
         self._log_operation(
             "find_and_lock_available_gpu", case_id, min_memory_mb=min_memory_mb
         )

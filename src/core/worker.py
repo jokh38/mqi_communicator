@@ -49,12 +49,12 @@ def worker_main(beam_id: str, beam_path: Path, settings: Settings) -> None:
         db_connection.init_db()
 
         case_repo = CaseRepository(db_connection, logger)
-        gpu_repo = GpuRepository(db_connection, logger)
+        gpu_repo = GpuRepository(db_connection, logger, settings)
 
         # Create handler dependencies
         command_executor = CommandExecutor(
             logger, settings.processing.local_execution_timeout_seconds)
-        retry_policy = RetryPolicy(logger=logger)
+        retry_policy = RetryPolicy(logger=logger, settings=settings)
 
         # Create ExecutionHandler based on settings
         workflow_mode = settings.execution_handler.get("Workflow", "local")

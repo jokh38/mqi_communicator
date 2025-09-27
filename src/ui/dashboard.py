@@ -188,7 +188,7 @@ class DashboardProcess:
             
             # Create repositories
             case_repo = CaseRepository(db_connection, self.logger)
-            gpu_repo = GpuRepository(db_connection, self.logger)
+            gpu_repo = GpuRepository(db_connection, self.logger, self.settings)
             
             self.logger.info("Database components initialized successfully")
             return case_repo, gpu_repo
@@ -208,9 +208,9 @@ class DashboardProcess:
             
             # Create and start display manager
             self.display_manager = DisplayManager(
-                provider, 
+                provider,
                 self.logger,
-                refresh_rate=self.settings.ui.refresh_interval,
+                settings=self.settings,
                 timezone_hours=self.settings.logging.timezone_hours
             )
             self.display_manager.start()
