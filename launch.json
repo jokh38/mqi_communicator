@@ -5,12 +5,16 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Debug Basic Example",
+            "name": "Debug MQI Communicator",
             "type": "python",
             "request": "launch",
             "program": "${workspaceFolder}/mqi_communicator/main.py",
+            "args": [
+                "${workspaceFolder}/mqi_communicator/config/config.yaml"
+            ],
             "console": "integratedTerminal",
-            "justMyCode": true
+            "justMyCode": true,
+            "env": {}
         }
     ]
 }

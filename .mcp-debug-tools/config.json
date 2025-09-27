@@ -1,15 +1,7 @@
 {
-  "vscodeInstanceId": "vscode-21576-1758884830827",
+  "vscodeInstanceId": "vscode-10900-1758937786694",
   "port": 8890,
-  "pid": 21576,
-  "workspacePath": "c:\\MOQUI_SMC\\mqi_communicator",
-  "workspaceName": "mqi_communicator",
-  "mcpServers": {
-    "dap-proxy": {
-      "command": "npx",
-      "args": ["-y", "@uhd_kr/mcp-debug-tools@latest"],
-      "env": {}
-    }
-}
-
+  "pid": 10900,
+  "workspacePath": "c:\\xampp\\htdocs\\mysite\\mqi_communicator",
+  "workspaceName": "mqi_communicator"
 }

@@ -224,7 +224,7 @@ class MQIApplication:
     def start_dashboard(self) -> None:
         """Starts the dashboard UI in a separate process if configured."""
         try:
-            if not self.settings.ui.auto_start:
+            if not self.settings.ui.get("auto_start", False):
                 self.logger.info("Dashboard auto-start disabled")
                 return
             # Get database path and resolve to an absolute path to ensure the
@@ -261,7 +261,7 @@ class MQIApplication:
                 return
 
             # Create ExecutionHandler for remote commands
-            handler_mode = self.settings.get_handler_mode("GpuMonitor")
+            handler_mode = self.settings.execution_handler.get("GpuMonitor", "local")
             execution_handler = ExecutionHandler(settings=self.settings,
                                              mode=handler_mode,
                                              ssh_client=self.ssh_client)
@@ -339,7 +339,7 @@ class MQIApplication:
                                 continue
 
                             # Step 4: Run case-level file upload to HPC if any handler is remote
-                            handler_modes = self.settings.get("ExecutionHandler", {}).values()
+                            handler_modes = self.settings.execution_handler.values()
                             if "remote" in handler_modes:
                                 case_repo.update_beams_status_by_case_id(case_id, BeamStatus.UPLOADING.value)
                                 self.logger.info(f"Starting case-level file upload for {case_id}")
@@ -465,11 +465,13 @@ class MQIApplication:
         Initializes and starts all components, then enters the main processing loop.
         """
         try:
+            # breakpoint() # Paused here
+            
             # Initialize core components
             self.initialize_logging()
             self.initialize_database()
             # Conditionally initialize SSH if any handler is remote
-            handler_modes = self.settings.get("ExecutionHandler", {}).values()
+            handler_modes = self.settings.execution_handler.values()
             if "remote" in handler_modes:
                 self.initialize_ssh_client()
             # Scan for existing cases that haven't been processed yet
