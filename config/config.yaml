@@ -21,6 +21,8 @@ paths:
     simulation_output_dir: "{base_directory}/data/Dose_raw/{case_id}"
     final_dicom_dir: "{base_directory}/data/Dose_dcm/{case_id}"
     database_path: "{base_directory}/data/mqi_communicator.db"
+    mqi_interpreter_dir: "{base_directory}/mqi_interpreter"
+    raw_to_dicom_dir: "{base_directory}/RawToDCM"
   remote:
     remote_case_path: "placeholder/remote/path/cases/{case_id}"
     remote_beam_path: "{remote_case_path}/{beam_id}"
@@ -58,9 +60,9 @@ connections:
 command_templates:
   local:
     interpret_csv: >-
-      {python} {mqi_interpreter_script} --logdir {input_path} --outputdir {csv_output_dir}
+      cd {mqi_interpreter_dir} && {python} {mqi_interpreter_script} --logdir {input_path} --outputdir {csv_output_dir}
     post_process: >-
-      {python} {raw_to_dicom_script} --input {input_file} --output {output_dir} --dosetype 2d
+      cd {raw_to_dicom_dir} && {python} {raw_to_dicom_script} --input {input_file} --output {output_dir} --dosetype 2d
     upload_result: "scp -r {local_path} {pc_user}@{pc_ip}:{pc_localdata_remote_base_dir}"
     remote_submit_simulation: "sbatch {remote_script_path}/run_moqui.sh --case-id {case_id}"
     check_job_status: "squeue -j {job_id} -h -o \"%T\""
