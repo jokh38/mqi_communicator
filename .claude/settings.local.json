@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(/usr/bin/python3:*)",
+      "Read(//mnt/c/MOQUI_SMC/**)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

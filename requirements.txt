@@ -1,0 +1,24 @@
+# MQI Communicator - Python Dependencies
+# Core external libraries required for the application
+
+# File system monitoring for detecting new case directories
+watchdog>=3.0.0
+
+# Rich terminal UI for the dashboard display
+rich>=13.0.0
+
+# SSH/SFTP client for HPC communication
+paramiko>=3.0.0
+
+# YAML configuration file parsing
+PyYAML>=6.0.0
+
+# DICOM file handling for RT plan reading
+pydicom>=2.3.0
+
+# Development and optional dependencies (uncomment if needed)
+pytest>=7.0.0
+pytest-mock>=3.0.0
+black>=22.0.0          # Code formatting
+flake8>=5.0.0          # Code linting
+mypy>=1.0.0            # Type checking

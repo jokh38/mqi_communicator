@@ -1,0 +1,165 @@
+# =====================================================================================
+# Execution Handler - 각 프로세스 및 워크플로우 단계별 실행 모드(local/remote) 설정
+# =====================================================================================
+ExecutionHandler:
+  GpuMonitor: "local"
+  CsvInterpreter: "local"
+  HpcFileHandler: "local"
+  HpcJobSubmitter: "local"
+  PostProcessor: "local"
+  ResultUploader: "local" # ResultUploader는 로컬에서 scp 명령을 실행해야 함
+
+# =====================================================================================
+# Paths - 환경별 경로 설정
+# =====================================================================================
+paths:
+  base_directory: "/home/jokh38/MOQUI_SMC"
+  pc_localdata_remote_base_dir: "D:/MOQUI_RESULTS/{case_id}" # ResultUploader용 원격 경로
+  local:
+    scan_directory: "{base_directory}/data/SHI_log"
+    csv_output_dir: "{base_directory}/data/Outputs_csv/{case_id}/"
+    simulation_output_dir: "{base_directory}/data/Dose_raw/{case_id}"
+    final_dicom_dir: "{base_directory}/data/Dose_dcm/{case_id}"
+    database_path: "{base_directory}/data/mqi_communicator.db"
+  remote:
+    remote_case_path: "placeholder/remote/path/cases/{case_id}"
+    remote_beam_path: "{remote_case_path}/{beam_id}"
+    remote_beam_result_path: "{remote_beam_path}/output.raw"
+    remote_script_path: "placeholder/remote/scripts"
+
+# =====================================================================================
+# Executables - 환경별 실행 파일 경로 설정
+# =====================================================================================
+executables:
+  local:
+    python: "/usr/bin/python3"
+    mqi_interpreter_script: "{base_directory}/mqi_interpreter/main_cli.py"
+    raw_to_dicom_script: "{base_directory}/RawToDCM/moqui_raw2dicom.py"
+  remote:
+    python: "/path/on/hpc/to/python"
+
+# =====================================================================================
+# Connections - 외부 서비스 연결 정보
+# =====================================================================================
+connections:
+  pc_localdata:
+    ip: "192.168.1.100" # placeholder IP
+    user: "moqui_user"    # placeholder user
+  hpc:
+    host: "hpc.example.com"
+    user: "hpc_user"
+    ssh_key_path: "/path/to/ssh/key"
+    port: 22
+    connection_timeout_seconds: 30
+
+# =====================================================================================
+# Command Templates - 실행 명령어 템플릿
+# =====================================================================================
+command_templates:
+  local:
+    interpret_csv: >-
+      {python} {mqi_interpreter_script} --logdir {input_path} --outputdir {csv_output_dir}
+    post_process: >-
+      {python} {raw_to_dicom_script} --input {input_file} --output {output_dir} --dosetype 2d
+    upload_result: "scp -r {local_path} {pc_user}@{pc_ip}:{pc_localdata_remote_base_dir}"
+    remote_submit_simulation: "sbatch {remote_script_path}/run_moqui.sh --case-id {case_id}"
+    check_job_status: "squeue -j {job_id} -h -o \"%T\""
+    check_job_history: "sacct -j {job_id} --noheader --format='State' | head -n 1"
+    cleanup: "rm -rf {remote_path}"
+  remote:
+    remote_submit_simulation: "sbatch {remote_script_path}/run_moqui.sh --case-id {case_id}"
+    check_job_status: "squeue -j {job_id} -h -o \"%T\""
+    check_job_history: "sacct -j {job_id} --noheader --format='State' | head -n 1"
+    cleanup: "rm -rf {remote_path}"
+
+# =====================================================================================
+# Database - SQLite 데이터베이스 설정
+# =====================================================================================
+database:
+  cache_size_mb: 64
+  busy_timeout_ms: 5000
+  connection_timeout_seconds: 30
+  journal_mode: "WAL"
+  synchronous_mode: "NORMAL"
+  enable_foreign_keys: true
+
+# =====================================================================================
+# Processing - 워커 및 타임아웃 설정
+# =====================================================================================
+processing:
+  max_workers: 4
+  case_timeout_seconds: 3600
+  scan_interval_seconds: 60
+  hpc_poll_interval_seconds: 30
+  hpc_job_timeout_seconds: 3600
+
+logging:
+  log_dir: "{base_directory}/mqi_communicator/logs/"
+  log_level: "INFO"
+  console_level: "INFO"
+  max_file_size_mb: 10
+  backup_count: 5
+  tz_hours: 9
+
+gpu:
+  gpu_monitor_command: "nvidia-smi --query-gpu=index,uuid,name,memory.total,memory.used,memory.free,temperature.gpu,utilization.gpu --format=csv,noheader,nounits"
+  monitor_interval: 10
+
+# =====================================================================================
+# UI - Dashboard 설정
+# =====================================================================================
+ui:
+  auto_start: true
+  port: 8501
+
+
+# =====================================================================================
+# moqui_tps.in - MC simulation 설정파일 생성용 파라미터
+# =====================================================================================
+tps_generator:
+  validation:
+    required_params:
+      - 'GPUID'
+      - 'DicomDir'
+      - 'logFilePath'
+      - 'OutputDir'
+      - 'BeamNumbers'
+  default_paths:
+    base_directory: "/home/jokh38/MOQUI_SMC"
+    interpreter_outputs_dir: "{paths.local.csv_output_dir}"
+    outputs_dir: "{paths.local.simulation_output_dir}"
+
+moqui_tps_parameters:
+  GPUID: 0
+  RandomSeed: -1932780356
+  UseAbsolutePath: false
+  TotalThreads: -1
+  MaxHistoriesPerBatch: 10000000
+  Verbosity: 0
+  ParentDir: ""
+  DicomDir: ""
+  logFilePath: ""
+  GantryNum: 0
+  UsingPhantomGeo: true
+  TwoCentimeterMode: true
+  PhantomDimX: 400
+  PhantomDimY: 400
+  PhantomDimZ: 400
+  PhantomUnitX: 1
+  PhantomUnitY: 1
+  PhantomUnitZ: 1
+  PhantomPositionX: -200.0
+  PhantomPositionY: -200.0
+  PhantomPositionZ: -380.0
+  Scorer: Dose
+  SupressStd: true
+  ReadStructure: true
+  ROIName: External
+  SourceType: FluenceMap
+  SimulationType: perBeam
+  BeamNumbers: 1
+  ParticlesPerHistory: 0.1
+  ScoreToCTGrid: true
+  OutputDir: ""
+  OutputFormat: raw
+  OverwriteResults: true
