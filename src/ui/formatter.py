@@ -9,7 +9,7 @@ from datetime import timedelta
 
 from rich.text import Text
 
-from src.domain.enums import CaseStatus, GpuStatus
+from src.domain.enums import CaseStatus, GpuStatus, BeamStatus
 
 # Color mappings for different statuses
 CASE_STATUS_COLORS = {
@@ -25,6 +25,19 @@ GPU_STATUS_COLORS = {
     GpuStatus.IDLE: "green",
     GpuStatus.ASSIGNED: "yellow",
     GpuStatus.UNAVAILABLE: "red",
+}
+
+BEAM_STATUS_COLORS = {
+    BeamStatus.PENDING: "yellow",
+    BeamStatus.CSV_INTERPRETING: "cyan",
+    BeamStatus.UPLOADING: "magenta",
+    BeamStatus.TPS_GENERATION: "blue",
+    BeamStatus.HPC_QUEUED: "bold yellow",
+    BeamStatus.HPC_RUNNING: "bold blue",
+    BeamStatus.DOWNLOADING: "bold cyan",
+    BeamStatus.POSTPROCESSING: "bold magenta",
+    BeamStatus.COMPLETED: "bold green",
+    BeamStatus.FAILED: "bold red",
 }
 
 
@@ -52,6 +65,21 @@ def get_gpu_status_text(status: GpuStatus) -> Text:
     """
     color = GPU_STATUS_COLORS.get(status, "white")
     return Text(status.value.upper(), style=color)
+
+
+def get_beam_status_text(status: BeamStatus) -> Text:
+    """Returns a rich Text object for a beam status.
+
+    Args:
+        status (BeamStatus): The beam status.
+
+    Returns:
+        Text: A `rich` Text object with appropriate color.
+    """
+    color = BEAM_STATUS_COLORS.get(status, "white")
+    # Shorten status text for compact display
+    display_text = status.value.replace("_", " ").upper()
+    return Text(display_text, style=color)
 
 
 def format_memory_usage(used_mb: int, total_mb: int) -> Text:

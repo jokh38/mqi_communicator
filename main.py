@@ -327,6 +327,7 @@ class MQIApplication:
                             self.logger.info(f"Created {len(beam_jobs)} beam records in DB for case {case_id}")
 
                             # Step 2: Run case-level CSV interpreting
+                            case_repo.update_case_status(case_id, CaseStatus.CSV_INTERPRETING, progress=10.0)
                             case_repo.update_beams_status_by_case_id(case_id, BeamStatus.CSV_INTERPRETING.value)
                             self.logger.info(f"Starting case-level CSV interpreting for {case_id}")
                             interpreting_success = run_case_level_csv_interpreting(case_id, case_path, self.settings)
@@ -337,6 +338,7 @@ class MQIApplication:
                                 continue
 
                             # Step 3: Generate TPS file with dynamic GPU assignments
+                            case_repo.update_case_status(case_id, CaseStatus.PROCESSING, progress=30.0)
                             case_repo.update_beams_status_by_case_id(case_id, BeamStatus.TPS_GENERATION.value)
                             self.logger.info(f"Starting case-level TPS generation for {case_id}")
                             gpu_assignments = run_case_level_tps_generation(case_id, case_path, len(beam_jobs), self.settings)
@@ -361,6 +363,7 @@ class MQIApplication:
                                 self.logger.info("No remote handlers configured. Skipping case-level file upload.")
 
                             # Step 5: Dispatch individual workers for simulation
+                            case_repo.update_case_status(case_id, CaseStatus.PROCESSING, progress=50.0)
                             case_repo.update_beams_status_by_case_id(case_id, BeamStatus.PENDING.value)  # Workers will pick this up
                             self.logger.info(f"Dispatching workers for case: {case_id}")
                             for job in beam_jobs:

@@ -242,41 +242,65 @@ class DisplayManager:
         return Panel(table, title="[bold]GPU Resources[/bold]", border_style="green")
 
     def _create_cases_panel(self, cases_data: list) -> Panel:
-        """Creates a panel for active cases.
+        """Creates a panel for active cases with expandable beam information.
 
         Args:
-            cases_data (list): A list of active case data.
+            cases_data (list): A list of active case data (backward compatible).
 
         Returns:
             Panel: A `rich` Panel object.
         """
+        # Get detailed case+beam data
+        cases_with_beams = self.provider.get_cases_with_beams_data()
+
         # Create a mapping from GPU UUID to index for display
         gpu_data = self.provider.get_gpu_data()
         uuid_to_index = {gpu['uuid']: gpu['gpu_index'] for gpu in gpu_data}
 
-        table = Table(expand=True)
-        table.add_column("Case ID", style="cyan", no_wrap=True)
+        table = Table(expand=True, show_header=True)
+        table.add_column("Case / Beam ID", style="cyan", no_wrap=True)
         table.add_column("Status", style="white")
         table.add_column("Progress", style="white", width=28)
-        table.add_column("GPU", style="dim")
+        table.add_column("GPU/Job", style="dim")
         table.add_column("Elapsed", style="dim")
 
-        for case in cases_data:
+        for item in cases_with_beams:
+            case_display = item["case_display"]
+            beams = item["beams"]
+
             # Map GPU UUID to index for display
             assigned_gpu_display = "N/A"
-            if case['assigned_gpu']:
-                gpu_index = uuid_to_index.get(case['assigned_gpu'])
+            if case_display['assigned_gpu']:
+                gpu_index = uuid_to_index.get(case_display['assigned_gpu'])
                 if gpu_index is not None:
                     assigned_gpu_display = str(gpu_index)
                 else:
-                    # Fallback to UUID suffix if mapping fails
-                    assigned_gpu_display = case['assigned_gpu'][-4:]
+                    assigned_gpu_display = case_display['assigned_gpu'][-4:]
 
+            # Add case row
             table.add_row(
-                case['case_id'],
-                formatter.get_case_status_text(case['status']),
-                formatter.format_progress_bar(case['progress']),
+                f"[bold]{case_display['case_id']}[/bold] ({case_display['beam_count']} beams)",
+                formatter.get_case_status_text(case_display['status']),
+                formatter.format_progress_bar(case_display['progress']),
                 assigned_gpu_display,
-                formatter.format_elapsed_time(case['elapsed_time'])
+                formatter.format_elapsed_time(case_display['elapsed_time']),
+                style="bold"
             )
-        return Panel(table, title="[bold]Active Cases[/bold]", border_style="magenta")
+
+            # Add beam rows (indented)
+            for beam in beams:
+                # Extract beam name (last part after underscore)
+                beam_name = beam["beam_id"].split("_")[-1] if "_" in beam["beam_id"] else beam["beam_id"]
+
+                hpc_display = beam["hpc_job_id"][:8] if beam["hpc_job_id"] else "N/A"
+
+                table.add_row(
+                    f"  ├─ {beam_name}",
+                    formatter.get_beam_status_text(beam['status']),
+                    "",  # No progress bar for individual beams
+                    hpc_display,
+                    formatter.format_elapsed_time(beam['elapsed_time']),
+                    style="dim"
+                )
+
+        return Panel(table, title="[bold]Active Cases & Beams[/bold]", border_style="magenta")

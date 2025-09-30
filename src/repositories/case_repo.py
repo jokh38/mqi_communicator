@@ -554,3 +554,75 @@ class CaseRepository(BaseRepository):
         query = "UPDATE beams SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE parent_case_id = ?"
         self._execute_query(query, (beam_status_value, case_id))
         self.logger.info("Bulk updated beam statuses for case", {"case_id": case_id, "new_status": beam_status_value})
+
+    def get_all_active_cases_with_beams(self) -> List[Dict[str, Any]]:
+        """Retrieves all active cases with their associated beam data.
+
+        Returns:
+            List[Dict[str, Any]]: List of dicts containing case data and beam list.
+        """
+        self._log_operation("get_all_active_cases_with_beams")
+
+        active_statuses = [
+            CaseStatus.PENDING.value,
+            CaseStatus.CSV_INTERPRETING.value,
+            CaseStatus.PROCESSING.value,
+            CaseStatus.POSTPROCESSING.value,
+        ]
+
+        placeholders = ",".join(["?" for _ in active_statuses])
+
+        # Get cases
+        case_query = f"""
+            SELECT case_id, case_path, status, progress, created_at,
+                   updated_at, error_message, assigned_gpu
+            FROM cases
+            WHERE status IN ({placeholders})
+            ORDER BY created_at ASC
+        """
+        case_rows = self._execute_query(case_query, tuple(active_statuses), fetch_all=True)
+
+        results = []
+        for case_row in case_rows:
+            case_id = case_row["case_id"]
+
+            # Get beams for this case
+            beam_query = """
+                SELECT beam_id, status, created_at, updated_at, hpc_job_id
+                FROM beams
+                WHERE parent_case_id = ?
+                ORDER BY beam_id ASC
+            """
+            beam_rows = self._execute_query(beam_query, (case_id,), fetch_all=True)
+
+            beams = []
+            for beam_row in beam_rows:
+                beams.append({
+                    "beam_id": beam_row["beam_id"],
+                    "status": BeamStatus(beam_row["status"]),
+                    "created_at": datetime.fromisoformat(beam_row["created_at"]),
+                    "updated_at": (
+                        datetime.fromisoformat(beam_row["updated_at"])
+                        if beam_row["updated_at"] else None
+                    ),
+                    "hpc_job_id": beam_row["hpc_job_id"]
+                })
+
+            results.append({
+                "case_data": CaseData(
+                    case_id=case_row["case_id"],
+                    case_path=Path(case_row["case_path"]),
+                    status=CaseStatus(case_row["status"]),
+                    progress=case_row["progress"],
+                    created_at=datetime.fromisoformat(case_row["created_at"]),
+                    updated_at=(
+                        datetime.fromisoformat(case_row["updated_at"])
+                        if case_row["updated_at"] else None
+                    ),
+                    error_message=case_row["error_message"],
+                    assigned_gpu=case_row["assigned_gpu"],
+                ),
+                "beams": beams
+            })
+
+        return results

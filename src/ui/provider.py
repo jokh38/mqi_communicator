@@ -35,6 +35,7 @@ class DashboardDataProvider:
         self._system_stats: Dict[str, Any] = {}
         self._gpu_data: List[Dict[str, Any]] = []
         self._active_cases: List[Dict[str, Any]] = []
+        self._cases_with_beams: List[Dict[str, Any]] = []
 
     def get_system_stats(self) -> Dict[str, Any]:
         """Returns the latest system-level statistics.
@@ -60,20 +61,34 @@ class DashboardDataProvider:
         """
         return self._active_cases
 
+    def get_cases_with_beams_data(self) -> List[Dict[str, Any]]:
+        """Returns the latest data for active cases with their beams.
+
+        Returns:
+            List[Dict[str, Any]]: List with case and beam information.
+        """
+        return self._cases_with_beams
+
     def refresh_all_data(self) -> None:
         """Triggers a refresh of all data by fetching from repositories and processing it."""
         try:
-            
+
             # Fetch raw data
             raw_gpus = self.gpu_repo.get_all_gpu_resources()
-            raw_cases = self.case_repo.get_all_active_cases()
+            raw_cases_with_beams = self.case_repo.get_all_active_cases_with_beams()
 
             # Set update time first
             self._last_update = datetime.now()
 
             # Process data
             self._gpu_data = self._process_gpu_data(raw_gpus)
-            self._active_cases = self._process_case_data(raw_cases)
+            self._cases_with_beams = self._process_cases_with_beams_data(raw_cases_with_beams)
+
+            # Extract just case data for backward compatibility
+            self._active_cases = [item["case_display"] for item in self._cases_with_beams]
+
+            # Calculate system stats from case data
+            raw_cases = [item["case_data"] for item in raw_cases_with_beams]
             self._system_stats = self._calculate_system_metrics(raw_cases, raw_gpus)
 
         except Exception as e:
@@ -82,6 +97,7 @@ class DashboardDataProvider:
             self._system_stats = {}
             self._gpu_data = []
             self._active_cases = []
+            self._cases_with_beams = []
 
 
     def _calculate_system_metrics(self, cases: List[CaseData], gpus: List[GpuResource]) -> Dict[str, Any]:
@@ -160,3 +176,51 @@ class DashboardDataProvider:
                 "temperature": gpu.temperature
             })
         return processed_gpus
+
+    def _process_cases_with_beams_data(self, raw_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Processes raw case+beam data into display format.
+
+        Args:
+            raw_data: List of dicts with 'case_data' and 'beams'
+
+        Returns:
+            List[Dict[str, Any]]: Processed data ready for display
+        """
+        processed = []
+        for item in raw_data:
+            case = item["case_data"]
+            beams = item["beams"]
+
+            # Process beam data
+            beam_display_data = []
+            for beam in beams:
+                beam_display_data.append({
+                    "beam_id": beam["beam_id"],
+                    "status": beam["status"],
+                    "elapsed_time": (
+                        (datetime.now() - beam["created_at"]).total_seconds()
+                        if beam["created_at"] else 0
+                    ),
+                    "hpc_job_id": beam["hpc_job_id"]
+                })
+
+            # Process case data
+            case_display = {
+                "case_id": case.case_id,
+                "status": case.status,
+                "progress": case.progress,
+                "assigned_gpu": case.assigned_gpu,
+                "elapsed_time": (
+                    (datetime.now() - case.created_at).total_seconds()
+                    if case.created_at else 0
+                ),
+                "beam_count": len(beams)
+            }
+
+            processed.append({
+                "case_data": case,
+                "case_display": case_display,
+                "beams": beam_display_data
+            })
+
+        return processed
