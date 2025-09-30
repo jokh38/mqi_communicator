@@ -230,3 +230,18 @@ class Settings:
         Returns HPC connection information.
         """
         return self._yaml_config.get("hpc", None)
+
+    def get_moqui_tps_parameters(self) -> Dict[str, Any]:
+        """
+        Gets the moqui_tps_parameters configuration dictionary from the YAML file.
+        """
+        return self._yaml_config.get("moqui_tps_parameters", {})
+
+    def get_hpc_paths(self) -> Dict[str, Any]:
+        """
+        Gets the HPC paths configuration dictionary from the YAML file.
+        """
+        hpc_config = self.get_hpc_connection()
+        if hpc_config:
+            return hpc_config.get("paths", {})
+        return {}

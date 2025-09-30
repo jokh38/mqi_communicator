@@ -542,18 +542,32 @@ class CaseRepository(BaseRepository):
             )
         self.logger.info("Case with beams created successfully", {"case_id": case_id, "num_beams": len(beam_jobs)})
 
-    def update_beams_status_by_case_id(self, case_id: str, status: str) -> None:
+    def update_beams_status_by_case_id(self, case_id: str, status) -> None:
         """Updates the status for all beams associated with a given case.
 
         Args:
             case_id (str): The parent case identifier.
-            status (str): The new status for the beams (e.g., "CSV_INTERPRETING", "UPLOADING").
+            status (Union[str, BeamStatus]): The new status for the beams.
         """
         self._log_operation("update_beams_status_by_case_id", case_id=case_id, status=status)
-        beam_status_value = BeamStatus[status.upper()].value
+
+        # Convert to BeamStatus enum if string
+        if isinstance(status, str):
+            try:
+                # Try as enum value first (e.g., "csv_interpreting")
+                beam_status = BeamStatus(status)
+            except ValueError:
+                # Try as enum name (e.g., "CSV_INTERPRETING")
+                try:
+                    beam_status = BeamStatus[status.upper()]
+                except KeyError:
+                    raise ValueError(f"Invalid beam status: {status}. Must be one of {[s.name for s in BeamStatus]}")
+        else:
+            beam_status = status
+
         query = "UPDATE beams SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE parent_case_id = ?"
-        self._execute_query(query, (beam_status_value, case_id))
-        self.logger.info("Bulk updated beam statuses for case", {"case_id": case_id, "new_status": beam_status_value})
+        self._execute_query(query, (beam_status.value, case_id))
+        self.logger.info("Bulk updated beam statuses for case", {"case_id": case_id, "new_status": beam_status.value})
 
     def get_all_active_cases_with_beams(self) -> List[Dict[str, Any]]:
         """Retrieves all active cases with their associated beam data.

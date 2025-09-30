@@ -35,7 +35,6 @@ from src.repositories.gpu_repo import GpuRepository
 from src.repositories.case_repo import CaseRepository
 from src.infrastructure.gpu_monitor import GpuMonitor
 from src.handlers.execution_handler import ExecutionHandler
-from src.utils.retry_policy import RetryPolicy
 from src.core.worker import worker_main
 from src.core.dispatcher import prepare_beam_jobs, run_case_level_csv_interpreting, run_case_level_upload, run_case_level_tps_generation, allocate_gpus_for_pending_beams
 from src.domain.enums import CaseStatus, BeamStatus
@@ -593,7 +592,7 @@ class MQIApplication:
         """Initializes the SSH client for remote connections."""
         try:
             hpc_config = self.settings.get_hpc_connection()
-            if not all(k in hpc_config for k in ["host", "user", "ssh_key_path"]):
+            if not hpc_config or not all(k in hpc_config for k in ["host", "user", "ssh_key_path"]):
                 self.logger.warning("HPC connection details are not fully configured. Remote operations will be disabled.")
                 return
 

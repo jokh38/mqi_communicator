@@ -418,21 +418,20 @@ class GpuRepository(BaseRepository):
             int: The number of GPUs released.
         """
         self._log_operation("release_all_for_case", case_id=case_id)
-        
+
         query = """
             UPDATE gpu_resources
             SET status = ?, assigned_case = NULL, last_updated = CURRENT_TIMESTAMP
             WHERE assigned_case = ?
         """
 
-        result = self._execute_query(
-            query,
-            (GpuStatus.IDLE.value, case_id)
-        )
-        
+        with self.db.transaction() as conn:
+            cursor = conn.execute(query, (GpuStatus.IDLE.value, case_id))
+            row_count = cursor.rowcount
+
         self.logger.info("Released GPUs for case", {
             "case_id": case_id,
-            "gpus_released": result
+            "gpus_released": row_count
         })
-        
-        return result
+
+        return row_count

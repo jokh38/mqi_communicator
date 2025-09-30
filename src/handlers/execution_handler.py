@@ -3,7 +3,6 @@ Provides a unified handler for executing commands and transferring files
 either locally or on a remote machine, driven by configuration settings.
 """
 
-import logging
 import os
 import re
 import shutil

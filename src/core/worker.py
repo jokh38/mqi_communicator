@@ -11,8 +11,6 @@ from src.repositories.case_repo import CaseRepository
 from src.repositories.gpu_repo import GpuRepository
 from src.handlers.execution_handler import ExecutionHandler
 from src.infrastructure.logging_handler import StructuredLogger, LoggerFactory
-from src.infrastructure.process_manager import CommandExecutor
-from src.utils.retry_policy import RetryPolicy
 from src.core.workflow_manager import WorkflowManager
 import paramiko
 from src.core.tps_generator import TpsGenerator
@@ -50,11 +48,6 @@ def worker_main(beam_id: str, beam_path: Path, settings: Settings) -> None:
 
         case_repo = CaseRepository(db_connection, logger)
         gpu_repo = GpuRepository(db_connection, logger, settings)
-
-        # Create handler dependencies
-        command_executor = CommandExecutor(
-            logger, settings.get_processing_config().get('local_execution_timeout_seconds'))
-        retry_policy = RetryPolicy(logger=logger, settings=settings)
 
         # Create ExecutionHandler based on settings
         workflow_mode = settings.execution_handler.get("Workflow", "local")

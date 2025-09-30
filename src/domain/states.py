@@ -115,8 +115,12 @@ class FileUploadState(WorkflowState):
             context.shared_context["remote_beam_dir"] = remote_beam_dir
 
             tps_file = context.shared_context.get("tps_file_path")
-            if not tps_file or not tps_file.exists():
-                raise ProcessingError(f"TPS file not found in shared context: {tps_file}")
+            if not tps_file:
+                raise ProcessingError("TPS file path not found in shared context")
+            if not isinstance(tps_file, Path):
+                raise ProcessingError(f"Invalid TPS file path type: {type(tps_file)}")
+            if not tps_file.exists():
+                raise ProcessingError(f"TPS file not found: {tps_file}")
 
             result = context.execution_handler.upload_file(
                 local_path=str(tps_file), remote_path=f"{remote_beam_dir}/{tps_file.name}"
