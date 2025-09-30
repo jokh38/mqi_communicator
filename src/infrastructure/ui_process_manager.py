@@ -283,6 +283,8 @@ class UIProcessManager:
             web_config.get("gotty_path", "gotty"),
             "--port", str(web_config.get("port", 8080)),
             "--address", web_config.get("bind_address", "0.0.0.0"),
+            "--width", str(web_config.get("terminal_width", 1000)),
+            "--height", str(web_config.get("terminal_height", 800)),
         ]
 
         # Optional GoTTY flags
