@@ -86,37 +86,37 @@ class UIProcessManager:
             # Determine process configuration based on mode
             if web_enabled:
                 # Web mode: Run as background process
-                if platform.system() == "Windows":
-                    creation_flags = subprocess.CREATE_NO_WINDOW
-                else:
-                    creation_flags = 0
+                popen_kwargs = {
+                    "cwd": self.project_root,
+                    "stdout": subprocess.PIPE,
+                    "stderr": subprocess.PIPE,
+                }
 
-                self._process = subprocess.Popen(
-                    command,
-                    creationflags=creation_flags if platform.system() == "Windows" else None,
-                    cwd=self.project_root,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    start_new_session=(platform.system() != "Windows")
-                )
+                if platform.system() == "Windows":
+                    popen_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+                else:
+                    popen_kwargs["start_new_session"] = True
+
+                self._process = subprocess.Popen(command, **popen_kwargs)
             else:
                 # Terminal mode: Create new console window
-                creation_flags = self._get_process_creation_flags()
+                popen_kwargs = {
+                    "cwd": self.project_root,
+                    "stdout": None,  # Let stdout go to the console window
+                    "stderr": None   # Let stderr go to the console window too
+                }
 
-                if self.logger:
-                    self.logger.info("About to start UI subprocess", {
-                        "command": ' '.join(command),
-                        "cwd": str(self.project_root),
-                        "creation_flags": creation_flags
-                    })
+                if platform.system() == "Windows":
+                    creation_flags = subprocess.CREATE_NEW_CONSOLE
+                    popen_kwargs["creationflags"] = creation_flags
+                    if self.logger:
+                        self.logger.info("About to start UI subprocess", {
+                            "command": ' '.join(command),
+                            "cwd": str(self.project_root),
+                            "creation_flags": creation_flags
+                        })
 
-                self._process = subprocess.Popen(
-                    command,
-                    creationflags=creation_flags if platform.system() == "Windows" else None,
-                    cwd=self.project_root,
-                    stdout=None,  # Let stdout go to the console window
-                    stderr=None   # Let stderr go to the console window too
-                )
+                self._process = subprocess.Popen(command, **popen_kwargs)
 
             # Give the process a moment to start
             wait_time = 3.0 if web_enabled else 2.0
