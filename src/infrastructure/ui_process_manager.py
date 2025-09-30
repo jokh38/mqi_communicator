@@ -287,7 +287,7 @@ class UIProcessManager:
         ]
 
         # Optional ttyd flags
-        if web_config.get("permit_write", False):
+        if not web_config.get("permit_write", False):
             ttyd_cmd.append("-W")
 
         if web_config.get("reconnect", True):
