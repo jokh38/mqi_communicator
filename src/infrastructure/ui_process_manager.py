@@ -65,10 +65,10 @@ class UIProcessManager:
             web_config = ui_config.get("web", {})
             web_enabled = web_config.get("enabled", False)
 
-            # Validate GoTTY availability and port if web mode
+            # Validate ttyd availability and port if web mode
             if web_enabled:
-                if not self._validate_gotty_available():
-                    raise RuntimeError("GoTTY not available")
+                if not self._validate_ttyd_available():
+                    raise RuntimeError("ttyd not available")
 
                 if not self._check_port_available(web_config.get("port", 8080)):
                     raise RuntimeError(f"Port {web_config.get('port', 8080)} already in use")
@@ -122,11 +122,11 @@ class UIProcessManager:
             wait_time = 3.0 if web_enabled else 2.0
             time.sleep(wait_time)
 
-            # Verify GoTTY startup if web mode
+            # Verify ttyd startup if web mode
             if web_enabled:
-                if not self._verify_gotty_startup():
+                if not self._verify_ttyd_startup():
                     if self.logger:
-                        self.logger.warning("Could not confirm GoTTY startup, but process is running")
+                        self.logger.warning("Could not confirm ttyd startup, but process is running")
 
             # Check if process is still running
             poll_result = self._process.poll()
@@ -257,7 +257,7 @@ class UIProcessManager:
         return self.start()
     
     def _get_ui_command(self) -> list[str]:
-        """Constructs the command to launch the UI process (optionally via GoTTY).
+        """Constructs the command to launch the UI process (optionally via ttyd).
 
         Returns:
             list[str]: A list of command arguments.
@@ -278,36 +278,29 @@ class UIProcessManager:
         if not web_config.get("enabled", False):
             return base_command
 
-        # Build GoTTY wrapper command
-        gotty_cmd = [
-            web_config.get("gotty_path", "gotty"),
-            "--port", str(web_config.get("port", 8080)),
-            "--address", web_config.get("bind_address", "0.0.0.0"),
-            "--width", str(web_config.get("terminal_width", 500)),
-            "--height", str(web_config.get("terminal_height", 300)),
+        # Build ttyd wrapper command
+        ttyd_cmd = [
+            web_config.get("ttyd_path", "ttyd"),
+            "-p", str(web_config.get("port", 8080)),
+            "-i", web_config.get("bind_address", "0.0.0.0"),
+            "-t", "titleFixed=MOQUI Communicator Dashboard",
         ]
 
-        # Optional GoTTY flags
+        # Optional ttyd flags
         if web_config.get("permit_write", False):
-            gotty_cmd.append("--permit-write")
+            ttyd_cmd.append("-W")
 
         if web_config.get("reconnect", True):
-            gotty_cmd.append("--reconnect")
+            ttyd_cmd.append("-o")
 
-        # Add title for browser tab
-        gotty_cmd.extend([
-            "--title-format", "MOQUI Communicator Dashboard"
-        ])
+        # Combine: ttyd [options] -- python -m src.ui.dashboard [args]
+        ttyd_cmd.extend(base_command)
 
-        # Combine: gotty [options] -- python -m src.ui.dashboard [args]
-        gotty_cmd.append("--")
-        gotty_cmd.extend(base_command)
+        return ttyd_cmd
 
-        return gotty_cmd
-
-    def _verify_gotty_startup(self, timeout: int = 5) -> bool:
+    def _verify_ttyd_startup(self, timeout: int = 5) -> bool:
         """
-        Verify that GoTTY server started successfully by checking stdout.
+        Verify that ttyd server started successfully by checking stdout.
 
         Args:
             timeout: Seconds to wait for startup confirmation
@@ -326,7 +319,7 @@ class UIProcessManager:
             # Check if process crashed
             if self._process.poll() is not None:
                 if self.logger:
-                    self.logger.error("GoTTY process terminated unexpectedly")
+                    self.logger.error("ttyd process terminated unexpectedly")
                 return False
 
             # Try to read startup output (non-blocking)
@@ -341,35 +334,35 @@ class UIProcessManager:
                     ready, _, _ = select.select([self._process.stdout], [], [], 0.1)
                     if ready:
                         line = self._process.stdout.readline().decode('utf-8', errors='ignore')
-                        if 'HTTP server is listening' in line or 'listening at' in line.lower():
+                        if 'Listening on port' in line or 'listening' in line.lower():
                             if self.logger:
-                                self.logger.info(f"GoTTY server started: {line.strip()}")
+                                self.logger.info(f"ttyd server started: {line.strip()}")
                             return True
             except Exception as e:
                 if self.logger:
-                    self.logger.warning(f"Error checking GoTTY startup: {e}")
+                    self.logger.warning(f"Error checking ttyd startup: {e}")
 
             time.sleep(0.1)
 
         if self.logger:
-            self.logger.warning("Could not confirm GoTTY startup within timeout")
+            self.logger.warning("Could not confirm ttyd startup within timeout")
         return False
 
-    def _validate_gotty_available(self) -> bool:
-        """Check if GoTTY executable is available."""
+    def _validate_ttyd_available(self) -> bool:
+        """Check if ttyd executable is available."""
         import shutil
 
         ui_config = self.config.get_ui_config()
         web_config = ui_config.get("web", {})
-        gotty_path = web_config.get("gotty_path", "gotty")
+        ttyd_path = web_config.get("ttyd_path", "ttyd")
 
-        if shutil.which(gotty_path) is None:
+        if shutil.which(ttyd_path) is None:
             if self.logger:
                 self.logger.error(
-                    f"GoTTY executable not found: {gotty_path}",
+                    f"ttyd executable not found: {ttyd_path}",
                     {
-                        "message": "Please install GoTTY or update 'ui.web.gotty_path' in config",
-                        "install_url": "https://github.com/yudai/gotty"
+                        "message": "Please install ttyd or update 'ui.web.ttyd_path' in config",
+                        "install_url": "https://github.com/tsl0922/ttyd"
                     }
                 )
             return False
