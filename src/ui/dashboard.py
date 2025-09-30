@@ -14,7 +14,6 @@ import sys
 import signal
 import os
 import time
-import logging
 import json
 from pathlib import Path
 from typing import NoReturn, Optional, Dict, Any
@@ -30,9 +29,9 @@ from src.ui.provider import DashboardDataProvider
 from src.ui.display import DisplayManager
 
 
-class DashboardLogger:
+class DashboardLogger(StructuredLogger):
     """A logger that only writes to files, not console, for dashboard UI."""
-    
+
     def __init__(self, name: str, config: Dict[str, Any]):
         """Initialize dashboard logger with file-only output.
 
@@ -40,28 +39,33 @@ class DashboardLogger:
             name (str): The logger name.
             config (Dict[str, Any]): The logging configuration settings.
         """
+        # Initialize parent StructuredLogger but override handler setup
         self.config = config
+        import logging
         self.logger = logging.getLogger(name)
-        self.logger.setLevel(getattr(logging, config['log_level'].upper()))
-        
-        # Prevent duplicate handlers
+        log_level = self.config.get("log_level", "INFO").upper()
+        self.logger.setLevel(getattr(logging, log_level))
+
         if not self.logger.handlers:
             self._setup_file_handler_only()
-    
+
     def _setup_file_handler_only(self) -> None:
         """Setup only file handler, no console output."""
+        import logging
         log_dir = Path(self.config['log_dir'])
         # Ensure log directory exists
         log_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # File handler with rotation - NO console handler
         log_file = log_dir / f"{self.logger.name}.log"
+        max_bytes = self.config.get("max_file_size_mb", 10) * 1024 * 1024
+        backup_count = self.config.get("backup_count", 5)
         file_handler = RotatingFileHandler(
             log_file,
-            maxBytes=self.config['max_file_size_mb'] * 1024 * 1024,  # MB to bytes
-            backupCount=self.config['backup_count']
+            maxBytes=max_bytes,
+            backupCount=backup_count
         )
-        
+
         # Set formatter
         if self.config.get("structured_logging", True):
             formatter = self._create_json_formatter()
@@ -69,63 +73,9 @@ class DashboardLogger:
             formatter = logging.Formatter(
                 '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
             )
-        
+
         file_handler.setFormatter(formatter)
         self.logger.addHandler(file_handler)
-    
-    def _create_json_formatter(self):
-        """Create a JSON formatter for structured logging."""
-        
-        class JsonFormatter(logging.Formatter):
-            def format(inner_self, record):
-                local_tz = timezone(timedelta(hours=self.config.get('tz_hours', 9)))
-                log_data = {
-                    'timestamp': datetime.now(local_tz).isoformat(),
-                    'logger': record.name,
-                    'level': record.levelname,                    
-                    'message': record.getMessage(),
-                    'module': record.module,
-                    'function': record.funcName,
-                    'line': record.lineno
-                }
-                
-                if hasattr(record, 'context'):
-                    log_data['context'] = record.context
-                
-                if record.exc_info:
-                    log_data['exception'] = inner_self.formatException(record.exc_info)
-                
-                return json.dumps(log_data, default=str)
-        
-        return JsonFormatter()
-    
-    def _log_with_context(self, level: int, message: str, context: Dict[str, Any] = None, exc_info=False):
-        """Log a message with structured context."""
-        extra = {}
-        if context and self.config.get('structured_logging', True):
-            extra['context'] = context
-        
-        self.logger.log(level, message, extra=extra, exc_info=exc_info)
-    
-    def debug(self, message: str, context: Dict[str, Any] = None, exc_info=False):
-        """Log a debug message with optional context."""
-        self._log_with_context(logging.DEBUG, message, context, exc_info=exc_info)
-    
-    def info(self, message: str, context: Dict[str, Any] = None, exc_info=False):
-        """Log an info message with optional context."""
-        self._log_with_context(logging.INFO, message, context, exc_info=exc_info)
-    
-    def warning(self, message: str, context: Dict[str, Any] = None, exc_info=False):
-        """Log a warning message with optional context."""
-        self._log_with_context(logging.WARNING, message, context, exc_info=exc_info)
-    
-    def error(self, message: str, context: Dict[str, Any] = None, exc_info=False):
-        """Log an error message with optional context."""
-        self._log_with_context(logging.ERROR, message, context, exc_info=exc_info)
-    
-    def critical(self, message: str, context: Dict[str, Any] = None, exc_info=False):
-        """Log a critical message with optional context."""
-        self._log_with_context(logging.CRITICAL, message, context, exc_info=exc_info)
 
 
 class DashboardProcess:
