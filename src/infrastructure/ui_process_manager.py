@@ -112,7 +112,7 @@ class UIProcessManager:
 
                 self._process = subprocess.Popen(
                     command,
-                    creationflags=creation_flags,
+                    creationflags=creation_flags if platform.system() == "Windows" else None,
                     cwd=self.project_root,
                     stdout=None,  # Let stdout go to the console window
                     stderr=None   # Let stderr go to the console window too
