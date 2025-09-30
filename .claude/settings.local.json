@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(/usr/bin/python3:*)",
-      "Read(//mnt/c/MOQUI_SMC/**)"
+      "Read(//mnt/c/MOQUI_SMC/**)",
+      "Bash(python3:*)",
+      "Bash(git add:*)"
     ],
     "deny": [],
     "ask": []
