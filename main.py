@@ -20,7 +20,7 @@ import time
 import multiprocessing as mp
 import paramiko
 from pathlib import Path
-from typing import Optional, NoReturn
+from typing import Optional, NoReturn, Dict
 import threading
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
@@ -37,7 +37,7 @@ from src.infrastructure.gpu_monitor import GpuMonitor
 from src.handlers.execution_handler import ExecutionHandler
 from src.utils.retry_policy import RetryPolicy
 from src.core.worker import worker_main
-from src.core.dispatcher import prepare_beam_jobs, run_case_level_csv_interpreting, run_case_level_upload, run_case_level_tps_generation
+from src.core.dispatcher import prepare_beam_jobs, run_case_level_csv_interpreting, run_case_level_upload, run_case_level_tps_generation, allocate_gpus_for_pending_beams
 from src.domain.enums import CaseStatus, BeamStatus
 
 def scan_existing_cases(case_queue: mp.Queue,
@@ -288,6 +288,86 @@ class MQIApplication:
         except Exception as e:
             self.logger.error("Failed to start GPU monitor", {"error": str(e)})
     
+    def _try_allocate_pending_beams(self, pending_beams_by_case: Dict, executor, active_futures: Dict) -> None:
+        """Attempts to allocate GPUs for pending beams and dispatch workers.
+
+        Args:
+            pending_beams_by_case (Dict): Dictionary tracking pending beams by case_id.
+            executor: The ProcessPoolExecutor for dispatching workers.
+            active_futures (Dict): Dictionary tracking active worker futures.
+        """
+        cases_to_remove = []
+
+        for case_id, pending_data in list(pending_beams_by_case.items()):
+            pending_jobs = pending_data["pending_jobs"]
+            case_path = pending_data["case_path"]
+
+            if not pending_jobs:
+                cases_to_remove.append(case_id)
+                continue
+
+            # Try to allocate GPUs for pending beams
+            new_gpu_assignments = allocate_gpus_for_pending_beams(
+                case_id=case_id,
+                num_pending_beams=len(pending_jobs),
+                settings=self.settings
+            )
+
+            if new_gpu_assignments is None:
+                self.logger.error(f"Error allocating GPUs for pending beams of case {case_id}")
+                continue
+
+            if not new_gpu_assignments:
+                # No GPUs available yet, keep waiting
+                continue
+
+            # Update TPS file with new GPU assignments
+            from src.core.tps_generator import TpsGenerator
+            tps_generator = TpsGenerator(self.settings, self.logger)
+
+            # We need to append to existing TPS file or regenerate it
+            # For now, regenerate the TPS file with the new assignments
+            num_allocated = len(new_gpu_assignments)
+            jobs_to_dispatch = pending_jobs[:num_allocated]
+            remaining_jobs = pending_jobs[num_allocated:]
+
+            # Update TPS file with additional GPU assignments
+            # Note: This is a simplified approach - in production, you might want to append to existing TPS
+            success = tps_generator.generate_tps_file_with_gpu_assignments(
+                case_path=case_path,
+                case_id=case_id,
+                gpu_assignments=new_gpu_assignments,
+                execution_mode="remote"
+            )
+
+            if not success:
+                self.logger.error(f"Failed to update TPS file for pending beams of case {case_id}")
+                continue
+
+            self.logger.info(f"Allocated {num_allocated} additional GPUs for case {case_id}, dispatching workers")
+
+            # Dispatch workers for newly allocated beams
+            for job in jobs_to_dispatch:
+                beam_id = job["beam_id"]
+                beam_path = job["beam_path"]
+                self.logger.info(f"Submitting beam worker for pending beam: {beam_id}")
+                future = executor.submit(worker_main,
+                                         beam_id=beam_id,
+                                         beam_path=beam_path,
+                                         settings=self.settings)
+                active_futures[future] = beam_id
+
+            # Update pending jobs list
+            if remaining_jobs:
+                pending_beams_by_case[case_id]["pending_jobs"] = remaining_jobs
+            else:
+                cases_to_remove.append(case_id)
+
+        # Clean up completed cases
+        for case_id in cases_to_remove:
+            del pending_beams_by_case[case_id]
+            self.logger.info(f"All beams for case {case_id} have been allocated")
+
     def run_worker_loop(self) -> None:
         """The main loop for processing cases from the queue.
         Manages a process pool to handle cases concurrently.
@@ -297,6 +377,7 @@ class MQIApplication:
             self.executor = executor
             self.logger.info(f"Started worker pool with {max_workers} processes")
             active_futures = {}
+            pending_beams_by_case = {}  # Track {case_id: {"case_path": Path, "pending_jobs": [job_dict]}}
             while not self.shutdown_event.is_set():
                 try:
                     # Check for new cases
@@ -342,10 +423,18 @@ class MQIApplication:
                             case_repo.update_beams_status_by_case_id(case_id, BeamStatus.TPS_GENERATION.value)
                             self.logger.info(f"Starting case-level TPS generation for {case_id}")
                             gpu_assignments = run_case_level_tps_generation(case_id, case_path, len(beam_jobs), self.settings)
-                            if not gpu_assignments:
+                            if gpu_assignments is None:
                                 self.logger.error(f"Case-level TPS generation failed for {case_id}. Skipping.")
                                 case_repo.update_case_status(case_id, CaseStatus.FAILED, error_message="TPS generation failed.")
                                 case_repo.update_beams_status_by_case_id(case_id, BeamStatus.FAILED.value)
+                                continue
+
+                            # Handle partial GPU allocation
+                            if len(gpu_assignments) < len(beam_jobs):
+                                self.logger.info(f"Partial GPU allocation for {case_id}: {len(gpu_assignments)}/{len(beam_jobs)} beams can proceed")
+                            elif len(gpu_assignments) == 0:
+                                self.logger.warning(f"No GPUs available for {case_id}. All beams will remain pending.")
+                                case_repo.update_beams_status_by_case_id(case_id, BeamStatus.PENDING.value)
                                 continue
 
                             # Step 4: Run case-level file upload to HPC if any handler is remote
@@ -364,9 +453,31 @@ class MQIApplication:
 
                             # Step 5: Dispatch individual workers for simulation
                             case_repo.update_case_status(case_id, CaseStatus.PROCESSING, progress=50.0)
-                            case_repo.update_beams_status_by_case_id(case_id, BeamStatus.PENDING.value)  # Workers will pick this up
-                            self.logger.info(f"Dispatching workers for case: {case_id}")
-                            for job in beam_jobs:
+
+                            # Only dispatch workers for beams with GPU assignments
+                            num_allocated = len(gpu_assignments)
+                            allocated_jobs = beam_jobs[:num_allocated]
+                            pending_jobs = beam_jobs[num_allocated:]
+
+                            # Mark allocated beams as ready for processing
+                            for job in allocated_jobs:
+                                case_repo.update_beam_status(job["beam_id"], BeamStatus.PENDING)
+
+                            # Keep remaining beams in PENDING with a note they're waiting for GPUs
+                            for job in pending_jobs:
+                                self.logger.info(f"Beam {job['beam_id']} pending GPU availability")
+                                case_repo.update_beam_status(job["beam_id"], BeamStatus.PENDING)
+
+                            # Track pending beams for later GPU allocation
+                            if pending_jobs:
+                                pending_beams_by_case[case_id] = {
+                                    "case_path": case_path,
+                                    "pending_jobs": pending_jobs
+                                }
+
+                            self.logger.info(f"Dispatching workers for case {case_id}: {num_allocated} beams with GPU, {len(pending_jobs)} pending")
+
+                            for job in allocated_jobs:
                                 beam_id = job["beam_id"]
                                 beam_path = job["beam_path"]
                                 self.logger.info(f"Submitting beam worker for: {beam_id}")
@@ -391,6 +502,11 @@ class MQIApplication:
                         try:
                             future.result()  # Raise exception if worker failed
                             self.logger.info(f"Beam worker {beam_id} completed successfully")
+
+                            # Check if there are pending beams waiting for GPUs
+                            if pending_beams_by_case:
+                                self._try_allocate_pending_beams(pending_beams_by_case, executor, active_futures)
+
                         except Exception as e:
                             self.logger.error(f"Beam worker {beam_id} failed", {"error": str(e)})
 

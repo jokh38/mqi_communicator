@@ -240,6 +240,57 @@ def prepare_beam_jobs(
     return beam_jobs
 
 
+def allocate_gpus_for_pending_beams(
+    case_id: str, num_pending_beams: int, settings: Settings
+) -> Optional[List[Dict[str, Any]]]:
+    """Attempts to allocate GPUs for pending beams of a case.
+
+    Args:
+        case_id (str): The case identifier.
+        num_pending_beams (int): Number of beams waiting for GPU allocation.
+        settings (Settings): Application settings.
+
+    Returns:
+        Optional[List[Dict[str, Any]]]: List of new GPU assignments if successful, None on error, empty list if no GPUs available.
+    """
+    logger = LoggerFactory.get_logger(f"gpu_allocator_{case_id}")
+    db_connection = None
+    handler_name = "CsvInterpreter"
+
+    try:
+        db_path_str = settings.get_path("database_path", handler_name=handler_name)
+        db_connection = DatabaseConnection(db_path=Path(db_path_str),
+                                           settings=settings,
+                                           logger=logger)
+        gpu_repo = GpuRepository(db_connection, logger, settings)
+
+        # Check available GPUs
+        available_gpu_count = gpu_repo.get_available_gpu_count()
+        gpus_to_allocate = min(num_pending_beams, available_gpu_count)
+
+        if gpus_to_allocate == 0:
+            logger.debug(f"No GPUs available for pending beams of case {case_id}")
+            return []
+
+        logger.info(f"Attempting to allocate {gpus_to_allocate} GPUs for pending beams of case {case_id}")
+        gpu_assignments = gpu_repo.find_and_lock_multiple_gpus(
+            case_id=case_id,
+            num_gpus=gpus_to_allocate
+        )
+
+        if gpu_assignments:
+            logger.info(f"Successfully allocated {len(gpu_assignments)} GPUs for pending beams of case {case_id}")
+
+        return gpu_assignments if gpu_assignments else []
+
+    except Exception as e:
+        logger.error(f"Failed to allocate GPUs for pending beams of case {case_id}", {"error": str(e)})
+        return None
+    finally:
+        if db_connection:
+            db_connection.close()
+
+
 def run_case_level_tps_generation(
     case_id: str, case_path: Path, beam_count: int, settings: Settings
 ) -> Optional[List[Dict[str, Any]]]:
@@ -266,14 +317,37 @@ def run_case_level_tps_generation(
             metadata={"message": f"Generating TPS file with {beam_count} beam assignments."}
         )
 
-        logger.info(f"Allocating {beam_count} GPUs for case {case_id}")
+        # Check available GPUs and allocate what's possible
+        available_gpu_count = gpu_repo.get_available_gpu_count()
+        logger.info(f"Checking GPU availability for case {case_id}: {available_gpu_count} idle GPUs, {beam_count} requested")
+
+        # Allocate available GPUs (may be less than beam_count)
+        gpus_to_allocate = min(beam_count, available_gpu_count)
+
+        if gpus_to_allocate == 0:
+            error_message = f"No GPUs available for case {case_id}. All beams will remain pending."
+            logger.warning(error_message)
+            case_repo.record_workflow_step(
+                case_id=case_id,
+                step=WorkflowStep.TPS_GENERATION,
+                status="pending",
+                metadata={
+                    "message": error_message,
+                    "beams_total": beam_count,
+                    "beams_allocated": 0,
+                    "beams_pending": beam_count
+                }
+            )
+            return []  # Return empty list, not None, to indicate partial success
+
+        logger.info(f"Allocating {gpus_to_allocate} GPUs for case {case_id} ({beam_count - gpus_to_allocate} beams will remain pending)")
         gpu_assignments = gpu_repo.find_and_lock_multiple_gpus(
             case_id=case_id,
-            num_gpus=beam_count
+            num_gpus=gpus_to_allocate
         )
 
         if not gpu_assignments:
-            error_message = f"Failed to allocate {beam_count} GPUs for case {case_id}"
+            error_message = f"Failed to allocate GPUs for case {case_id} despite availability check"
             logger.error(error_message)
             case_repo.record_workflow_step(
                 case_id=case_id,
@@ -303,13 +377,19 @@ def run_case_level_tps_generation(
             )
             return None
 
-        logger.info(f"Case-level TPS generation completed successfully for: {case_id}")
+        allocated_count = len(gpu_assignments)
+        pending_count = beam_count - allocated_count
+
+        logger.info(f"Case-level TPS generation completed for: {case_id} ({allocated_count} allocated, {pending_count} pending)")
         case_repo.record_workflow_step(
             case_id=case_id,
             step=WorkflowStep.TPS_GENERATION,
-            status="completed",
+            status="completed" if pending_count == 0 else "partial",
             metadata={
-                "message": f"Generated TPS file with {beam_count} beam-to-GPU assignments",
+                "message": f"Generated TPS file with {allocated_count} beam-to-GPU assignments ({pending_count} beams pending)",
+                "beams_total": beam_count,
+                "beams_allocated": allocated_count,
+                "beams_pending": pending_count,
                 "gpu_assignments": gpu_assignments
             }
         )
