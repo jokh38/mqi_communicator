@@ -311,6 +311,41 @@ class MQIApplication:
             # Start UI as separate process
             if self.ui_process_manager.start():
                 self.logger.info("Dashboard UI process started successfully")
+
+                # Provide web access information if enabled
+                ui_config = self.settings.get_ui_config()
+                web_config = ui_config.get("web", {})
+
+                if web_config.get("enabled", False):
+                    import socket
+                    web_port = web_config.get("port", 8080)
+                    bind_address = web_config.get("bind_address", "0.0.0.0")
+
+                    # Determine accessible URLs
+                    urls = []
+
+                    if bind_address == "0.0.0.0":
+                        # Listening on all interfaces
+                        try:
+                            hostname = socket.gethostname()
+                            local_ip = socket.gethostbyname(hostname)
+
+                            urls.append(f"http://localhost:{web_port}")
+                            urls.append(f"http://{local_ip}:{web_port}")
+                            if hostname != local_ip:
+                                urls.append(f"http://{hostname}:{web_port}")
+                        except Exception:
+                            # Fallback if hostname resolution fails
+                            urls.append(f"http://localhost:{web_port}")
+                    else:
+                        urls.append(f"http://{bind_address}:{web_port}")
+
+                    # Log access information
+                    self.logger.info("=" * 60)
+                    self.logger.info("Web Dashboard is available at:")
+                    for url in urls:
+                        self.logger.info(f"  → {url}")
+                    self.logger.info("=" * 60)
             else:
                 self.logger.error("Failed to start dashboard UI process")
         except Exception as e:

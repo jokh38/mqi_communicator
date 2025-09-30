@@ -113,6 +113,13 @@ gpu:
 ui:
   auto_start: true
   port: 8501
+  web:
+    enabled: true                    # Enable GoTTY web interface
+    port: 8080                        # Port for web dashboard
+    gotty_path: "gotty"               # Path to GoTTY executable (uses PATH by default)
+    bind_address: "0.0.0.0"          # Interface to bind to
+    permit_write: false               # Allow keyboard input through web
+    reconnect: true                   # Auto-reconnect on disconnect
 
 
 # =====================================================================================

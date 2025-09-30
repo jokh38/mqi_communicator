@@ -48,7 +48,8 @@ class UIProcessManager:
     def start(self) -> bool:
         """Starts the UI as an independent process.
 
-        Creates a new console window on Windows systems as per original behavior.
+        Creates a new console window on Windows systems in terminal mode,
+        or runs as a background process in web mode.
 
         Returns:
             bool: True if the process started successfully, False otherwise.
@@ -57,48 +58,84 @@ class UIProcessManager:
             if self.logger:
                 self.logger.warning("UI process is already running")
             return False
-        
+
         try:
+            # Check if web mode is enabled
+            ui_config = self.config.get_ui_config()
+            web_config = ui_config.get("web", {})
+            web_enabled = web_config.get("enabled", False)
+
+            # Validate GoTTY availability and port if web mode
+            if web_enabled:
+                if not self._validate_gotty_available():
+                    raise RuntimeError("GoTTY not available")
+
+                if not self._check_port_available(web_config.get("port", 8080)):
+                    raise RuntimeError(f"Port {web_config.get('port', 8080)} already in use")
+
             command = self._get_ui_command()
-            creation_flags = self._get_process_creation_flags()
-            
+
             if self.logger:
                 self.logger.info("Starting UI process", {
                     "command": ' '.join(command),
                     "database_path": self.database_path,
-                    "platform": platform.system()
+                    "platform": platform.system(),
+                    "web_mode": web_enabled
                 })
-            
-            # No log files needed - let output go to console
-            self._stdout_log_file = None
 
-            # Start the UI process
-            if self.logger:
-                self.logger.info("About to start UI subprocess", {
-                    "command": ' '.join(command),
-                    "cwd": str(self.project_root),
-                    "creation_flags": creation_flags
-                })
-            
-            # For UI dashboard, let all output go to the console window
-            self._process = subprocess.Popen(
-                command,
-                creationflags=creation_flags,
-                cwd=self.project_root,
-                stdout=None,  # Let stdout go to the console window
-                stderr=None   # Let stderr go to the console window too
-            )
-            
+            # Determine process configuration based on mode
+            if web_enabled:
+                # Web mode: Run as background process
+                if platform.system() == "Windows":
+                    creation_flags = subprocess.CREATE_NO_WINDOW
+                else:
+                    creation_flags = 0
+
+                self._process = subprocess.Popen(
+                    command,
+                    creationflags=creation_flags if platform.system() == "Windows" else None,
+                    cwd=self.project_root,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    start_new_session=(platform.system() != "Windows")
+                )
+            else:
+                # Terminal mode: Create new console window
+                creation_flags = self._get_process_creation_flags()
+
+                if self.logger:
+                    self.logger.info("About to start UI subprocess", {
+                        "command": ' '.join(command),
+                        "cwd": str(self.project_root),
+                        "creation_flags": creation_flags
+                    })
+
+                self._process = subprocess.Popen(
+                    command,
+                    creationflags=creation_flags,
+                    cwd=self.project_root,
+                    stdout=None,  # Let stdout go to the console window
+                    stderr=None   # Let stderr go to the console window too
+                )
+
             # Give the process a moment to start
-            time.sleep(2.0)  # Increased wait time for debugging
-            
+            wait_time = 3.0 if web_enabled else 2.0
+            time.sleep(wait_time)
+
+            # Verify GoTTY startup if web mode
+            if web_enabled:
+                if not self._verify_gotty_startup():
+                    if self.logger:
+                        self.logger.warning("Could not confirm GoTTY startup, but process is running")
+
             # Check if process is still running
             poll_result = self._process.poll()
             if poll_result is None:
                 self._is_running = True
                 if self.logger:
                     self.logger.info("UI process started successfully", {
-                        "pid": self._process.pid
+                        "pid": self._process.pid,
+                        "web_mode": web_enabled
                     })
                 return True
             else:
@@ -109,7 +146,7 @@ class UIProcessManager:
                     })
                 self._process = None
                 return False
-                
+
         except Exception as e:
             if self.logger:
                 self.logger.error("Failed to start UI process", {"error": str(e)})
@@ -220,20 +257,135 @@ class UIProcessManager:
         return self.start()
     
     def _get_ui_command(self) -> list[str]:
-        """Constructs the command to launch the UI process.
+        """Constructs the command to launch the UI process (optionally via GoTTY).
 
         Returns:
             list[str]: A list of command arguments.
         """
-        command = [
+        # Base dashboard command
+        base_command = [
             sys.executable,
             "-m", "src.ui.dashboard",
             self.database_path
         ]
         if self.config_path:
-            command.extend(["--config", str(self.config_path)])
-        return command
-    
+            base_command.extend(["--config", str(self.config_path)])
+
+        # Check if web mode is enabled
+        ui_config = self.config.get_ui_config()
+        web_config = ui_config.get("web", {})
+
+        if not web_config.get("enabled", False):
+            return base_command
+
+        # Build GoTTY wrapper command
+        gotty_cmd = [
+            web_config.get("gotty_path", "gotty"),
+            "--port", str(web_config.get("port", 8080)),
+            "--address", web_config.get("bind_address", "0.0.0.0"),
+        ]
+
+        # Optional GoTTY flags
+        if web_config.get("permit_write", False):
+            gotty_cmd.append("--permit-write")
+
+        if web_config.get("reconnect", True):
+            gotty_cmd.append("--reconnect")
+
+        # Add title for browser tab
+        gotty_cmd.extend([
+            "--title-format", "MOQUI Communicator Dashboard"
+        ])
+
+        # Combine: gotty [options] -- python -m src.ui.dashboard [args]
+        gotty_cmd.append("--")
+        gotty_cmd.extend(base_command)
+
+        return gotty_cmd
+
+    def _verify_gotty_startup(self, timeout: int = 5) -> bool:
+        """
+        Verify that GoTTY server started successfully by checking stdout.
+
+        Args:
+            timeout: Seconds to wait for startup confirmation
+
+        Returns:
+            True if startup confirmed, False otherwise
+        """
+        import select
+
+        if not self._process or not self._process.stdout:
+            return False
+
+        start_time = time.time()
+
+        while time.time() - start_time < timeout:
+            # Check if process crashed
+            if self._process.poll() is not None:
+                if self.logger:
+                    self.logger.error("GoTTY process terminated unexpectedly")
+                return False
+
+            # Try to read startup output (non-blocking)
+            try:
+                if platform.system() == 'Windows':
+                    # Windows: simplified check
+                    time.sleep(0.5)
+                    if self._process.poll() is None:
+                        return True
+                else:
+                    # Unix: use select
+                    ready, _, _ = select.select([self._process.stdout], [], [], 0.1)
+                    if ready:
+                        line = self._process.stdout.readline().decode('utf-8', errors='ignore')
+                        if 'HTTP server is listening' in line or 'listening at' in line.lower():
+                            if self.logger:
+                                self.logger.info(f"GoTTY server started: {line.strip()}")
+                            return True
+            except Exception as e:
+                if self.logger:
+                    self.logger.warning(f"Error checking GoTTY startup: {e}")
+
+            time.sleep(0.1)
+
+        if self.logger:
+            self.logger.warning("Could not confirm GoTTY startup within timeout")
+        return False
+
+    def _validate_gotty_available(self) -> bool:
+        """Check if GoTTY executable is available."""
+        import shutil
+
+        ui_config = self.config.get_ui_config()
+        web_config = ui_config.get("web", {})
+        gotty_path = web_config.get("gotty_path", "gotty")
+
+        if shutil.which(gotty_path) is None:
+            if self.logger:
+                self.logger.error(
+                    f"GoTTY executable not found: {gotty_path}",
+                    {
+                        "message": "Please install GoTTY or update 'ui.web.gotty_path' in config",
+                        "install_url": "https://github.com/yudai/gotty"
+                    }
+                )
+            return False
+        return True
+
+    def _check_port_available(self, port: int) -> bool:
+        """Check if port is available for binding."""
+        import socket
+
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind(('', port))
+                return True
+        except OSError:
+            if self.logger:
+                self.logger.error(f"Port {port} is already in use")
+            return False
+
     def _get_process_creation_flags(self) -> int:
         """Gets the appropriate process creation flags based on the platform.
 
