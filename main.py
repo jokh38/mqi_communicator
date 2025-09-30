@@ -173,6 +173,83 @@ class MQIApplication:
         self.shutdown_event = threading.Event()
         self.service_monitor_thread: Optional[threading.Thread] = None
 
+    def _create_db_connection(self) -> DatabaseConnection:
+        """Creates a database connection with standard settings.
+
+        Returns:
+            DatabaseConnection: An initialized database connection.
+        """
+        db_path = self.settings.get_database_path()
+        return DatabaseConnection(db_path=db_path, settings=self.settings, logger=self.logger)
+
+    def _create_case_repository(self, db_conn: DatabaseConnection) -> CaseRepository:
+        """Creates a case repository with the given database connection.
+
+        Args:
+            db_conn (DatabaseConnection): The database connection.
+
+        Returns:
+            CaseRepository: An initialized case repository.
+        """
+        return CaseRepository(db_conn, self.logger)
+
+    def _validate_scan_directory(self) -> Optional[Path]:
+        """Validates and returns the scan directory from settings.
+
+        Returns:
+            Optional[Path]: The scan directory path if valid, None otherwise.
+        """
+        case_dirs = self.settings.get_case_directories()
+        scan_directory = case_dirs.get("scan")
+        if not scan_directory or not scan_directory.exists():
+            self.logger.error(f"Scan directory does not exist: {scan_directory}")
+            return None
+        return scan_directory
+
+    def _fail_case(self, case_repo: CaseRepository, case_id: str, error_message: str) -> None:
+        """Marks a case and all its beams as failed.
+
+        Args:
+            case_repo (CaseRepository): The case repository.
+            case_id (str): The case ID.
+            error_message (str): The error message to log.
+        """
+        self.logger.error(f"{error_message} for case {case_id}")
+        case_repo.update_case_status(case_id, CaseStatus.FAILED, error_message=error_message)
+        case_repo.update_beams_status_by_case_id(case_id, BeamStatus.FAILED.value)
+
+    def _update_case_and_beams_status(self, case_repo: CaseRepository, case_id: str,
+                                      case_status: CaseStatus, beam_status: BeamStatus,
+                                      progress: float = None) -> None:
+        """Updates both case and all beam statuses atomically.
+
+        Args:
+            case_repo (CaseRepository): The case repository.
+            case_id (str): The case ID.
+            case_status (CaseStatus): The new case status.
+            beam_status (BeamStatus): The new beam status.
+            progress (float, optional): The progress percentage.
+        """
+        case_repo.update_case_status(case_id, case_status, progress=progress)
+        case_repo.update_beams_status_by_case_id(case_id, beam_status.value)
+
+    def _submit_beam_worker(self, executor: ProcessPoolExecutor, beam_id: str,
+                           beam_path: Path, active_futures: Dict) -> None:
+        """Submits a beam worker and tracks its future.
+
+        Args:
+            executor (ProcessPoolExecutor): The executor to submit to.
+            beam_id (str): The beam ID.
+            beam_path (Path): The beam path.
+            active_futures (Dict): Dictionary tracking active futures.
+        """
+        self.logger.info(f"Submitting beam worker for: {beam_id}")
+        future = executor.submit(worker_main,
+                                beam_id=beam_id,
+                                beam_path=beam_path,
+                                settings=self.settings)
+        active_futures[future] = beam_id
+
     def initialize_logging(self) -> None:
         """Initializes the structured logging for the application.
         Exits the application if logging cannot be initialized.
@@ -191,12 +268,10 @@ class MQIApplication:
         Exits the application if the database cannot be initialized.
         """
         try:
-            db_path = self.settings.get_database_path()
-            with DatabaseConnection(db_path=db_path,
-                                    settings=self.settings,
-                                    logger=self.logger) as db_connection:
+            with self._create_db_connection() as db_connection:
                 db_connection.init_db()
-            self.logger.info("Database initialized successfully", {"path": str(db_path)})
+            self.logger.info("Database initialized successfully",
+                           {"path": str(self.settings.get_database_path())})
         except Exception as e:
             self.logger.error("Failed to initialize database",
                               {"error": str(e)})
@@ -205,11 +280,8 @@ class MQIApplication:
     def start_file_watcher(self) -> None:
         """Starts the file system watcher to detect new cases."""
         try:
-            case_dirs = self.settings.get_case_directories()
-            scan_directory = case_dirs.get("scan")
-            if not scan_directory or not scan_directory.exists():
-                self.logger.error(
-                    f"Scan directory does not exist: {scan_directory}")
+            scan_directory = self._validate_scan_directory()
+            if not scan_directory:
                 return
             event_handler = CaseDetectionHandler(self.case_queue, self.logger)
             self.observer = Observer()
@@ -250,11 +322,7 @@ class MQIApplication:
         try:
             self.logger.info("Initializing GPU monitoring service.")
             # Create a dedicated database connection for the monitor
-            db_path = self.settings.get_database_path()
-            self.monitor_db_connection = DatabaseConnection(
-                db_path=db_path,
-                settings=self.settings,
-                logger=self.logger)
+            self.monitor_db_connection = self._create_db_connection()
             gpu_repo = GpuRepository(self.monitor_db_connection, self.logger, self.settings)
 
             # GpuMonitor의 실행 모드를 먼저 확인
@@ -350,12 +418,7 @@ class MQIApplication:
             for job in jobs_to_dispatch:
                 beam_id = job["beam_id"]
                 beam_path = job["beam_path"]
-                self.logger.info(f"Submitting beam worker for pending beam: {beam_id}")
-                future = executor.submit(worker_main,
-                                         beam_id=beam_id,
-                                         beam_path=beam_path,
-                                         settings=self.settings)
-                active_futures[future] = beam_id
+                self._submit_beam_worker(executor, beam_id, beam_path, active_futures)
 
             # Update pending jobs list
             if remaining_jobs:
@@ -390,43 +453,39 @@ class MQIApplication:
 
                         # The main process now orchestrates the initial case-level steps
                         # and updates the database so the UI can reflect the status.
-                        with DatabaseConnection(db_path=self.settings.get_database_path(),
-                                                settings=self.settings,
-                                                logger=self.logger) as db_conn:
-                            case_repo = CaseRepository(db_conn, self.logger)
+                        with self._create_db_connection() as db_conn:
+                            case_repo = self._create_case_repository(db_conn)
                             # Step 1: Discover beams and validate data transfer completion
                             self.logger.info(f"Discovering beams and validating data transfer for case: {case_id}")
                             beam_jobs = prepare_beam_jobs(case_id, case_path, self.settings)
                             if not beam_jobs:
-                                self.logger.error(f"No beams found or data transfer validation failed for case {case_id}. Skipping.")
                                 case_repo.add_case(case_id, case_path)
-                                case_repo.update_case_status(case_id, CaseStatus.FAILED,
-                                                            error_message="No beams found or data transfer incomplete.")
+                                self._fail_case(case_repo, case_id, "No beams found or data transfer incomplete")
                                 continue
 
                             case_repo.create_case_with_beams(case_id, str(case_path), beam_jobs)
                             self.logger.info(f"Created {len(beam_jobs)} beam records in DB for case {case_id}")
 
                             # Step 2: Run case-level CSV interpreting
-                            case_repo.update_case_status(case_id, CaseStatus.CSV_INTERPRETING, progress=10.0)
-                            case_repo.update_beams_status_by_case_id(case_id, BeamStatus.CSV_INTERPRETING.value)
+                            self._update_case_and_beams_status(case_repo, case_id,
+                                                              CaseStatus.CSV_INTERPRETING,
+                                                              BeamStatus.CSV_INTERPRETING,
+                                                              progress=10.0)
                             self.logger.info(f"Starting case-level CSV interpreting for {case_id}")
                             interpreting_success = run_case_level_csv_interpreting(case_id, case_path, self.settings)
                             if not interpreting_success:
-                                self.logger.error(f"Case-level CSV interpreting failed for {case_id}. Skipping.")
-                                case_repo.update_case_status(case_id, CaseStatus.FAILED, error_message="CSV interpreting failed.")
-                                case_repo.update_beams_status_by_case_id(case_id, BeamStatus.FAILED.value)
+                                self._fail_case(case_repo, case_id, "CSV interpreting failed")
                                 continue
 
                             # Step 3: Generate TPS file with dynamic GPU assignments
-                            case_repo.update_case_status(case_id, CaseStatus.PROCESSING, progress=30.0)
-                            case_repo.update_beams_status_by_case_id(case_id, BeamStatus.TPS_GENERATION.value)
+                            self._update_case_and_beams_status(case_repo, case_id,
+                                                              CaseStatus.PROCESSING,
+                                                              BeamStatus.TPS_GENERATION,
+                                                              progress=30.0)
                             self.logger.info(f"Starting case-level TPS generation for {case_id}")
                             gpu_assignments = run_case_level_tps_generation(case_id, case_path, len(beam_jobs), self.settings)
                             if gpu_assignments is None:
-                                self.logger.error(f"Case-level TPS generation failed for {case_id}. Skipping.")
-                                case_repo.update_case_status(case_id, CaseStatus.FAILED, error_message="TPS generation failed.")
-                                case_repo.update_beams_status_by_case_id(case_id, BeamStatus.FAILED.value)
+                                self._fail_case(case_repo, case_id, "TPS generation failed")
                                 continue
 
                             # Handle partial GPU allocation
@@ -444,9 +503,7 @@ class MQIApplication:
                                 self.logger.info(f"Starting case-level file upload for {case_id}")
                                 upload_success = run_case_level_upload(case_id, self.settings, self.ssh_client)
                                 if not upload_success:
-                                    self.logger.error(f"Case-level upload failed for {case_id}. Skipping.")
-                                    case_repo.update_case_status(case_id, CaseStatus.FAILED, error_message="File upload failed.")
-                                    case_repo.update_beams_status_by_case_id(case_id, BeamStatus.FAILED.value)
+                                    self._fail_case(case_repo, case_id, "File upload failed")
                                     continue
                             else:
                                 self.logger.info("No remote handlers configured. Skipping case-level file upload.")
@@ -478,14 +535,7 @@ class MQIApplication:
                             self.logger.info(f"Dispatching workers for case {case_id}: {num_allocated} beams with GPU, {len(pending_jobs)} pending")
 
                             for job in allocated_jobs:
-                                beam_id = job["beam_id"]
-                                beam_path = job["beam_path"]
-                                self.logger.info(f"Submitting beam worker for: {beam_id}")
-                                future = executor.submit(worker_main,
-                                                         beam_id=beam_id,
-                                                         beam_path=beam_path,
-                                                         settings=self.settings)
-                                active_futures[future] = beam_id
+                                self._submit_beam_worker(executor, job["beam_id"], job["beam_path"], active_futures)
 
                     except mp.queues.Empty:
                         pass  # Queue timeout, continue
