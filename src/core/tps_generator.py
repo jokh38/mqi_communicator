@@ -38,8 +38,11 @@ class TpsGenerator:
     def _resolve_tps_generator_paths(self) -> Dict[str, str]:
         """Resolve TPS generator paths from configuration using Settings.get_path().
 
+        Note: Paths containing {case_id} or other runtime placeholders are kept as templates
+        and will be resolved later when the actual values are available.
+
         Returns:
-            Dict[str, str]: Dictionary containing fully resolved paths.
+            Dict[str, str]: Dictionary containing path templates with placeholders preserved.
         """
         tps_config = self.settings.get_tps_generator_config()
         default_paths = tps_config.get("default_paths", {})
@@ -52,18 +55,22 @@ class TpsGenerator:
                 continue
 
             # Extract the path name from placeholder format {paths.local.csv_output_dir}
-            if isinstance(path_template, str) and "{" in path_template and "}" in path_template:
+            if isinstance(path_template, str) and path_template.startswith("{paths."):
                 # Extract placeholder: {paths.local.csv_output_dir} -> csv_output_dir
                 parts = path_template.strip("{}").split(".")
                 if len(parts) >= 3 and parts[0] == "paths":
                     path_name = parts[-1]  # e.g., "csv_output_dir"
                     try:
-                        # Use get_path to resolve with full placeholder resolution
+                        # Resolve the path template, which may still contain runtime placeholders like {case_id}
+                        # These will be resolved later when the actual case_id is available
                         resolved_path = self.settings.get_path(path_name, handler_name="CsvInterpreter")
                         resolved[key] = resolved_path
-                        self.logger.debug(f"Resolved TPS path '{key}': {resolved_path}")
-                    except KeyError as e:
-                        self.logger.warning(f"Could not resolve TPS path '{key}': {e}")
+                        self.logger.debug(f"Resolved TPS path template '{key}': {resolved_path}")
+                    except (KeyError, ValueError, IndexError) as e:
+                        # This happens when the path contains runtime placeholders like {case_id}
+                        # that aren't known at initialization time - this is expected and normal
+                        # Store the original placeholder reference for later resolution
+                        self.logger.debug(f"Path '{key}' contains runtime placeholders, will be resolved at generation time")
                         resolved[key] = path_template
                 else:
                     resolved[key] = path_template
