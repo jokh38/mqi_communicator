@@ -207,6 +207,7 @@ class DisplayManager:
             "CSV Interpreting": stats_data.get('csv_interpreting', 0),
             "Processing": stats_data.get('processing', 0),
             "Postprocessing": stats_data.get('postprocessing', 0),
+            "Failed": stats_data.get('failed', 0),
         }
         for key, value in stats.items():
             table.add_row(key, str(value))
@@ -263,6 +264,7 @@ class DisplayManager:
         table.add_column("Progress", style="white", width=28)
         table.add_column("GPU/Job", style="dim")
         table.add_column("Elapsed", style="dim")
+        table.add_column("Error", style="red", overflow="fold")
 
         for item in cases_with_beams:
             case_display = item["case_display"]
@@ -289,6 +291,7 @@ class DisplayManager:
                 formatter.format_progress_bar(case_display['progress']),
                 assigned_gpu_display,
                 formatter.format_elapsed_time(case_display['elapsed_time']),
+                formatter.format_error_message(case_display.get('error_message', ''), max_length=40),
                 style="bold"
             )
 
@@ -305,6 +308,7 @@ class DisplayManager:
                     "",  # No progress bar for individual beams
                     hpc_display,
                     formatter.format_elapsed_time(beam['elapsed_time']),
+                    formatter.format_error_message(beam.get('error_message', ''), max_length=40),
                     style="dim"
                 )
 

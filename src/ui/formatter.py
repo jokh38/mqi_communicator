@@ -168,3 +168,23 @@ def format_elapsed_time(seconds: float) -> str:
         return "N/A"
     delta = timedelta(seconds=int(seconds))
     return str(delta)
+
+
+def format_error_message(error: str, max_length: int = 60) -> Text:
+    """Formats an error message with red styling and truncation.
+
+    Args:
+        error (str): The error message.
+        max_length (int, optional): Maximum length before truncation. Defaults to 60.
+
+    Returns:
+        Text: A `rich` Text object with error styling.
+    """
+    if not error:
+        return Text("")
+
+    # Truncate if too long
+    if len(error) > max_length:
+        error = error[:max_length-3] + "..."
+
+    return Text(error, style="bold red")

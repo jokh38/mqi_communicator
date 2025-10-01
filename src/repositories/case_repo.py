@@ -487,6 +487,7 @@ class CaseRepository(BaseRepository):
             CaseStatus.CSV_INTERPRETING.value,
             CaseStatus.PROCESSING.value,
             CaseStatus.POSTPROCESSING.value,
+            CaseStatus.FAILED.value,
         ]
 
         placeholders = ",".join(["?" for _ in active_statuses])
@@ -604,6 +605,7 @@ class CaseRepository(BaseRepository):
             CaseStatus.CSV_INTERPRETING.value,
             CaseStatus.PROCESSING.value,
             CaseStatus.POSTPROCESSING.value,
+            CaseStatus.FAILED.value,
         ]
 
         placeholders = ",".join(["?" for _ in active_statuses])
@@ -624,7 +626,7 @@ class CaseRepository(BaseRepository):
 
             # Get beams for this case
             beam_query = """
-                SELECT beam_id, status, created_at, updated_at, hpc_job_id
+                SELECT beam_id, status, created_at, updated_at, hpc_job_id, error_message
                 FROM beams
                 WHERE parent_case_id = ?
                 ORDER BY beam_id ASC
@@ -641,7 +643,8 @@ class CaseRepository(BaseRepository):
                         datetime.fromisoformat(beam_row["updated_at"])
                         if beam_row["updated_at"] else None
                     ),
-                    "hpc_job_id": beam_row["hpc_job_id"]
+                    "hpc_job_id": beam_row["hpc_job_id"],
+                    "error_message": beam_row["error_message"]
                 })
 
             results.append({

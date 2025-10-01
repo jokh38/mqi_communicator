@@ -201,7 +201,8 @@ class DashboardDataProvider:
                         (datetime.now() - beam["created_at"]).total_seconds()
                         if beam["created_at"] else 0
                     ),
-                    "hpc_job_id": beam["hpc_job_id"]
+                    "hpc_job_id": beam["hpc_job_id"],
+                    "error_message": beam.get("error_message")
                 })
 
             # Process case data
@@ -215,7 +216,8 @@ class DashboardDataProvider:
                     if case.created_at else 0
                 ),
                 "beam_count": len(beams),
-                "interpreter_done": case.interpreter_completed
+                "interpreter_done": case.interpreter_completed,
+                "error_message": case.error_message
             }
 
             processed.append({
