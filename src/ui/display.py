@@ -277,9 +277,14 @@ class DisplayManager:
                 else:
                     assigned_gpu_display = case_display['assigned_gpu'][-4:]
 
-            # Add case row
+            # Add case row with interpreter completion indicator
+            case_id_display = f"[bold]{case_display['case_id']}[/bold]"
+            if case_display.get('interpreter_done', False):
+                case_id_display += " [green]✓[/green]"
+            case_id_display += f" ({case_display['beam_count']} beams)"
+
             table.add_row(
-                f"[bold]{case_display['case_id']}[/bold] ({case_display['beam_count']} beams)",
+                case_id_display,
                 formatter.get_case_status_text(case_display['status']),
                 formatter.format_progress_bar(case_display['progress']),
                 assigned_gpu_display,

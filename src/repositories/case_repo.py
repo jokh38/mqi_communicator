@@ -113,7 +113,7 @@ class CaseRepository(BaseRepository):
 
         query = """
             SELECT case_id, case_path, status, progress, created_at,
-                   updated_at, error_message, assigned_gpu
+                   updated_at, error_message, assigned_gpu, interpreter_completed
             FROM cases
             WHERE case_id = ?
         """
@@ -134,6 +134,7 @@ class CaseRepository(BaseRepository):
                 ),
                 error_message=row["error_message"],
                 assigned_gpu=row["assigned_gpu"],
+                interpreter_completed=bool(row["interpreter_completed"]),
             )
 
         return None
@@ -151,7 +152,7 @@ class CaseRepository(BaseRepository):
 
         query = """
             SELECT case_id, case_path, status, progress, created_at,
-                   updated_at, error_message, assigned_gpu
+                   updated_at, error_message, assigned_gpu, interpreter_completed
             FROM cases
             WHERE status = ?
             ORDER BY created_at ASC
@@ -175,6 +176,7 @@ class CaseRepository(BaseRepository):
                     ),
                     error_message=row["error_message"],
                     assigned_gpu=row["assigned_gpu"],
+                    interpreter_completed=bool(row["interpreter_completed"]),
                 )
             )
 
@@ -313,6 +315,25 @@ class CaseRepository(BaseRepository):
 
         self.logger.info(
             "GPU assigned to case", {"case_id": case_id, "gpu_uuid": gpu_uuid}
+        )
+
+    def mark_interpreter_completed(self, case_id: str) -> None:
+        """Marks the CSV interpreter as completed for a case.
+
+        Args:
+            case_id (str): The case identifier.
+        """
+        self._log_operation("mark_interpreter_completed", case_id)
+
+        query = (
+            "UPDATE cases SET interpreter_completed = ?, updated_at = CURRENT_TIMESTAMP "
+            "WHERE case_id = ?"
+        )
+
+        self._execute_query(query, (True, case_id))
+
+        self.logger.info(
+            "Interpreter marked as completed", {"case_id": case_id}
         )
 
     # =================================================================================
@@ -471,7 +492,7 @@ class CaseRepository(BaseRepository):
         placeholders = ",".join(["?" for _ in active_statuses])
         query = f"""
             SELECT case_id, case_path, status, progress, created_at,
-                   updated_at, error_message, assigned_gpu
+                   updated_at, error_message, assigned_gpu, interpreter_completed
             FROM cases
             WHERE status IN ({placeholders})
             ORDER BY created_at ASC
@@ -495,6 +516,7 @@ class CaseRepository(BaseRepository):
                     ),
                     error_message=row["error_message"],
                     assigned_gpu=row["assigned_gpu"],
+                    interpreter_completed=bool(row["interpreter_completed"]),
                 )
             )
 
@@ -589,7 +611,7 @@ class CaseRepository(BaseRepository):
         # Get cases
         case_query = f"""
             SELECT case_id, case_path, status, progress, created_at,
-                   updated_at, error_message, assigned_gpu
+                   updated_at, error_message, assigned_gpu, interpreter_completed
             FROM cases
             WHERE status IN ({placeholders})
             ORDER BY created_at ASC
@@ -635,6 +657,7 @@ class CaseRepository(BaseRepository):
                     ),
                     error_message=case_row["error_message"],
                     assigned_gpu=case_row["assigned_gpu"],
+                    interpreter_completed=bool(case_row["interpreter_completed"]),
                 ),
                 "beams": beams
             })

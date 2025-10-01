@@ -214,7 +214,8 @@ class DashboardDataProvider:
                     (datetime.now() - case.created_at).total_seconds()
                     if case.created_at else 0
                 ),
-                "beam_count": len(beams)
+                "beam_count": len(beams),
+                "interpreter_done": case.interpreter_completed
             }
 
             processed.append({

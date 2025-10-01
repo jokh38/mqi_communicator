@@ -22,6 +22,7 @@ class CaseData:
     updated_at: Optional[datetime] = None
     error_message: Optional[str] = None
     assigned_gpu: Optional[str] = None
+    interpreter_completed: bool = False
 
 @dataclass
 class BeamData:

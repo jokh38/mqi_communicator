@@ -50,6 +50,13 @@ def run_case_level_csv_interpreting(case_id: str, case_path: Path,
             status="started",
             metadata={"message": "Running mqi_interpreter for the whole case."})
 
+        # Update progress to indicate CSV interpreting started
+        case_repo.update_case_status(
+            case_id=case_id,
+            status=CaseStatus.CSV_INTERPRETING,
+            progress=10.0
+        )
+
         # The command template now uses {input_path} for clarity.
         command = settings.get_command(
             "interpret_csv",
@@ -67,17 +74,33 @@ def run_case_level_csv_interpreting(case_id: str, case_path: Path,
             raise ProcessingError(error_message)
 
         csv_output_dir = settings.get_path("csv_output_dir", handler_name=handler_name, case_id=case_id)
-        if not any(Path(csv_output_dir).glob("*.csv")):
+        csv_files = list(Path(csv_output_dir).glob("*.csv"))
+        csv_count = len(csv_files)
+
+        if csv_count == 0:
             logger.warning(
                 f"No CSV files found in the output directory {csv_output_dir} "
                 f"after case-level CSV interpreting.")
 
-        logger.info(f"Case-level CSV interpreting completed for: {case_id}")
+        # Mark interpreter as completed and update progress
+        case_repo.mark_interpreter_completed(case_id)
+        case_repo.update_case_status(
+            case_id=case_id,
+            status=CaseStatus.CSV_INTERPRETING,
+            progress=25.0
+        )
+
+        logger.info(f"Case-level CSV interpreting completed for: {case_id} ({csv_count} CSV files generated)")
         case_repo.record_workflow_step(
             case_id=case_id,
             step=WorkflowStep.CSV_INTERPRETING,
             status="completed",
-            metadata={"message": "mqi_interpreter finished successfully."})
+            metadata={
+                "message": "mqi_interpreter finished successfully",
+                "csv_files_generated": csv_count,
+                "execution_confirmed": True,
+                "exit_code": result.return_code
+            })
         return True
 
     except Exception as e:

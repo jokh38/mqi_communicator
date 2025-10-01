@@ -120,6 +120,7 @@ class DatabaseConnection:
                         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         error_message TEXT,
                         assigned_gpu TEXT,
+                        interpreter_completed BOOLEAN DEFAULT 0,
                         FOREIGN KEY (assigned_gpu) REFERENCES gpu_resources (uuid)
                     )
                 """)
@@ -179,6 +180,13 @@ class DatabaseConnection:
                 if 'gpu_index' not in columns:
                     self.logger.info("Adding gpu_index column to gpu_resources table")
                     conn.execute("ALTER TABLE gpu_resources ADD COLUMN gpu_index INTEGER DEFAULT 0")
+
+                # Add interpreter_completed column to cases table if it doesn't exist
+                cursor = conn.execute("PRAGMA table_info(cases)")
+                case_columns = [column[1] for column in cursor.fetchall()]
+                if 'interpreter_completed' not in case_columns:
+                    self.logger.info("Adding interpreter_completed column to cases table")
+                    conn.execute("ALTER TABLE cases ADD COLUMN interpreter_completed BOOLEAN DEFAULT 0")
 
             self.logger.info("Database schema initialized successfully")
 
