@@ -301,10 +301,14 @@ class TpsGenerator:
             # Use local paths for local execution (fallback)
             self.settings.get_case_directories()
 
+            # Get csv_output_dir from settings
+            csv_output_base = self.settings.get_path("csv_output_dir", handler_name="CsvInterpreter")
+            csv_output_dir = Path(csv_output_base) / case_id
+
             paths.setdefault("DicomDir", str(case_path))
             paths.setdefault("OutputDir", str(case_path / "raw_output"))
             paths.setdefault("logFilePath", str(case_path / "simulation.log"))
-            paths.setdefault("ParentDir", str(case_path / "csv_output"))
+            paths.setdefault("ParentDir", str(csv_output_dir))
 
         return paths
 

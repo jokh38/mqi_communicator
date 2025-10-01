@@ -17,7 +17,7 @@ paths:
   pc_localdata_remote_base_dir: "D:/MOQUI_RESULTS/{case_id}" # ResultUploader용 원격 경로
   local:
     scan_directory: "{base_directory}/data/SHI_log"
-    csv_output_dir: "{base_directory}/data/Outputs_csv/{case_id}/"
+    csv_output_dir: "{base_directory}/data/Outputs_csv"
     simulation_output_dir: "{base_directory}/data/Dose_raw/{case_id}"
     final_dicom_dir: "{base_directory}/data/Dose_dcm/{case_id}"
     database_path: "{base_directory}/data/mqi_communicator.db"

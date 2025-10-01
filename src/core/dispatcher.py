@@ -73,8 +73,10 @@ def run_case_level_csv_interpreting(case_id: str, case_path: Path,
                 f"Error: {result.error}")
             raise ProcessingError(error_message)
 
-        csv_output_dir = settings.get_path("csv_output_dir", handler_name=handler_name, case_id=case_id)
-        csv_files = list(Path(csv_output_dir).glob("*.csv"))
+        csv_output_base = settings.get_path("csv_output_dir", handler_name=handler_name)
+        # mqi_interpreter creates a subdirectory with case_id
+        csv_output_dir = Path(csv_output_base) / case_id
+        csv_files = list(csv_output_dir.glob("**/*.csv"))
         csv_count = len(csv_files)
 
         if csv_count == 0:
@@ -157,10 +159,11 @@ def run_case_level_upload(case_id: str, settings: Settings,
                                        step=WorkflowStep.UPLOADING,
                                        status="started")
 
-        csv_dir = settings.get_path("csv_output_dir",
-                                    handler_name=local_handler_name,
-                                    case_id=case_id)
-        csv_files = list(Path(csv_dir).glob("*.csv"))
+        csv_output_base = settings.get_path("csv_output_dir",
+                                            handler_name=local_handler_name)
+        # mqi_interpreter creates a subdirectory with case_id
+        csv_dir = Path(csv_output_base) / case_id
+        csv_files = list(csv_dir.glob("**/*.csv"))
 
         if not csv_files:
             logger.warning(f"No CSV files found to upload for case {case_id}",
