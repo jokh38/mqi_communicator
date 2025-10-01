@@ -144,75 +144,120 @@ class HpcExecutionState(WorkflowState):
 
     @handle_state_exceptions
     def execute(self, context: 'WorkflowManager') -> WorkflowState:
-        """Submits a MOQUI job and polls for completion."""
+        """Submits a MOQUI simulation via direct execution and polls for completion."""
         context.logger.info("Starting HPC simulation for beam",
                             {"beam_id": context.id})
         handler = context.execution_handler
-        handler_name = "HpcJobSubmitter"  # For remote commands
+        handler_name = "HpcJobSubmitter"
 
-        # Submit job
-        job_result = handler.submit_simulation_job(
+        # Get beam details for context resolution
+        beam = context.case_repo.get_beam(context.id)
+        if not beam:
+            raise ProcessingError(f"Could not retrieve beam data for beam_id: {context.id}")
+
+        # Build context for placeholder resolution
+        cmd_context = {
+            "case_id": beam.parent_case_id,
+            "beam_id": context.id
+        }
+
+        # Resolve the remote log path and store it in shared context
+        remote_log_path = context.settings.resolve_path(
+            "remote_log_path",
             handler_name=handler_name,
-            command_key='remote_submit_simulation',
-            case_id=context.id
+            context=cmd_context
         )
-        if not job_result.success or not job_result.job_id:
+        context.shared_context["remote_log_path"] = remote_log_path
+
+        # Get and execute the submission command
+        submit_command = context.settings.get_command(
+            "remote_submit_simulation",
+            handler_name=handler_name,
+            **cmd_context
+        )
+
+        result = handler.execute_command(submit_command)
+        if not result.success:
             raise ProcessingError(
-                f"Failed to submit HPC job: {job_result.error}")
+                f"Failed to submit HPC simulation: {result.error}")
 
-        job_id = job_result.job_id
-        context.case_repo.assign_hpc_job_id_to_beam(context.id, job_id)
-        context.case_repo.update_beam_status(context.id,
-                                             BeamStatus.HPC_QUEUED)
-        context.logger.info("HPC job submitted, polling for completion",
-                            {"beam_id": context.id, "job_id": job_id})
-        context.case_repo.update_beam_status(context.id,
-                                             BeamStatus.HPC_RUNNING)
+        context.case_repo.update_beam_status(context.id, BeamStatus.HPC_RUNNING)
+        context.logger.info("HPC simulation submitted, polling for completion via log monitoring",
+                            {"beam_id": context.id, "log_path": remote_log_path})
 
-        # Poll for completion
-        self._wait_for_job_completion(context, job_id, handler_name)
+        # Poll for completion by monitoring the log file
+        self._wait_for_job_completion(context, handler_name)
 
         context.logger.info("HPC simulation completed successfully",
-                            {"beam_id": context.id, "job_id": job_id})
+                            {"beam_id": context.id})
         return DownloadState()
 
-    def _wait_for_job_completion(self, context: 'WorkflowManager',
-                                 job_id: str, handler_name: str):
-        """Polls HPC for job completion using commands from Settings."""
+    def _wait_for_job_completion(self, context: 'WorkflowManager', handler_name: str):
+        """Monitors remote log file for simulation completion."""
         proc_config = context.settings.get_processing_config()
         timeout = proc_config.get("hpc_job_timeout_seconds")
         interval = proc_config.get("hpc_poll_interval_seconds")
         start_time = time.time()
 
+        remote_log_path = context.shared_context.get("remote_log_path")
+        if not remote_log_path:
+            raise ProcessingError("Remote log path not found in shared context")
+
+        # Get completion patterns
+        completion_patterns = context.settings.get_completion_patterns()
+        success_pattern = completion_patterns.get("success_pattern", "Simulation completed successfully")
+        failure_patterns = completion_patterns.get("failure_patterns", [])
+
+        context.logger.info("Starting log monitoring", {
+            "beam_id": context.id,
+            "remote_log": remote_log_path,
+            "success_pattern": success_pattern
+        })
+
+        last_log_size = 0
+
         while time.time() - start_time < timeout:
-            # Check primary status command (squeue)
-            status_cmd = context.settings.get_command("check_job_status",
-                                                      handler_name=handler_name,
-                                                      job_id=job_id)
-            result = context.execution_handler.execute_command(status_cmd)
+            # Construct tail command to fetch log content
+            # Use tail -c +1 to read from beginning, but we'll track what we've seen
+            tail_cmd = f"tail -n +1 {remote_log_path}"
+            result = context.execution_handler.execute_command(tail_cmd)
 
-            status = result.output.strip().upper() if result.success else ""
+            if result.success and result.output:
+                log_content = result.output
+                current_size = len(log_content)
 
-            if status in ["COMPLETED", "COMPLETING"]:
-                return  # Success
-            if status in ["FAILED", "CANCELLED", "TIMEOUT", "NODE_FAIL"]:
-                raise ProcessingError(f"HPC job failed with status: {status}")
+                # Only process new content
+                if current_size > last_log_size:
+                    new_content = log_content[last_log_size:]
 
-            # If job not in squeue, check history (sacct)
-            if not status:
-                history_cmd = context.settings.get_command(
-                    "check_job_history",
-                    handler_name=handler_name,
-                    job_id=job_id)
-                hist_result = context.execution_handler.execute_command(
-                    history_cmd)
-                if hist_result.success and "COMPLETED" in hist_result.output.upper(
-                ):
-                    return  # Success
+                    # Log the new content locally
+                    for line in new_content.splitlines():
+                        if line.strip():
+                            context.logger.info(f"[HPC] {line}", {"beam_id": context.id})
+
+                    last_log_size = current_size
+
+                    # Check for success pattern
+                    if success_pattern in log_content:
+                        context.logger.info("Simulation completed successfully (pattern matched)",
+                                          {"beam_id": context.id})
+                        return
+
+                    # Check for failure patterns
+                    for failure_pattern in failure_patterns:
+                        if failure_pattern in log_content:
+                            raise ProcessingError(
+                                f"Simulation failed with pattern: '{failure_pattern}'"
+                            )
+
+            elif not result.success:
+                # Log file might not exist yet (simulation starting up)
+                context.logger.debug("Log file not yet available, continuing to poll",
+                                   {"beam_id": context.id, "error": result.error})
 
             time.sleep(interval)
 
-        raise ProcessingError(f"HPC job timed out after {timeout} seconds")
+        raise ProcessingError(f"Simulation monitoring timed out after {timeout} seconds")
 
     def get_state_name(self) -> str:
         return "HPC Execution"

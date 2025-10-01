@@ -22,12 +22,15 @@ paths:
     final_dicom_dir: "{base_directory}/data/Dose_dcm/{case_id}"
     database_path: "{base_directory}/data/mqi_communicator.db"
     mqi_interpreter_dir: "{base_directory}/mqi_interpreter"
+    mqi_run_dir: "{base_directory}/tps_env"
     raw_to_dicom_dir: "{base_directory}/RawToDCM"
   remote:
     remote_case_path: "placeholder/remote/path/cases/{case_id}"
     remote_beam_path: "{remote_case_path}/{beam_id}"
     remote_beam_result_path: "{remote_beam_path}/output.raw"
     remote_script_path: "placeholder/remote/scripts"
+    tps_input_file: "{mqi_run_dir}/moqui_tps.in"
+    remote_log_path: "{mqi_run_dir}/logs/{case_id}_{beam_id}.log"
 
 # =====================================================================================
 # Executables - 환경별 실행 파일 경로 설정
@@ -69,9 +72,7 @@ command_templates:
     check_job_history: "sacct -j {job_id} --noheader --format='State' | head -n 1"
     cleanup: "rm -rf {remote_path}"
   remote:
-    remote_submit_simulation: "sbatch {remote_script_path}/run_moqui.sh --case-id {case_id}"
-    check_job_status: "squeue -j {job_id} -h -o \"%T\""
-    check_job_history: "sacct -j {job_id} --noheader --format='State' | head -n 1"
+    remote_submit_simulation: "nohup bash -c 'cd {mqi_run_dir} && ./tps_env {tps_input_file} > {remote_log_path} 2>&1' > /dev/null 2>&1 &"
     cleanup: "rm -rf {remote_path}"
 
 # =====================================================================================
@@ -94,6 +95,16 @@ processing:
   scan_interval_seconds: 60
   hpc_poll_interval_seconds: 30
   hpc_job_timeout_seconds: 3600
+
+# =====================================================================================
+# Completion Markers - 시뮬레이션 완료 감지용 패턴
+# =====================================================================================
+completion_markers:
+  success_pattern: "Simulation completed successfully"
+  failure_patterns:
+    - "FATAL ERROR"
+    - "ERROR:"
+    - "Segmentation fault"
 
 logging:
   log_dir: "{base_directory}/mqi_communicator/logs/"

@@ -255,3 +255,32 @@ class Settings:
                            default_paths and validation settings.
         """
         return self._yaml_config.get("tps_generator", {})
+
+    def get_completion_patterns(self) -> Dict[str, Any]:
+        """
+        Gets the completion markers configuration for detecting simulation completion.
+
+        Returns:
+            Dict[str, Any]: Contains 'success_pattern' (str) and 'failure_patterns' (list)
+        """
+        return self._yaml_config.get("completion_markers", {
+            "success_pattern": "Simulation completed successfully",
+            "failure_patterns": ["FATAL ERROR", "ERROR:", "Segmentation fault"]
+        })
+
+    def resolve_path(self, path_key: str, handler_name: str, context: Dict[str, Any]) -> str:
+        """
+        Resolves a specific path with the given context.
+
+        Args:
+            path_key: The key of the path to resolve
+            handler_name: The handler name to determine execution mode
+            context: Dictionary containing placeholder values like case_id, beam_id, etc.
+
+        Returns:
+            str: The fully resolved path
+
+        Raises:
+            KeyError: If the path cannot be found or resolved
+        """
+        return self.get_path(path_key, handler_name, **context)
