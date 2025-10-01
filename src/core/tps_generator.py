@@ -293,10 +293,14 @@ class TpsGenerator:
             hpc_paths = self.settings.get_hpc_paths()
             base_dir = hpc_paths.get('base_dir', '/home/gpuadmin/MOQUI_SMC')
 
+            # Get csv_output_dir from settings (consistent with local mode)
+            csv_output_base = self.settings.get_path("csv_output_dir", handler_name="CsvInterpreter")
+            csv_output_dir = Path(csv_output_base) / case_id
+
             paths.setdefault("DicomDir", str(case_path))
             paths.setdefault("OutputDir", f"{base_dir}/Dose_raw/{case_id}")
             paths.setdefault("logFilePath", f"{base_dir}/Dose_raw/{case_id}/simulation.log")
-            paths.setdefault("ParentDir", f"{base_dir}/Output_csv/{case_id}")
+            paths.setdefault("ParentDir", str(csv_output_dir))
         else:
             # Use local paths for local execution (fallback)
             self.settings.get_case_directories()
