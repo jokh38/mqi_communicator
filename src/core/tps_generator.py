@@ -32,6 +32,46 @@ class TpsGenerator:
         self.logger = logger
         self.base_parameters = settings.get_moqui_tps_parameters()
 
+        # Fetch and resolve TPS generator paths from configuration
+        self.resolved_paths = self._resolve_tps_generator_paths()
+
+    def _resolve_tps_generator_paths(self) -> Dict[str, str]:
+        """Resolve TPS generator paths from configuration using Settings.get_path().
+
+        Returns:
+            Dict[str, str]: Dictionary containing fully resolved paths.
+        """
+        tps_config = self.settings.get_tps_generator_config()
+        default_paths = tps_config.get("default_paths", {})
+        resolved = {}
+
+        for key, path_template in default_paths.items():
+            # Skip base_directory as it's a direct value
+            if key == "base_directory":
+                resolved[key] = path_template
+                continue
+
+            # Extract the path name from placeholder format {paths.local.csv_output_dir}
+            if isinstance(path_template, str) and "{" in path_template and "}" in path_template:
+                # Extract placeholder: {paths.local.csv_output_dir} -> csv_output_dir
+                parts = path_template.strip("{}").split(".")
+                if len(parts) >= 3 and parts[0] == "paths":
+                    path_name = parts[-1]  # e.g., "csv_output_dir"
+                    try:
+                        # Use get_path to resolve with full placeholder resolution
+                        resolved_path = self.settings.get_path(path_name, handler_name="CsvInterpreter")
+                        resolved[key] = resolved_path
+                        self.logger.debug(f"Resolved TPS path '{key}': {resolved_path}")
+                    except KeyError as e:
+                        self.logger.warning(f"Could not resolve TPS path '{key}': {e}")
+                        resolved[key] = path_template
+                else:
+                    resolved[key] = path_template
+            else:
+                resolved[key] = path_template
+
+        return resolved
+
     def generate_tps_file_with_gpu_assignments(
         self,
         case_path: Path,
@@ -207,6 +247,9 @@ class TpsGenerator:
     ) -> Dict[str, Any]:
         """Generate dynamic file paths based on execution mode.
 
+        Prioritizes paths from tps_generator configuration over hardcoded logic.
+        Falls back to original logic if configuration paths are not available.
+
         Args:
             case_path (Path): Path to the case directory.
             case_id (str): Unique identifier for the case.
@@ -216,25 +259,46 @@ class TpsGenerator:
             Dict[str, Any]: Dictionary containing dynamic path parameters.
         """
         paths = {}
+
+        # Check for configured paths first (prioritize configuration)
+        if execution_mode == "local" and self.resolved_paths:
+            # Map configuration keys to moqui_tps.in parameter names
+            if "outputs_dir" in self.resolved_paths:
+                # OutputDir from configuration - format with case_id
+                output_dir = self.resolved_paths["outputs_dir"]
+                # If the path contains {case_id}, replace it
+                if "{case_id}" in output_dir:
+                    paths["OutputDir"] = output_dir.format(case_id=case_id)
+                else:
+                    paths["OutputDir"] = output_dir
+
+            if "interpreter_outputs_dir" in self.resolved_paths:
+                # ParentDir from configuration - format with case_id
+                parent_dir = self.resolved_paths["interpreter_outputs_dir"]
+                if "{case_id}" in parent_dir:
+                    paths["ParentDir"] = parent_dir.format(case_id=case_id)
+                else:
+                    paths["ParentDir"] = parent_dir
+
+        # Apply fallback logic for missing paths
         if execution_mode == "remote":
-            # Use HPC paths from config
+            # Use HPC paths from config for remote execution
             hpc_paths = self.settings.get_hpc_paths()
             base_dir = hpc_paths.get('base_dir', '/home/gpuadmin/MOQUI_SMC')
-            paths.update({
-                "DicomDir": str(case_path),  # Local path for DICOM files
-                "OutputDir": f"{base_dir}/Dose_raw/{case_id}",
-                "logFilePath": f"{base_dir}/Dose_raw/{case_id}/simulation.log",
-                "ParentDir": f"{base_dir}/Output_csv/{case_id}"
-            })
+
+            paths.setdefault("DicomDir", str(case_path))
+            paths.setdefault("OutputDir", f"{base_dir}/Dose_raw/{case_id}")
+            paths.setdefault("logFilePath", f"{base_dir}/Dose_raw/{case_id}/simulation.log")
+            paths.setdefault("ParentDir", f"{base_dir}/Output_csv/{case_id}")
         else:
-            # Use local paths for local execution
+            # Use local paths for local execution (fallback)
             self.settings.get_case_directories()
-            paths.update({
-                "DicomDir": str(case_path),
-                "OutputDir": str(case_path / "raw_output"),
-                "logFilePath": str(case_path / "simulation.log"),
-                "ParentDir": str(case_path / "csv_output")
-            })
+
+            paths.setdefault("DicomDir", str(case_path))
+            paths.setdefault("OutputDir", str(case_path / "raw_output"))
+            paths.setdefault("logFilePath", str(case_path / "simulation.log"))
+            paths.setdefault("ParentDir", str(case_path / "csv_output"))
+
         return paths
 
     def _extract_case_data(self, case_path: Path, case_id: str) -> Dict[str, Any]:

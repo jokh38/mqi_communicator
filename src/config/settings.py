@@ -245,3 +245,13 @@ class Settings:
         if hpc_config:
             return hpc_config.get("paths", {})
         return {}
+
+    def get_tps_generator_config(self) -> Dict[str, Any]:
+        """
+        Gets the tps_generator configuration dictionary from the YAML file.
+
+        Returns:
+            Dict[str, Any]: The raw tps_generator configuration including
+                           default_paths and validation settings.
+        """
+        return self._yaml_config.get("tps_generator", {})
