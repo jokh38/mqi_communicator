@@ -207,8 +207,11 @@ def prepare_beam_jobs(
 ) -> List[Dict[str, Any]]:
     """Scans a case directory for beams and returns a list of jobs to be processed by workers.
 
-    This function validates data transfer completion by checking RT plan beam count
-    against actual subdirectories before preparing beam jobs.
+    This function identifies actual beam folders by:
+    1. Locating the DICOM RT Plan file
+    2. Extracting the expected beam count from the RT Plan
+    3. Filtering subdirectories to identify only actual beam data folders
+    4. Validating that the counts match before preparing beam jobs
 
     Args:
         case_id (str): The ID of the parent case.
@@ -224,33 +227,75 @@ def prepare_beam_jobs(
 
     try:
         logger.info(f"Scanning for beams for case: {case_id}")
-
-        # Step 1: Validate data transfer completion
         validator = DataIntegrityValidator(logger)
-        is_valid, error_message = validator.validate_data_transfer_completion(case_id, case_path)
 
-        if not is_valid:
-            logger.error(f"Data transfer validation failed for case {case_id}: {error_message}")
-            return []  # Return empty list to prevent processing of incomplete case
-
-        # Step 2: Scan for beam subdirectories (validation passed)
-        beam_paths = [d for d in case_path.iterdir() if d.is_dir()]
-
-        if not beam_paths:
-            logger.warning("No beam subdirectories found.", {"case_id": case_id})
+        # Step 1: Find DICOM RT Plan file
+        rtplan_path = validator.find_rtplan_file(case_path)
+        if not rtplan_path:
+            error_message = f"No RT Plan file found in case directory: {case_path}"
+            logger.error(error_message)
             return []
 
-        logger.info(f"Found {len(beam_paths)} beams to process.", {"case_id": case_id})
+        # Step 2: Determine expected beam count from DICOM RT Plan
+        try:
+            expected_beam_count = validator.parse_rtplan_beam_count(rtplan_path)
+            logger.info(f"RT Plan indicates {expected_beam_count} treatment beams for case {case_id}")
+        except ProcessingError as e:
+            error_message = f"Failed to parse RT Plan file: {str(e)}"
+            logger.error(error_message)
+            return []
 
-        # Step 3: Prepare beam jobs
-        for beam_path in beam_paths:
+        if expected_beam_count == 0:
+            logger.warning(f"RT plan indicates 0 beams for case {case_id}")
+            return []
+
+        # Step 3: Identify and filter actual beam folders
+        # Get the directory containing the DICOM file to exclude it
+        dicom_parent_dir = rtplan_path.parent
+
+        # Get all subdirectories in the case folder
+        all_subdirs = [d for d in case_path.iterdir() if d.is_dir()]
+
+        # Filter to get only beam data folders
+        beam_folders = []
+        for subdir in all_subdirs:
+            # Exclude the DICOM directory
+            if subdir == dicom_parent_dir:
+                logger.debug(f"Excluding DICOM directory: {subdir.name}")
+                continue
+
+            # Check if this directory contains beam data
+            # Criteria: presence of .ptn files or specific naming convention
+            has_ptn_files = list(subdir.glob("*.ptn"))
+            matches_beam_naming = subdir.name.lower().startswith('beam_') or subdir.name.lower().startswith('field_')
+
+            if has_ptn_files or matches_beam_naming:
+                beam_folders.append(subdir)
+                logger.debug(f"Identified beam folder: {subdir.name}")
+            else:
+                logger.debug(f"Excluding non-beam directory: {subdir.name}")
+
+        actual_beam_count = len(beam_folders)
+        logger.info(f"Found {actual_beam_count} actual beam folders after filtering")
+
+        # Step 4: Validate data integrity and create beam jobs
+        if actual_beam_count != expected_beam_count:
+            error_message = (
+                f"Data transfer incomplete or incorrect: Expected {expected_beam_count} beams "
+                f"from RT Plan, but found {actual_beam_count} beam data folders"
+            )
+            logger.error(error_message)
+            return []
+
+        # Create beam jobs from validated beam folders
+        for beam_path in beam_folders:
             beam_name = beam_path.name
             beam_id = f"{case_id}_{beam_name}"
             beam_jobs.append({"beam_id": beam_id, "beam_path": beam_path})
 
         logger.info(f"Successfully prepared {len(beam_jobs)} beam jobs for case: {case_id}")
 
-        # Step 4: Log additional beam information for reference
+        # Log additional beam information for reference
         beam_info = validator.get_beam_information(case_path)
         if beam_info.get("beam_count", 0) > 0:
             logger.info(f"RT plan information - Patient ID: {beam_info.get('patient_id')}, "
