@@ -132,6 +132,7 @@ class DatabaseConnection:
                         beam_path TEXT NOT NULL,
                         status TEXT NOT NULL,
                         hpc_job_id TEXT,
+                        error_message TEXT,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         FOREIGN KEY (parent_case_id) REFERENCES cases (case_id)
@@ -187,6 +188,13 @@ class DatabaseConnection:
                 if 'interpreter_completed' not in case_columns:
                     self.logger.info("Adding interpreter_completed column to cases table")
                     conn.execute("ALTER TABLE cases ADD COLUMN interpreter_completed BOOLEAN DEFAULT 0")
+
+                # Add error_message column to beams table if it doesn't exist
+                cursor = conn.execute("PRAGMA table_info(beams)")
+                beam_columns = [column[1] for column in cursor.fetchall()]
+                if 'error_message' not in beam_columns:
+                    self.logger.info("Adding error_message column to beams table")
+                    conn.execute("ALTER TABLE beams ADD COLUMN error_message TEXT")
 
             self.logger.info("Database schema initialized successfully")
 

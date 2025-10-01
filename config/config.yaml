@@ -24,6 +24,7 @@ paths:
     mqi_interpreter_dir: "{base_directory}/mqi_interpreter"
     mqi_run_dir: "{base_directory}/tps_env"
     raw_to_dicom_dir: "{base_directory}/RawToDCM"
+    remote_log_path: "{mqi_run_dir}/logs/{case_id}_{beam_id}.log"
   remote:
     remote_case_path: "placeholder/remote/path/cases/{case_id}"
     remote_beam_path: "{remote_case_path}/{beam_id}"
