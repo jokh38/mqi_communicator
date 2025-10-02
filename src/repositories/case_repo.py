@@ -121,21 +121,7 @@ class CaseRepository(BaseRepository):
         row = self._execute_query(query, (case_id,), fetch_one=True)
 
         if row:
-            return CaseData(
-                case_id=row["case_id"],
-                case_path=Path(row["case_path"]),
-                status=CaseStatus(row["status"]),
-                progress=row["progress"],
-                created_at=datetime.fromisoformat(row["created_at"]),
-                updated_at=(
-                    datetime.fromisoformat(row["updated_at"])
-                    if row["updated_at"]
-                    else None
-                ),
-                error_message=row["error_message"],
-                assigned_gpu=row["assigned_gpu"],
-                interpreter_completed=bool(row["interpreter_completed"]),
-            )
+            return self._map_row_to_case_data(row)
 
         return None
 
@@ -162,23 +148,7 @@ class CaseRepository(BaseRepository):
 
         cases = []
         for row in rows:
-            cases.append(
-                CaseData(
-                    case_id=row["case_id"],
-                    case_path=Path(row["case_path"]),
-                    status=CaseStatus(row["status"]),
-                    progress=row["progress"],
-                    created_at=datetime.fromisoformat(row["created_at"]),
-                    updated_at=(
-                        datetime.fromisoformat(row["updated_at"])
-                        if row["updated_at"]
-                        else None
-                    ),
-                    error_message=row["error_message"],
-                    assigned_gpu=row["assigned_gpu"],
-                    interpreter_completed=bool(row["interpreter_completed"]),
-                )
-            )
+            cases.append(self._map_row_to_case_data(row))
 
         return cases
 
@@ -411,19 +381,7 @@ class CaseRepository(BaseRepository):
         query = "SELECT * FROM beams WHERE beam_id = ?"
         row = self._execute_query(query, (beam_id,), fetch_one=True)
         if row:
-            return BeamData(
-                beam_id=row["beam_id"],
-                parent_case_id=row["parent_case_id"],
-                beam_path=Path(row["beam_path"]),
-                status=BeamStatus(row["status"]),
-                created_at=datetime.fromisoformat(row["created_at"]),
-                updated_at=(
-                    datetime.fromisoformat(row["updated_at"])
-                    if row["updated_at"]
-                    else None
-                ),
-                hpc_job_id=row["hpc_job_id"],
-            )
+            return self._map_row_to_beam_data(row)
         return None
 
     def assign_hpc_job_id_to_beam(self, beam_id: str, hpc_job_id: str) -> None:
@@ -457,21 +415,7 @@ class CaseRepository(BaseRepository):
         rows = self._execute_query(query, (case_id,), fetch_all=True)
         beams = []
         for row in rows:
-            beams.append(
-                BeamData(
-                    beam_id=row["beam_id"],
-                    parent_case_id=row["parent_case_id"],
-                    beam_path=Path(row["beam_path"]),
-                    status=BeamStatus(row["status"]),
-                    created_at=datetime.fromisoformat(row["created_at"]),
-                    updated_at=(
-                        datetime.fromisoformat(row["updated_at"])
-                        if row["updated_at"]
-                        else None
-                    ),
-                    hpc_job_id=row["hpc_job_id"],
-                )
-            )
+            beams.append(self._map_row_to_beam_data(row))
         return beams
 
     def get_all_active_cases(self) -> List[CaseData]:
@@ -503,23 +447,7 @@ class CaseRepository(BaseRepository):
 
         cases = []
         for row in rows:
-            cases.append(
-                CaseData(
-                    case_id=row["case_id"],
-                    case_path=Path(row["case_path"]),
-                    status=CaseStatus(row["status"]),
-                    progress=row["progress"],
-                    created_at=datetime.fromisoformat(row["created_at"]),
-                    updated_at=(
-                        datetime.fromisoformat(row["updated_at"])
-                        if row["updated_at"]
-                        else None
-                    ),
-                    error_message=row["error_message"],
-                    assigned_gpu=row["assigned_gpu"],
-                    interpreter_completed=bool(row["interpreter_completed"]),
-                )
-            )
+            cases.append(self._map_row_to_case_data(row))
 
         return cases
 
@@ -648,21 +576,60 @@ class CaseRepository(BaseRepository):
                 })
 
             results.append({
-                "case_data": CaseData(
-                    case_id=case_row["case_id"],
-                    case_path=Path(case_row["case_path"]),
-                    status=CaseStatus(case_row["status"]),
-                    progress=case_row["progress"],
-                    created_at=datetime.fromisoformat(case_row["created_at"]),
-                    updated_at=(
-                        datetime.fromisoformat(case_row["updated_at"])
-                        if case_row["updated_at"] else None
-                    ),
-                    error_message=case_row["error_message"],
-                    assigned_gpu=case_row["assigned_gpu"],
-                    interpreter_completed=bool(case_row["interpreter_completed"]),
-                ),
+                "case_data": self._map_row_to_case_data(case_row),
                 "beams": beams
             })
 
         return results
+
+    # =================================================================================
+    # Private DTO Mapping Helpers
+    # =================================================================================
+
+    def _map_row_to_case_data(self, row) -> CaseData:
+        """Maps a database row to a CaseData DTO.
+
+        Args:
+            row: SQLite row object from cases table
+
+        Returns:
+            CaseData object populated with row data
+        """
+        return CaseData(
+            case_id=row["case_id"],
+            case_path=Path(row["case_path"]),
+            status=CaseStatus(row["status"]),
+            progress=row["progress"],
+            created_at=datetime.fromisoformat(row["created_at"]),
+            updated_at=(
+                datetime.fromisoformat(row["updated_at"])
+                if row["updated_at"]
+                else None
+            ),
+            error_message=row["error_message"],
+            assigned_gpu=row["assigned_gpu"],
+            interpreter_completed=bool(row["interpreter_completed"]),
+        )
+
+    def _map_row_to_beam_data(self, row) -> BeamData:
+        """Maps a database row to a BeamData DTO.
+
+        Args:
+            row: SQLite row object from beams table
+
+        Returns:
+            BeamData object populated with row data
+        """
+        return BeamData(
+            beam_id=row["beam_id"],
+            parent_case_id=row["parent_case_id"],
+            beam_path=Path(row["beam_path"]),
+            status=BeamStatus(row["status"]),
+            created_at=datetime.fromisoformat(row["created_at"]),
+            updated_at=(
+                datetime.fromisoformat(row["updated_at"])
+                if row["updated_at"]
+                else None
+            ),
+            hpc_job_id=row["hpc_job_id"],
+        )
