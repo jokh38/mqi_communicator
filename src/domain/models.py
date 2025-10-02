@@ -72,3 +72,20 @@ class SystemStats:
     available_gpus: int
     busy_gpus: int
     last_updated: datetime
+
+# -------------------------------------------------------------------------------------
+# Phase 1 DTOs for job descriptions (additive; non-breaking)
+# -------------------------------------------------------------------------------------
+
+@dataclass
+class BeamJob:
+    """Lightweight descriptor for a beam processing job."""
+    beam_id: str
+    beam_path: Path
+
+@dataclass
+class CaseJob:
+    """Lightweight descriptor for a case processing job with optional beams."""
+    case_id: str
+    case_path: Path
+    beam_jobs: Optional[List[BeamJob]] = None

@@ -6,14 +6,19 @@
 
 from typing import Optional, Any, Dict
 from pathlib import Path
+import multiprocessing as mp
+
+from watchdog.events import FileSystemEventHandler
 
 from src.repositories.case_repo import CaseRepository
 from src.repositories.gpu_repo import GpuRepository
 from src.handlers.execution_handler import ExecutionHandler
-from src.infrastructure.logging_handler import StructuredLogger
+from src.infrastructure.logging_handler import StructuredLogger, LoggerFactory
 from src.core.tps_generator import TpsGenerator
 from src.domain.enums import BeamStatus
 from src.domain.states import WorkflowState, InitialState
+from src.utils.db_context import get_db_session
+from src.core.case_aggregator import queue_case as _queue_case
 
 
 class WorkflowManager:
@@ -124,3 +129,74 @@ class WorkflowManager:
             })
 
         self.current_state = None  # Stop the workflow
+
+
+# ----------------------------------------------------------------------------
+# File watcher utilities (moved from dispatcher with re-exports)
+# ----------------------------------------------------------------------------
+
+def scan_existing_cases(case_queue: mp.Queue,
+                        settings,
+                        logger: StructuredLogger) -> None:
+    """Scan for existing cases at startup.
+    Compares file system cases with database records and queues new cases.
+    """
+    try:
+        case_dirs = settings.get_case_directories()
+        scan_directory = case_dirs.get("scan")
+        if not scan_directory or not scan_directory.exists():
+            logger.warning(
+                f"Scan directory does not exist or is not configured: {scan_directory}"
+            )
+            return
+
+        with get_db_session(settings, logger) as case_repo:
+            existing_case_ids = set(case_repo.get_all_case_ids())
+            logger.info(
+                f"Found {len(existing_case_ids)} cases already in database")
+
+            filesystem_cases = []
+            for item in scan_directory.iterdir():
+                if item.is_dir():
+                    case_id = item.name
+                    filesystem_cases.append((case_id, item))
+            logger.info(
+                f"Found {len(filesystem_cases)} case directories in scan directory"
+            )
+
+            new_cases = []
+            for case_id, case_path in filesystem_cases:
+                if case_id not in existing_case_ids:
+                    new_cases.append((case_id, case_path))
+
+            if new_cases:
+                logger.info(f"Found {len(new_cases)} new cases to process")
+                for case_id, case_path in new_cases:
+                    if _queue_case(case_id, case_path, case_queue, logger):
+                        logger.info(f"Queued existing case for processing: {case_id}")
+            else:
+                logger.info("No new cases found during startup scan")
+    except Exception as e:
+        logger.error("Failed to scan existing cases during startup",
+                     {"error": str(e)})
+
+
+class CaseDetectionHandler(FileSystemEventHandler):
+    """Handles file system events to detect new case directories.
+    This handler watches for directory creation events and queues new cases for processing.
+    """
+
+    def __init__(self, case_queue: mp.Queue, logger: StructuredLogger):
+        """Initializes the CaseDetectionHandler."""
+        super().__init__()
+        self.case_queue = case_queue
+        self.logger = logger
+
+    def on_created(self, event) -> None:
+        """Handles the 'created' event from the file system watcher."""
+        if not event.is_directory:
+            return
+        case_path = Path(event.src_path)
+        case_id = case_path.name
+        self.logger.info(f"New case detected: {case_id} at {case_path}")
+        _queue_case(case_id, case_path, self.case_queue, self.logger)
