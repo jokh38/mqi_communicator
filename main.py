@@ -388,6 +388,224 @@ class MQIApplication:
         except Exception as e:
             self.logger.error("Failed to start GPU monitor", {"error": str(e)})
     
+    def _discover_beams(self, case_id: str, case_path: Path, case_repo: CaseRepository):
+        """Discovers beams and validates data transfer completion.
+
+        Args:
+            case_id (str): The case ID.
+            case_path (Path): The case path.
+            case_repo (CaseRepository): The case repository.
+
+        Returns:
+            List[Dict[str, Any]]: List of beam job dictionaries, or empty list if discovery failed.
+        """
+        self.logger.info(f"Discovering beams and validating data transfer for case: {case_id}")
+        beam_jobs = prepare_beam_jobs(case_id, case_path, self.settings)
+
+        if not beam_jobs:
+            case_repo.add_case(case_id, case_path)
+            self._fail_case(case_repo, case_id, "No beams found or data transfer incomplete")
+            return []
+
+        case_repo.create_case_with_beams(case_id, str(case_path), beam_jobs)
+        self.logger.info(f"Created {len(beam_jobs)} beam records in DB for case {case_id}")
+        return beam_jobs
+
+    def _run_csv_interpreting(self, case_id: str, case_path: Path, case_repo: CaseRepository) -> bool:
+        """Runs case-level CSV interpretation.
+
+        Args:
+            case_id (str): The case ID.
+            case_path (Path): The case path.
+            case_repo (CaseRepository): The case repository.
+
+        Returns:
+            bool: True if CSV interpreting succeeded, False otherwise.
+        """
+        self._update_case_and_beams_status(
+            case_repo, case_id,
+            CaseStatus.CSV_INTERPRETING,
+            BeamStatus.CSV_INTERPRETING,
+            progress=10.0
+        )
+        self.logger.info(f"Starting case-level CSV interpreting for {case_id}")
+        interpreting_success = run_case_level_csv_interpreting(case_id, case_path, self.settings)
+
+        if not interpreting_success:
+            self._fail_case(case_repo, case_id, "CSV interpreting failed")
+
+        return interpreting_success
+
+    def _run_tps_generation(self, case_id: str, case_path: Path, beam_count: int, case_repo: CaseRepository):
+        """Generates TPS file with GPU assignments.
+
+        Args:
+            case_id (str): The case ID.
+            case_path (Path): The case path.
+            beam_count (int): Number of beams requiring GPU assignments.
+            case_repo (CaseRepository): The case repository.
+
+        Returns:
+            Optional[List[Dict[str, Any]]]: List of GPU assignments, or None if generation failed.
+        """
+        self._update_case_and_beams_status(
+            case_repo, case_id,
+            CaseStatus.PROCESSING,
+            BeamStatus.TPS_GENERATION,
+            progress=30.0
+        )
+        self.logger.info(f"Starting case-level TPS generation for {case_id}")
+        gpu_assignments = run_case_level_tps_generation(case_id, case_path, beam_count, self.settings)
+
+        if gpu_assignments is None:
+            self._fail_case(case_repo, case_id, "TPS generation failed")
+            return None
+
+        # Handle partial GPU allocation
+        if len(gpu_assignments) < beam_count:
+            self.logger.info(f"Partial GPU allocation for {case_id}: {len(gpu_assignments)}/{beam_count} beams can proceed")
+        elif len(gpu_assignments) == 0:
+            self.logger.warning(f"No GPUs available for {case_id}. All beams will remain pending.")
+            case_repo.update_beams_status_by_case_id(case_id, BeamStatus.PENDING.value)
+
+        return gpu_assignments
+
+    def _run_file_upload(self, case_id: str, case_repo: CaseRepository) -> bool:
+        """Uploads files to HPC if needed.
+
+        Args:
+            case_id (str): The case ID.
+            case_repo (CaseRepository): The case repository.
+
+        Returns:
+            bool: True if file upload succeeded or was skipped, False otherwise.
+        """
+        handler_modes = self.settings.execution_handler.values()
+
+        if "remote" not in handler_modes:
+            self.logger.info("No remote handlers configured. Skipping case-level file upload.")
+            return True
+
+        case_repo.update_beams_status_by_case_id(case_id, BeamStatus.UPLOADING.value)
+        self.logger.info(f"Starting case-level file upload for {case_id}")
+        upload_success = run_case_level_upload(case_id, self.settings, self.ssh_client)
+
+        if not upload_success:
+            self._fail_case(case_repo, case_id, "File upload failed")
+
+        return upload_success
+
+    def _dispatch_workers(self, case_id: str, case_path: Path, beam_jobs: list,
+                         gpu_assignments: list, case_repo: CaseRepository,
+                         executor: ProcessPoolExecutor, active_futures: Dict,
+                         pending_beams_by_case: Dict) -> None:
+        """Dispatches worker processes for beams with GPU assignments.
+
+        Args:
+            case_id (str): The case ID.
+            case_path (Path): The case path.
+            beam_jobs (list): List of all beam job dictionaries.
+            gpu_assignments (list): List of GPU assignment dictionaries.
+            case_repo (CaseRepository): The case repository.
+            executor (ProcessPoolExecutor): The executor for dispatching workers.
+            active_futures (Dict): Dictionary tracking active worker futures.
+            pending_beams_by_case (Dict): Dictionary tracking pending beams by case_id.
+        """
+        case_repo.update_case_status(case_id, CaseStatus.PROCESSING, progress=50.0)
+
+        # Only dispatch workers for beams with GPU assignments
+        num_allocated = len(gpu_assignments)
+        allocated_jobs = beam_jobs[:num_allocated]
+        pending_jobs = beam_jobs[num_allocated:]
+
+        # Mark allocated beams as ready for processing
+        for job in allocated_jobs:
+            case_repo.update_beam_status(job["beam_id"], BeamStatus.PENDING)
+
+        # Keep remaining beams in PENDING with a note they're waiting for GPUs
+        for job in pending_jobs:
+            self.logger.info(f"Beam {job['beam_id']} pending GPU availability")
+            case_repo.update_beam_status(job["beam_id"], BeamStatus.PENDING)
+
+        # Track pending beams for later GPU allocation
+        if pending_jobs:
+            pending_beams_by_case[case_id] = {
+                "case_path": case_path,
+                "pending_jobs": pending_jobs
+            }
+
+        self.logger.info(f"Dispatching workers for case {case_id}: {num_allocated} beams with GPU, {len(pending_jobs)} pending")
+
+        for job in allocated_jobs:
+            self._submit_beam_worker(executor, job["beam_id"], job["beam_path"], active_futures)
+
+    def _monitor_completed_workers(self, active_futures: Dict, pending_beams_by_case: Dict, executor: ProcessPoolExecutor) -> None:
+        """Monitors and handles completed worker futures.
+
+        Args:
+            active_futures (Dict): Dictionary tracking active worker futures.
+            pending_beams_by_case (Dict): Dictionary tracking pending beams by case_id.
+            executor (ProcessPoolExecutor): The executor for dispatching workers.
+        """
+        completed_futures = []
+        for future in as_completed(active_futures.keys(), timeout=0.1):
+            completed_futures.append(future)
+
+        for future in completed_futures:
+            beam_id = active_futures.pop(future)
+            try:
+                future.result()  # Raise exception if worker failed
+                self.logger.info(f"Beam worker {beam_id} completed successfully")
+
+                # Check if there are pending beams waiting for GPUs
+                if pending_beams_by_case:
+                    self._try_allocate_pending_beams(pending_beams_by_case, executor, active_futures)
+
+            except Exception as e:
+                self.logger.error(f"Beam worker {beam_id} failed", {"error": str(e)})
+
+    def _process_new_case(self, case_data: dict, executor: ProcessPoolExecutor,
+                         active_futures: Dict, pending_beams_by_case: Dict) -> None:
+        """Processes a new case from the queue.
+
+        Args:
+            case_data (dict): Dictionary containing case_id, case_path, timestamp.
+            executor (ProcessPoolExecutor): The executor for dispatching workers.
+            active_futures (Dict): Dictionary tracking active worker futures.
+            pending_beams_by_case (Dict): Dictionary tracking pending beams by case_id.
+        """
+        case_id = case_data["case_id"]
+        case_path = Path(case_data["case_path"])
+        self.logger.info(f"Processing new case: {case_id}")
+
+        # The main process now orchestrates the initial case-level steps
+        # and updates the database so the UI can reflect the status.
+        with get_db_session(self.settings, self.logger) as case_repo:
+            # Step 1: Discover beams and validate data transfer completion
+            beam_jobs = self._discover_beams(case_id, case_path, case_repo)
+            if not beam_jobs:
+                return
+
+            # Step 2: Run case-level CSV interpreting
+            if not self._run_csv_interpreting(case_id, case_path, case_repo):
+                return
+
+            # Step 3: Generate TPS file with dynamic GPU assignments
+            gpu_assignments = self._run_tps_generation(case_id, case_path, len(beam_jobs), case_repo)
+            if gpu_assignments is None:
+                return
+
+            if len(gpu_assignments) == 0:
+                return
+
+            # Step 4: Run case-level file upload to HPC if any handler is remote
+            if not self._run_file_upload(case_id, case_repo):
+                return
+
+            # Step 5: Dispatch individual workers for simulation
+            self._dispatch_workers(case_id, case_path, beam_jobs, gpu_assignments,
+                                  case_repo, executor, active_futures, pending_beams_by_case)
+
     def _try_allocate_pending_beams(self, pending_beams_by_case: Dict, executor, active_futures: Dict) -> None:
         """Attempts to allocate GPUs for pending beams and dispatch workers.
 
@@ -475,121 +693,17 @@ class MQIApplication:
             pending_beams_by_case = {}  # Track {case_id: {"case_path": Path, "pending_jobs": [job_dict]}}
             while not self.shutdown_event.is_set():
                 try:
-                    # Check for new cases
+                    # Process new cases from queue
                     try:
-                        # Get a new case from the queue
                         case_data = self.case_queue.get(timeout=1.0)
-                        case_id = case_data["case_id"]
-                        case_path = Path(case_data["case_path"])
-                        self.logger.info(f"Processing new case: {case_id}")
-
-                        # The main process now orchestrates the initial case-level steps
-                        # and updates the database so the UI can reflect the status.
-                        with get_db_session(self.settings, self.logger) as case_repo:
-                            # Step 1: Discover beams and validate data transfer completion
-                            self.logger.info(f"Discovering beams and validating data transfer for case: {case_id}")
-                            beam_jobs = prepare_beam_jobs(case_id, case_path, self.settings)
-                            if not beam_jobs:
-                                case_repo.add_case(case_id, case_path)
-                                self._fail_case(case_repo, case_id, "No beams found or data transfer incomplete")
-                                continue
-
-                            case_repo.create_case_with_beams(case_id, str(case_path), beam_jobs)
-                            self.logger.info(f"Created {len(beam_jobs)} beam records in DB for case {case_id}")
-
-                            # Step 2: Run case-level CSV interpreting
-                            self._update_case_and_beams_status(case_repo, case_id,
-                                                              CaseStatus.CSV_INTERPRETING,
-                                                              BeamStatus.CSV_INTERPRETING,
-                                                              progress=10.0)
-                            self.logger.info(f"Starting case-level CSV interpreting for {case_id}")
-                            interpreting_success = run_case_level_csv_interpreting(case_id, case_path, self.settings)
-                            if not interpreting_success:
-                                self._fail_case(case_repo, case_id, "CSV interpreting failed")
-                                continue
-
-                            # Step 3: Generate TPS file with dynamic GPU assignments
-                            self._update_case_and_beams_status(case_repo, case_id,
-                                                              CaseStatus.PROCESSING,
-                                                              BeamStatus.TPS_GENERATION,
-                                                              progress=30.0)
-                            self.logger.info(f"Starting case-level TPS generation for {case_id}")
-                            gpu_assignments = run_case_level_tps_generation(case_id, case_path, len(beam_jobs), self.settings)
-                            if gpu_assignments is None:
-                                self._fail_case(case_repo, case_id, "TPS generation failed")
-                                continue
-
-                            # Handle partial GPU allocation
-                            if len(gpu_assignments) < len(beam_jobs):
-                                self.logger.info(f"Partial GPU allocation for {case_id}: {len(gpu_assignments)}/{len(beam_jobs)} beams can proceed")
-                            elif len(gpu_assignments) == 0:
-                                self.logger.warning(f"No GPUs available for {case_id}. All beams will remain pending.")
-                                case_repo.update_beams_status_by_case_id(case_id, BeamStatus.PENDING.value)
-                                continue
-
-                            # Step 4: Run case-level file upload to HPC if any handler is remote
-                            handler_modes = self.settings.execution_handler.values()
-                            if "remote" in handler_modes:
-                                case_repo.update_beams_status_by_case_id(case_id, BeamStatus.UPLOADING.value)
-                                self.logger.info(f"Starting case-level file upload for {case_id}")
-                                upload_success = run_case_level_upload(case_id, self.settings, self.ssh_client)
-                                if not upload_success:
-                                    self._fail_case(case_repo, case_id, "File upload failed")
-                                    continue
-                            else:
-                                self.logger.info("No remote handlers configured. Skipping case-level file upload.")
-
-                            # Step 5: Dispatch individual workers for simulation
-                            case_repo.update_case_status(case_id, CaseStatus.PROCESSING, progress=50.0)
-
-                            # Only dispatch workers for beams with GPU assignments
-                            num_allocated = len(gpu_assignments)
-                            allocated_jobs = beam_jobs[:num_allocated]
-                            pending_jobs = beam_jobs[num_allocated:]
-
-                            # Mark allocated beams as ready for processing
-                            for job in allocated_jobs:
-                                case_repo.update_beam_status(job["beam_id"], BeamStatus.PENDING)
-
-                            # Keep remaining beams in PENDING with a note they're waiting for GPUs
-                            for job in pending_jobs:
-                                self.logger.info(f"Beam {job['beam_id']} pending GPU availability")
-                                case_repo.update_beam_status(job["beam_id"], BeamStatus.PENDING)
-
-                            # Track pending beams for later GPU allocation
-                            if pending_jobs:
-                                pending_beams_by_case[case_id] = {
-                                    "case_path": case_path,
-                                    "pending_jobs": pending_jobs
-                                }
-
-                            self.logger.info(f"Dispatching workers for case {case_id}: {num_allocated} beams with GPU, {len(pending_jobs)} pending")
-
-                            for job in allocated_jobs:
-                                self._submit_beam_worker(executor, job["beam_id"], job["beam_path"], active_futures)
-
+                        self._process_new_case(case_data, executor, active_futures, pending_beams_by_case)
                     except mp.queues.Empty:
                         pass  # Queue timeout, continue
                     except Exception as e:
                         self.logger.error(f"Error processing case from queue", {"error": str(e)})
 
-                    # Check for completed workers
-                    completed_futures = []
-                    for future in as_completed(active_futures.keys(), timeout=0.1):
-                        completed_futures.append(future)
-
-                    for future in completed_futures:
-                        beam_id = active_futures.pop(future)
-                        try:
-                            future.result()  # Raise exception if worker failed
-                            self.logger.info(f"Beam worker {beam_id} completed successfully")
-
-                            # Check if there are pending beams waiting for GPUs
-                            if pending_beams_by_case:
-                                self._try_allocate_pending_beams(pending_beams_by_case, executor, active_futures)
-
-                        except Exception as e:
-                            self.logger.error(f"Beam worker {beam_id} failed", {"error": str(e)})
+                    # Monitor completed workers
+                    self._monitor_completed_workers(active_futures, pending_beams_by_case, executor)
 
                 except KeyboardInterrupt:
                     self.logger.info("Received shutdown signal")
