@@ -38,6 +38,8 @@ from src.handlers.execution_handler import ExecutionHandler
 from src.core.worker import worker_main
 from src.core.dispatcher import prepare_beam_jobs, run_case_level_csv_interpreting, run_case_level_upload, run_case_level_tps_generation, allocate_gpus_for_pending_beams
 from src.domain.enums import CaseStatus, BeamStatus
+from src.utils.db_context import get_db_session
+from src.utils.ssh_helper import create_ssh_client
 
 def scan_existing_cases(case_queue: mp.Queue,
                         settings: Settings,
@@ -59,11 +61,7 @@ def scan_existing_cases(case_queue: mp.Queue,
             )
             return
         # Initialize database connection and case repository
-        db_path = settings.get_database_path()
-        with DatabaseConnection(db_path=db_path,
-                                settings=settings,
-                                logger=logger) as db_connection:
-            case_repo = CaseRepository(db_connection, logger)
+        with get_db_session(settings, logger) as case_repo:
             # Get all case IDs from database
             existing_case_ids = set(case_repo.get_all_case_ids())
             logger.info(
@@ -267,8 +265,8 @@ class MQIApplication:
         Exits the application if the database cannot be initialized.
         """
         try:
-            with self._create_db_connection() as db_connection:
-                db_connection.init_db()
+            with get_db_session(self.settings, self.logger) as case_repo:
+                case_repo._db_connection.init_db()
             self.logger.info("Database initialized successfully",
                            {"path": str(self.settings.get_database_path())})
         except Exception as e:
@@ -487,8 +485,7 @@ class MQIApplication:
 
                         # The main process now orchestrates the initial case-level steps
                         # and updates the database so the UI can reflect the status.
-                        with self._create_db_connection() as db_conn:
-                            case_repo = self._create_case_repository(db_conn)
+                        with get_db_session(self.settings, self.logger) as case_repo:
                             # Step 1: Discover beams and validate data transfer completion
                             self.logger.info(f"Discovering beams and validating data transfer for case: {case_id}")
                             beam_jobs = prepare_beam_jobs(case_id, case_path, self.settings)
@@ -625,26 +622,7 @@ class MQIApplication:
 
     def initialize_ssh_client(self) -> None:
         """Initializes the SSH client for remote connections."""
-        try:
-            hpc_config = self.settings.get_hpc_connection()
-            if not hpc_config or not all(k in hpc_config for k in ["host", "user", "ssh_key_path"]):
-                self.logger.warning("HPC connection details are not fully configured. Remote operations will be disabled.")
-                return
-
-            self.ssh_client = paramiko.SSHClient()
-            self.ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            self.logger.info("Connecting to HPC...", {"host": hpc_config["host"]})
-            self.ssh_client.connect(
-                hostname=hpc_config["host"],
-                username=hpc_config["user"],
-                key_filename=hpc_config["ssh_key_path"],
-                port=hpc_config.get("port", 22),
-                timeout=20
-            )
-            self.logger.info("Successfully connected to HPC.")
-        except Exception as e:
-            self.logger.error("Failed to establish SSH connection to HPC.", {"error": str(e)})
-            self.ssh_client = None # Ensure client is None on failure
+        self.ssh_client = create_ssh_client(self.settings, self.logger)
 
     def shutdown(self) -> None:
         """Performs a graceful shutdown of all application components."""

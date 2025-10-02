@@ -4,7 +4,13 @@
       "Bash(/usr/bin/python3:*)",
       "Read(//mnt/c/MOQUI_SMC/**)",
       "Bash(python3:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Read(//c/**)",
+      "Bash(python -m pytest tests/test_db_context.py -v)",
+      "Bash(python -m pytest tests/test_ssh_helper.py -v)",
+      "Bash(python -m pytest tests/ -v --tb=short)"
     ],
     "deny": [],
     "ask": []

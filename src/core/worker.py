@@ -15,6 +15,8 @@ from src.core.workflow_manager import WorkflowManager
 import paramiko
 from src.core.tps_generator import TpsGenerator
 from src.config.settings import Settings
+from src.utils.db_context import get_db_session
+from src.utils.ssh_helper import create_ssh_client
 
 
 def worker_main(beam_id: str, beam_path: Path, settings: Settings) -> None:
@@ -32,68 +34,40 @@ def worker_main(beam_id: str, beam_path: Path, settings: Settings) -> None:
     LoggerFactory.configure(settings)
     logger = LoggerFactory.get_logger(f"worker_{beam_id}")
 
-    db_connection = None
     try:
         _validate_beam_path(beam_path, logger)
 
-        # Use database path from settings
-        db_path = settings.get_database_path()
-        db_connection = DatabaseConnection(
-            db_path=db_path,
-            settings=settings,
-            logger=logger
-        )
-        # Initialize database schema
-        db_connection.init_db()
+        with get_db_session(settings, logger) as case_repo:
+            # Initialize database schema
+            case_repo._db_connection.init_db()
+            gpu_repo = GpuRepository(case_repo._db_connection, logger, settings)
 
-        case_repo = CaseRepository(db_connection, logger)
-        gpu_repo = GpuRepository(db_connection, logger, settings)
+            # Create ExecutionHandler based on settings
+            workflow_mode = settings.execution_handler.get("Workflow", "local")
 
-        # Create ExecutionHandler based on settings
-        workflow_mode = settings.execution_handler.get("Workflow", "local")
-
-        ssh_client = None
-        if workflow_mode == "remote":
-            try:
-                hpc_config = settings.get_hpc_connection()
-                if not hpc_config:
+            ssh_client = None
+            if workflow_mode == "remote":
+                ssh_client = create_ssh_client(settings, logger)
+                if not ssh_client:
                     raise ConnectionError("HPC connection settings not configured.")
 
-                ssh_client = paramiko.SSHClient()
-                ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-                connection_timeout = hpc_config.get("connection_timeout_seconds")
-                if connection_timeout is None:
-                    logger.warning("HPC connection_timeout_seconds not found in config, defaulting to 30 seconds.")
-                    connection_timeout = 30
+            execution_handler = ExecutionHandler(settings=settings, mode=workflow_mode, ssh_client=ssh_client)
 
-                ssh_client.connect(
-                    hostname=hpc_config.get("host"),
-                    username=hpc_config.get("user"),
-                    key_filename=hpc_config.get("ssh_key_path"),
-                    port=hpc_config.get("port", 22),
-                    timeout=connection_timeout,
-                )
-            except Exception as e:
-                logger.error("Failed to establish HPC connection", {"error": str(e)})
-                raise  # Re-raise the exception to stop the worker
+            # Create TPS generator
+            tps_generator = TpsGenerator(settings, logger)
 
-        execution_handler = ExecutionHandler(settings=settings, mode=workflow_mode, ssh_client=ssh_client)
+            workflow_manager = WorkflowManager(
+                case_repo=case_repo,
+                gpu_repo=gpu_repo,
+                execution_handler=execution_handler,
+                tps_generator=tps_generator,
+                logger=logger,
+                id=beam_id,
+                path=beam_path,
+                settings=settings,
+            )
 
-        # Create TPS generator
-        tps_generator = TpsGenerator(settings, logger)
-
-        workflow_manager = WorkflowManager(
-            case_repo=case_repo,
-            gpu_repo=gpu_repo,
-            execution_handler=execution_handler,
-            tps_generator=tps_generator,
-            logger=logger,
-            id=beam_id,
-            path=beam_path,
-            settings=settings,
-        )
-
-        workflow_manager.run_workflow()
+            workflow_manager.run_workflow()
 
     except Exception as e:
         logger.error(
@@ -104,8 +78,6 @@ def worker_main(beam_id: str, beam_path: Path, settings: Settings) -> None:
         # Optionally re-raise or handle specific exceptions
         raise
     finally:
-        if db_connection:
-            db_connection.close()
         logger.info(f"Worker finished for beam {beam_id}")
 
 
