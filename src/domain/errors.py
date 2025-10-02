@@ -48,7 +48,3 @@ class ValidationError(MQIError):
 class RetryableError(MQIError):
     """Exception raised for errors that can be safely retried."""
     pass
-
-class CircuitBreakerOpenError(MQIError):
-    """Exception raised when the circuit breaker is open."""
-    pass

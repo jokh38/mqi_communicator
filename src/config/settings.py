@@ -184,12 +184,6 @@ class Settings:
         """
         return self._yaml_config.get("processing", {})
 
-    def get_retry_policy_config(self) -> Dict[str, Any]:
-        """
-        Gets the retry policy configuration dictionary from the YAML file.
-        """
-        return self._yaml_config.get("retry_policy", {})
-
     def get_ui_config(self) -> Dict[str, Any]:
         """
         Gets the ui configuration dictionary from the YAML file.
