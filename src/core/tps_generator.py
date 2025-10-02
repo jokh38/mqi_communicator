@@ -113,21 +113,12 @@ class TpsGenerator:
                 case_path, case_id, execution_mode)
             parameters.update(dynamic_paths)
 
-            # Extract gantry number from DICOM
+            # Extract case-specific data (gantry number and beam count)
             try:
-                validator = DataIntegrityValidator(self.logger)
-                gantry_number = validator.extract_gantry_number_from_rtplan(
-                    case_path
-                )
-                parameters["GantryNum"] = gantry_number
-                self.logger.info(
-                    f"Extracted gantry number {gantry_number} from DICOM RT Plan "
-                    f"for case {case_id}"
-                )
-            except ProcessingError as e:
-                self.logger.error(
-                    f"Failed to extract gantry number for case {case_id}: {e}"
-                )
+                case_specific_data = self._extract_case_data(case_path, case_id)
+                parameters.update(case_specific_data)
+            except Exception as e:
+                # _extract_case_data already logs the error
                 return False  # Fail the case
 
             # Set beam count and GPU assignments
@@ -184,68 +175,6 @@ class TpsGenerator:
             })
             return False
 
-    def generate_tps_file(
-        self,
-        case_path: Path,
-        case_id: str,
-        gpu_id: int,
-        execution_mode: str = "local"
-    ) -> bool:
-        """Generate moqui_tps.in file for a specific case.
-
-        Args:
-            case_path (Path): Path to the case directory.
-            case_id (str): Unique identifier for the case.
-            gpu_id (int): GPU ID to be assigned for this case (0, 1, 2, etc.).
-            execution_mode (str): "local" or "remote" - determines path construction.
-
-        Returns:
-            bool: True if file was generated successfully, False otherwise.
-        """
-        try:
-            self.logger.info("Generating moqui_tps.in file", {
-                "case_id": case_id,
-                "case_path": str(case_path),
-                "gpu_id": gpu_id,
-                "execution_mode": execution_mode
-            })
-            
-            # Start with base parameters from config
-            parameters = self.base_parameters.copy()
-            
-            # Set dynamic GPU ID
-            parameters["GPUID"] = gpu_id
-            
-            # Generate dynamic paths based on execution mode
-            dynamic_paths = self._generate_dynamic_paths(
-                case_path, case_id, execution_mode)
-            parameters.update(dynamic_paths)
-            # Extract case-specific data (e.g., beam numbers from DICOM)
-            case_specific_data = self._extract_case_data(case_path, case_id)
-            parameters.update(case_specific_data)
-            # Validate required parameters
-            if not self._validate_parameters(parameters, case_id):
-                return False
-            # Generate and write the file
-            content = self._format_parameters_to_string(parameters)
-            output_file = case_path / "moqui_tps.in"
-            with open(output_file, 'w', encoding='utf-8') as f:
-                f.write(content)
-            self.logger.info("moqui_tps.in file generated successfully", {
-                "case_id": case_id,
-                "output_file": str(output_file),
-                "parameters_count": len(parameters)
-            })
-            return True
-        except Exception as e:
-            self.logger.error("Failed to generate moqui_tps.in file", {
-                "case_id": case_id,
-                "case_path": str(case_path),
-                "error": str(e),
-                "exception_type": type(e).__name__
-            })
-            return False
-    
     def _generate_dynamic_paths(
         self,
         case_path: Path,
@@ -362,39 +291,6 @@ class TpsGenerator:
             raise  # Fail the case
         return case_data
 
-    def _count_treatment_beams(self, case_path: Path) -> int:
-        """Count the number of treatment beams from DICOM files or metadata.
-
-        This is a simplified implementation that could be enhanced to parse
-        DICOM files properly using pydicom or similar libraries.
-
-        Args:
-            case_path (Path): Path to the case directory.
-
-        Returns:
-            int: Number of treatment beams (default to 1 if cannot determine).
-        """
-        try:
-            # Look for DICOM files
-            dicom_files = list(
-                case_path.glob("*.dcm")) + list(case_path.glob("**/*.dcm"))
-            # Simple heuristic: if multiple DICOM files, assume multiple beams
-            # This could be replaced with proper DICOM parsing
-            if len(dicom_files) > 1:
-                return len(dicom_files)
-            elif len(dicom_files) == 1:
-                return 1
-            else:
-                # No DICOM files found, default to 1 beam
-                # Future enhancement could look for other metadata sources
-                return 1
-        except Exception as e:
-            self.logger.debug(
-                "Error counting treatment beams, defaulting to 1", {
-                    "case_path": str(case_path),
-                    "error": str(e)
-                })
-            return 1
 
     def _validate_parameters(self, parameters: Dict[str, Any],
                              case_id: str) -> bool:
