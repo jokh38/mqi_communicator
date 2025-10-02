@@ -23,6 +23,78 @@ from src.repositories.gpu_repo import GpuRepository
 from src.utils.db_context import get_db_session
 
 
+def _handle_dispatcher_error(
+    case_id: str,
+    error: Exception,
+    workflow_step: WorkflowStep,
+    settings: Settings,
+    logger: StructuredLogger,
+    handler_name: str = "CsvInterpreter"
+) -> None:
+    """Handle errors in dispatcher functions by logging and updating database status.
+
+    Args:
+        case_id: The case identifier
+        error: The exception that occurred
+        workflow_step: The workflow step where the error occurred
+        settings: Application settings
+        logger: Logger instance
+        handler_name: Handler name for database session (default: CsvInterpreter)
+    """
+    logger.error(
+        f"Error during {workflow_step.value}",
+        {"case_id": case_id, "error": str(error)}
+    )
+    try:
+        with get_db_session(settings, logger, handler_name=handler_name) as case_repo:
+            case_repo.update_case_status(
+                case_id,
+                CaseStatus.FAILED,
+                error_message=str(error)
+            )
+            case_repo.record_workflow_step(
+                case_id=case_id,
+                step=workflow_step,
+                status="failed",
+                metadata={"error": str(error)}
+            )
+    except Exception as db_e:
+        logger.error(
+            "Failed to update case status during error handling",
+            {"case_id": case_id, "db_error": str(db_e)}
+        )
+
+
+def _queue_case(
+    case_id: str,
+    case_path: Path,
+    case_queue: mp.Queue,
+    logger: StructuredLogger
+) -> bool:
+    """Queue a case for processing.
+
+    Args:
+        case_id: The case identifier
+        case_path: Path to the case directory
+        case_queue: The multiprocessing queue to add the case to
+        logger: Logger instance
+
+    Returns:
+        bool: True if successfully queued, False otherwise
+    """
+    try:
+        case_queue.put({
+            'case_id': case_id,
+            'case_path': str(case_path),
+            'timestamp': time.time()
+        })
+        logger.info(f"Case {case_id} queued for processing")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to queue case {case_id}", {"error": str(e)})
+        return False
+
+
 def run_case_level_csv_interpreting(case_id: str, case_path: Path,
                                     settings: Settings) -> bool:
     """
@@ -106,22 +178,14 @@ def run_case_level_csv_interpreting(case_id: str, case_path: Path,
             return True
 
     except Exception as e:
-        logger.error("Case-level CSV interpreting failed",
-                     {"case_id": case_id, "error": str(e)})
-        try:
-            with get_db_session(settings, logger, handler_name=handler_name) as case_repo:
-                case_repo.update_case_status(case_id,
-                                             CaseStatus.FAILED,
-                                             error_message=str(e))
-                case_repo.record_workflow_step(
-                    case_id=case_id,
-                    step=WorkflowStep.CSV_INTERPRETING,
-                    status="failed",
-                    metadata={"error": str(e)})
-        except Exception as db_e:
-            logger.error(
-                "Failed to update case status during error",
-                {"case_id": case_id, "db_error": str(db_e)})
+        _handle_dispatcher_error(
+            case_id=case_id,
+            error=e,
+            workflow_step=WorkflowStep.CSV_INTERPRETING,
+            settings=settings,
+            logger=logger,
+            handler_name=handler_name
+        )
         return False
 
 
@@ -186,8 +250,14 @@ def run_case_level_upload(case_id: str, settings: Settings,
                                            status="completed")
             return True
     except Exception as e:
-        logger.error("Case-level file upload failed",
-                     {"case_id": case_id, "error": str(e)})
+        _handle_dispatcher_error(
+            case_id=case_id,
+            error=e,
+            workflow_step=WorkflowStep.UPLOADING,
+            settings=settings,
+            logger=logger,
+            handler_name=local_handler_name
+        )
         return False
 
 # ... (rest of the file remains the same, but fixing db connection in tps_generation)
@@ -442,7 +512,14 @@ def run_case_level_tps_generation(
             return gpu_assignments
 
     except Exception as e:
-        logger.error("Case-level TPS generation failed", {"case_id": case_id, "error": str(e)})
+        _handle_dispatcher_error(
+            case_id=case_id,
+            error=e,
+            workflow_step=WorkflowStep.TPS_GENERATION,
+            settings=settings,
+            logger=logger,
+            handler_name=handler_name
+        )
         try:
             with get_db_session(settings, logger, handler_name=handler_name) as case_repo:
                 gpu_repo = GpuRepository(case_repo._db_connection, logger, settings)
@@ -495,18 +572,8 @@ def scan_existing_cases(case_queue: mp.Queue,
             if new_cases:
                 logger.info(f"Found {len(new_cases)} new cases to process")
                 for case_id, case_path in new_cases:
-                    try:
-                        case_queue.put({
-                            'case_id': case_id,
-                            'case_path': str(case_path),
-                            'timestamp': time.time()
-                        })
-                        logger.info(
-                            f"Queued existing case for processing: {case_id}")
-                    except Exception as e:
-                        logger.error(
-                            f"Failed to queue existing case {case_id}",
-                            {"error": str(e)})
+                    if _queue_case(case_id, case_path, case_queue, logger):
+                        logger.info(f"Queued existing case for processing: {case_id}")
             else:
                 logger.info("No new cases found during startup scan")
     except Exception as e:
@@ -540,14 +607,4 @@ class CaseDetectionHandler(FileSystemEventHandler):
         case_path = Path(event.src_path)
         case_id = case_path.name
         self.logger.info(f"New case detected: {case_id} at {case_path}")
-        try:
-            # Add the case to the processing queue
-            self.case_queue.put({
-                'case_id': case_id,
-                'case_path': str(case_path),
-                'timestamp': time.time()
-            })
-            self.logger.info(f"Case {case_id} queued for processing")
-        except Exception as e:
-            self.logger.error(f"Failed to queue case {case_id}",
-                              {"error": str(e)})
+        _queue_case(case_id, case_path, self.case_queue, self.logger)
