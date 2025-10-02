@@ -47,6 +47,32 @@ def handle_state_exceptions(func: Callable[..., Any]) -> Callable[..., Any]:
 class WorkflowState(ABC):
     """Abstract base class for workflow states implementing the State pattern."""
 
+    def _update_status(self, context: 'WorkflowManager', status: BeamStatus,
+                      message: str, error_message: str = None, log_level: str = "info") -> None:
+        """Updates beam status and logs the transition.
+
+        Args:
+            context: WorkflowManager instance providing access to repository and logger
+            status: New status to set for the beam
+            message: Log message describing the status change
+            error_message: Optional error message to store in database
+            log_level: Logging level to use ("info" or "error")
+        """
+        context.case_repo.update_beam_status(
+            beam_id=context.id,
+            status=status,
+            error_message=error_message
+        )
+        log_data = {
+            "beam_id": context.id,
+            "status": status.value,
+            "state": self.get_state_name()
+        }
+        if log_level == "error":
+            context.logger.error(message, log_data)
+        else:
+            context.logger.info(message, log_data)
+
     @abstractmethod
     def execute(
             self, context: 'WorkflowManager') -> Optional[WorkflowState]:
@@ -64,11 +90,8 @@ class InitialState(WorkflowState):
 
     @handle_state_exceptions
     def execute(self, context: 'WorkflowManager') -> WorkflowState:
-        context.logger.info("Performing initial validation for beam",
-                            {"beam_id": context.id})
         # Use a valid status. CSV_INTERPRETING is the first logical step after validation.
-        context.case_repo.update_beam_status(context.id,
-                                             BeamStatus.CSV_INTERPRETING)
+        self._update_status(context, BeamStatus.CSV_INTERPRETING, "Performing initial validation for beam")
 
         if not context.path.is_dir():
             raise ProcessingError(
@@ -99,8 +122,7 @@ class FileUploadState(WorkflowState):
         mode = context.settings.get_handler_mode(handler_name)
 
         if mode == 'remote':
-            context.logger.info("Remote mode: Uploading beam files to HPC", {"beam_id": context.id})
-            context.case_repo.update_beam_status(context.id, BeamStatus.UPLOADING)
+            self._update_status(context, BeamStatus.UPLOADING, "Remote mode: Uploading beam files to HPC")
 
             beam = context.case_repo.get_beam(context.id)
             if not beam:
@@ -181,9 +203,8 @@ class HpcExecutionState(WorkflowState):
             raise ProcessingError(
                 f"Failed to submit HPC simulation: {result.error}")
 
-        context.case_repo.update_beam_status(context.id, BeamStatus.HPC_RUNNING)
-        context.logger.info("HPC simulation submitted, polling for completion via log monitoring",
-                            {"beam_id": context.id, "log_path": remote_log_path})
+        self._update_status(context, BeamStatus.HPC_RUNNING,
+                          f"HPC simulation submitted, polling for completion via log monitoring (log_path: {remote_log_path})")
 
         # Poll for completion by monitoring the log file
         self._wait_for_job_completion(context, handler_name)
@@ -268,8 +289,7 @@ class DownloadState(WorkflowState):
 
     @handle_state_exceptions
     def execute(self, context: 'WorkflowManager') -> WorkflowState:
-        context.logger.info("Starting result handling for beam", {"beam_id": context.id})
-        context.case_repo.update_beam_status(context.id, BeamStatus.DOWNLOADING)
+        self._update_status(context, BeamStatus.DOWNLOADING, "Starting result handling for beam")
 
         beam = context.case_repo.get_beam(context.id)
         if not beam:
@@ -336,10 +356,7 @@ class PostprocessingState(WorkflowState):
 
     @handle_state_exceptions
     def execute(self, context: 'WorkflowManager') -> WorkflowState:
-        context.logger.info("Running RawToDCM postprocessing",
-                            {"beam_id": context.id})
-        context.case_repo.update_beam_status(context.id,
-                                             BeamStatus.POSTPROCESSING)
+        self._update_status(context, BeamStatus.POSTPROCESSING, "Running RawToDCM postprocessing")
         handler_name = "PostProcessor"
 
         input_file = context.shared_context.get("raw_output_file")
@@ -415,9 +432,7 @@ class CompletedState(WorkflowState):
 
     def execute(
             self, context: 'WorkflowManager') -> Optional[WorkflowState]:
-        context.logger.info("Beam workflow completed successfully",
-                            {"beam_id": context.id})
-        context.case_repo.update_beam_status(context.id, BeamStatus.COMPLETED)
+        self._update_status(context, BeamStatus.COMPLETED, "Beam workflow completed successfully")
         beam = context.case_repo.get_beam(context.id)
         if beam:
             update_case_status_from_beams(beam.parent_case_id,
@@ -433,9 +448,7 @@ class FailedState(WorkflowState):
 
     def execute(
             self, context: 'WorkflowManager') -> Optional[WorkflowState]:
-        context.logger.error("Beam workflow entered failed state",
-                             {"beam_id": context.id})
-        context.case_repo.update_beam_status(context.id, BeamStatus.FAILED)
+        self._update_status(context, BeamStatus.FAILED, "Beam workflow entered failed state", log_level="error")
         beam = context.case_repo.get_beam(context.id)
         if beam:
             update_case_status_from_beams(beam.parent_case_id,
