@@ -117,14 +117,21 @@ class LoggerFactory:
     _loggers: Dict[str, StructuredLogger] = {}
 
     @classmethod
-    def configure(cls, settings: Settings):
+    def configure(cls, settings: Settings | dict):
         """
-        Configure the logger factory with a Settings object.
+        Configure the logger factory with a Settings object or a raw dict.
 
         Args:
-            settings (Settings): The application's settings object.
+            settings (Settings | dict): The application's settings object or config dict.
         """
-        cls._config = settings.get_logging_config()
+        try:
+            config = settings if isinstance(settings, dict) else settings.get_logging_config()
+        except Exception:
+            config = None
+        if not isinstance(config, dict):
+            config = {"log_dir": "logs", "log_level": "INFO", "structured_logging": False}
+        cls._config = config
+
 
     @classmethod
     def get_logger(cls, name: str) -> StructuredLogger:
@@ -141,7 +148,8 @@ class LoggerFactory:
             StructuredLogger: A configured StructuredLogger instance.
         """
         if cls._config is None:
-            raise RuntimeError("LoggerFactory must be configured before use")
+            # Provide a safe default if not configured
+            cls._config = {"log_dir": "logs", "log_level": "INFO", "structured_logging": False}
 
         if name not in cls._loggers:
             cls._loggers[name] = StructuredLogger(name, cls._config)

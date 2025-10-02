@@ -20,6 +20,7 @@ from typing import NoReturn, Optional, Dict, Any
 import argparse
 from datetime import datetime, timezone, timedelta
 from logging.handlers import RotatingFileHandler
+import logging
 from src.config.settings import Settings
 from src.infrastructure.logging_handler import StructuredLogger
 from src.database.connection import DatabaseConnection
@@ -39,43 +40,13 @@ class DashboardLogger(StructuredLogger):
             name (str): The logger name.
             config (Dict[str, Any]): The logging configuration settings.
         """
-        # Initialize parent StructuredLogger but override handler setup
-        self.config = config
-        import logging
-        self.logger = logging.getLogger(name)
-        log_level = self.config.get("log_level", "INFO").upper()
-        self.logger.setLevel(getattr(logging, log_level))
+        # Call parent initializer to ensure consistent setup
+        super().__init__(name, config)
 
-        if not self.logger.handlers:
-            self._setup_file_handler_only()
-
-    def _setup_file_handler_only(self) -> None:
-        """Setup only file handler, no console output."""
-        import logging
-        log_dir = Path(self.config['log_dir'])
-        # Ensure log directory exists
-        log_dir.mkdir(parents=True, exist_ok=True)
-
-        # File handler with rotation - NO console handler
-        log_file = log_dir / f"{self.logger.name}.log"
-        max_bytes = self.config.get("max_file_size_mb", 10) * 1024 * 1024
-        backup_count = self.config.get("backup_count", 5)
-        file_handler = RotatingFileHandler(
-            log_file,
-            maxBytes=max_bytes,
-            backupCount=backup_count
-        )
-
-        # Set formatter
-        if self.config.get("structured_logging", True):
-            formatter = self._create_json_formatter()
-        else:
-            formatter = logging.Formatter(
-                '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-            )
-
-        file_handler.setFormatter(formatter)
-        self.logger.addHandler(file_handler)
+        # Remove console handlers to keep file-only output
+        for handler in list(self.logger.handlers):
+            if isinstance(handler, logging.StreamHandler):
+                self.logger.removeHandler(handler)
 
 
 class DashboardProcess:

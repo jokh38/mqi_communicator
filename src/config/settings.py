@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 import yaml
+import logging
 
 
 class Settings:
@@ -19,19 +20,20 @@ class Settings:
     Main configuration class that loads and interprets all settings from a YAML file.
     """
 
-    def __init__(self, config_path: Optional[Path] = None):
+    def __init__(self, config_path: Optional[Path] = None, logger: Optional[Any] = None):
         """
         Initializes settings by loading the specified configuration file.
         """
         if config_path is None:
             config_path = Path("config/config.yaml")
 
+        self._logger = logger  # Optional injected logger; avoid importing StructuredLogger to prevent cycles
         self._yaml_config: Dict[str, Any] = {}
         self.execution_handler: Dict[str, str] = {}
         if config_path.exists():
             self._load_from_file(config_path)
         else:
-            print(f"Warning: Configuration file not found at {config_path}")
+            self._emit_warning(f"Configuration file not found at {config_path}")
 
         # All settings should be accessed via get_*_config() methods.
         # The following attributes are removed for consistency and to avoid direct access.
@@ -42,17 +44,45 @@ class Settings:
         # self.logging = self.get_logging_config()
         # self.retry_policy = self.get_retry_policy_config()
 
+    def _emit_warning(self, message: str, context: Optional[Dict[str, Any]] = None) -> None:
+        try:
+            if self._logger is not None:
+                # StructuredLogger-compatible call if available
+                if hasattr(self._logger, 'warning'):
+                    self._logger.warning(message, context or None)
+                    return
+            # Fallback: stdlib logging
+            logging.basicConfig(level=logging.INFO, force=False)
+            logging.getLogger(__name__).warning(message)
+        except Exception:
+            print(f"Warning: {message}")
+
+    def _emit_error(self, message: str, context: Optional[Dict[str, Any]] = None) -> None:
+        try:
+            if self._logger is not None:
+                if hasattr(self._logger, 'error'):
+                    self._logger.error(message, context or None)
+                    return
+            logging.basicConfig(level=logging.INFO, force=False)
+            logging.getLogger(__name__).error(message)
+        except Exception:
+            print(f"Error: {message}")
+
     def _load_from_file(self, config_path: Path) -> None:
         """
         Loads the entire configuration from a YAML file into a dictionary.
         """
         try:
             with open(config_path, 'r', encoding='utf-8') as f:
-                self._yaml_config = yaml.safe_load(f)
+                self._yaml_config = yaml.safe_load(f) or {}
             self.execution_handler = self._yaml_config.get("ExecutionHandler", {})
         except Exception as e:
-            print(f"Warning: Could not load or parse config file {config_path}: {e}")
+            self._emit_warning(
+                f"Could not load or parse config file {config_path}: {e}",
+                {"config_path": str(config_path), "error": str(e)}
+            )
             self._yaml_config = {}
+
 
     def get_handler_mode(self, handler_name: str) -> str:
         """
@@ -79,9 +109,14 @@ class Settings:
         if path_template is None:
             raise KeyError(f"Path '{path_name}' not found for mode '{mode}' or in base paths.")
 
-        # Recursively resolve placeholders
-        for _ in range(5):  # Limit recursion to prevent infinite loops
-            placeholders = re.findall(r"\{(\w+)\}", path_template)
+        # Recursively resolve placeholders up to configurable depth
+        max_depth = (
+            self._yaml_config.get("settings", {}).get("path_resolution_max_depth")
+            or 8
+        )
+        current = str(path_template)
+        for _ in range(max_depth):
+            placeholders = re.findall(r"\{(\w+)\}", current)
             if not placeholders:
                 break
 
@@ -91,18 +126,25 @@ class Settings:
                     continue
                 try:
                     resolved_path = self.get_path(p_name, handler_name, **kwargs)
-                    path_template = path_template.replace(f"{{{p_name}}}", resolved_path)
+                    current = current.replace(f"{{{p_name}}}", resolved_path)
                     made_a_change = True
                 except KeyError:
                     if p_name == 'base_directory':
                         base_dir = self._yaml_config.get("paths", {}).get("base_directory", "")
-                        path_template = path_template.replace(f"{{{p_name}}}", base_dir)
+                        current = current.replace(f"{{{p_name}}}", base_dir)
                         made_a_change = True
-
             if not made_a_change:
                 break
 
-        return path_template.format(**kwargs)
+        # After resolution attempts, check for unresolved placeholders
+        unresolved = re.findall(r"\{(\w+)\}", current)
+        if unresolved:
+            raise ValueError(
+                f"Unresolved placeholders {unresolved} in path '{path_name}' for mode '{mode}'."
+            )
+
+        return current.format(**kwargs)
+
 
     def get_executable(self, exec_name: str, handler_name: str, **kwargs: Any) -> str:
         """
@@ -202,22 +244,52 @@ class Settings:
         """
         return self._yaml_config.get("connections", {})
 
-    def get_database_path(self) -> Path:
+    def get_pc_localdata_connection(self) -> Dict[str, Any]:
+        """Compatibility helper to fetch legacy pc_localdata connection info.
+
+        Some tests/configs expect a top-level key `pc_localdata_connection` rather than
+        the newer nested structure under `connections`. This method checks both and
+        returns the first match, or an empty dict if none.
+        """
+        # Newer nested structure
+        connections = self.get_connection_config()
+        if "pc_localdata" in connections and isinstance(connections["pc_localdata"], dict):
+            return connections["pc_localdata"]
+        # Legacy top-level structure
+        legacy = self._yaml_config.get("pc_localdata_connection", {})
+        if isinstance(legacy, dict):
+            return legacy
+        return {}
+
+
+    def get_default_handler(self) -> str:
+        """Returns the default handler name from config or a safe fallback."""
+        # Support either nested "settings.default_handler" or top-level "default_handler"
+        return (
+            self._yaml_config.get("settings", {}).get("default_handler")
+            or self._yaml_config.get("default_handler")
+            or "CsvInterpreter"
+        )
+
+    def get_database_path(self, handler_name: Optional[str] = None) -> Path:
         """
         Returns the database path as a Path object.
         """
-        db_path = self.get_path("database_path", handler_name="CsvInterpreter")
+        handler = handler_name or self.get_default_handler()
+        db_path = self.get_path("database_path", handler_name=handler)
         return Path(db_path)
 
-    def get_case_directories(self) -> Dict[str, Path]:
+    def get_case_directories(self, handler_name: Optional[str] = None) -> Dict[str, Path]:
         """
         Returns the case directory paths.
         """
         try:
-            scan_path = self.get_path("scan_directory", handler_name="CsvInterpreter")
+            handler = handler_name or self.get_default_handler()
+            scan_path = self.get_path("scan_directory", handler_name=handler)
             return {"scan": Path(scan_path)}
         except (KeyError, ValueError) as e:
             raise RuntimeError(f"Could not resolve scan directory path: {e}") from e
+
 
     def get_hpc_connection(self) -> Optional[Dict[str, Any]]:
         """
