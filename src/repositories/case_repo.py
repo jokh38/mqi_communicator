@@ -633,3 +633,30 @@ class CaseRepository(BaseRepository):
             ),
             hpc_job_id=row["hpc_job_id"],
         )
+
+    def fail_case(self, case_id: str, error_message: str) -> None:
+        """Marks a case and all its beams as failed.
+
+        Args:
+            case_id (str): The case ID.
+            error_message (str): The error message to log.
+        """
+        self._log_operation("fail_case", case_id, error_message=error_message)
+        self.update_case_status(case_id, CaseStatus.FAILED, error_message=error_message)
+        self.update_beams_status_by_case_id(case_id, BeamStatus.FAILED.value)
+
+    def update_case_and_beams_status(self, case_id: str,
+                                     case_status: CaseStatus, beam_status: BeamStatus,
+                                     progress: float = None) -> None:
+        """Updates both case and all beam statuses atomically.
+
+        Args:
+            case_id (str): The case ID.
+            case_status (CaseStatus): The new case status.
+            beam_status (BeamStatus): The new beam status.
+            progress (float, optional): The progress percentage.
+        """
+        self._log_operation("update_case_and_beams_status", case_id,
+                          case_status=case_status.value, beam_status=beam_status.value)
+        self.update_case_status(case_id, case_status, progress=progress)
+        self.update_beams_status_by_case_id(case_id, beam_status.value)

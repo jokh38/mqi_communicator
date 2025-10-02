@@ -25,7 +25,6 @@ import threading
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler
 
 from src.config.settings import Settings
 from src.infrastructure.logging_handler import StructuredLogger, LoggerFactory
@@ -35,111 +34,13 @@ from src.repositories.gpu_repo import GpuRepository
 from src.repositories.case_repo import CaseRepository
 from src.infrastructure.gpu_monitor import GpuMonitor
 from src.handlers.execution_handler import ExecutionHandler
-from src.core.worker import worker_main
-from src.core.dispatcher import prepare_beam_jobs, run_case_level_csv_interpreting, run_case_level_upload, run_case_level_tps_generation, allocate_gpus_for_pending_beams
+from src.core.worker import submit_beam_worker, monitor_completed_workers
+from src.core.dispatcher import (prepare_beam_jobs, run_case_level_csv_interpreting,
+                                 run_case_level_upload, run_case_level_tps_generation,
+                                 scan_existing_cases, CaseDetectionHandler)
 from src.domain.enums import CaseStatus, BeamStatus
 from src.utils.db_context import get_db_session
 from src.utils.ssh_helper import create_ssh_client
-
-def scan_existing_cases(case_queue: mp.Queue,
-                        settings: Settings,
-                        logger: StructuredLogger) -> None:
-    """Scan for existing cases at startup.
-    Compares file system cases with database records and queues new cases.
-    Args:
-        case_queue (mp.Queue): The queue to add new cases to.
-        settings (Settings): The application settings.
-        logger (StructuredLogger): The logger for recording events.
-    """
-    try:
-        # Get scan directory from settings
-        case_dirs = settings.get_case_directories()
-        scan_directory = case_dirs.get("scan")
-        if not scan_directory or not scan_directory.exists():
-            logger.warning(
-                f"Scan directory does not exist or is not configured: {scan_directory}"
-            )
-            return
-        # Initialize database connection and case repository
-        with get_db_session(settings, logger) as case_repo:
-            # Get all case IDs from database
-            existing_case_ids = set(case_repo.get_all_case_ids())
-            logger.info(
-                f"Found {len(existing_case_ids)} cases already in database")
-            # Scan file system for case directories
-            filesystem_cases = []
-            for item in scan_directory.iterdir():
-                if item.is_dir():
-                    case_id = item.name
-                    filesystem_cases.append((case_id, item))
-            logger.info(
-                f"Found {len(filesystem_cases)} case directories in scan directory"
-            )
-            # Find cases that are in file system but not in database
-            new_cases = []
-            for case_id, case_path in filesystem_cases:
-                if case_id not in existing_case_ids:
-                    new_cases.append((case_id, case_path))
-            # Add new cases to processing queue
-            if new_cases:
-                logger.info(f"Found {len(new_cases)} new cases to process")
-                for case_id, case_path in new_cases:
-                    try:
-                        case_queue.put({
-                            'case_id': case_id,
-                            'case_path': str(case_path),
-                            'timestamp': time.time()
-                        })
-                        logger.info(
-                            f"Queued existing case for processing: {case_id}")
-                    except Exception as e:
-                        logger.error(
-                            f"Failed to queue existing case {case_id}",
-                            {"error": str(e)})
-            else:
-                logger.info("No new cases found during startup scan")
-    except Exception as e:
-        logger.error("Failed to scan existing cases during startup",
-                     {"error": str(e)})
-
-
-class CaseDetectionHandler(FileSystemEventHandler):
-    """Handles file system events to detect new case directories.
-    This handler watches for directory creation events and queues new cases for processing.
-    """
-
-    def __init__(self, case_queue: mp.Queue, logger: StructuredLogger):
-        """Initializes the CaseDetectionHandler.
-        Args:
-            case_queue (mp.Queue): The queue for new cases.
-            logger (StructuredLogger): The logger for recording events.
-        """
-        super().__init__()
-        self.case_queue = case_queue
-        self.logger = logger
-
-    def on_created(self, event) -> None:
-        """Handles the 'created' event from the file system watcher.
-        Checks if a directory was created and, if so, queues it as a new case.
-        Args:
-            event: The file system event.
-        """
-        if not event.is_directory:
-            return
-        case_path = Path(event.src_path)
-        case_id = case_path.name
-        self.logger.info(f"New case detected: {case_id} at {case_path}")
-        try:
-            # Add the case to the processing queue
-            self.case_queue.put({
-                'case_id': case_id,
-                'case_path': str(case_path),
-                'timestamp': time.time()
-            })
-            self.logger.info(f"Case {case_id} queued for processing")
-        except Exception as e:
-            self.logger.error(f"Failed to queue case {case_id}",
-                              {"error": str(e)})
 
 
 class MQIApplication:
@@ -203,49 +104,6 @@ class MQIApplication:
             return None
         return scan_directory
 
-    def _fail_case(self, case_repo: CaseRepository, case_id: str, error_message: str) -> None:
-        """Marks a case and all its beams as failed.
-
-        Args:
-            case_repo (CaseRepository): The case repository.
-            case_id (str): The case ID.
-            error_message (str): The error message to log.
-        """
-        self.logger.error(f"{error_message} for case {case_id}")
-        case_repo.update_case_status(case_id, CaseStatus.FAILED, error_message=error_message)
-        case_repo.update_beams_status_by_case_id(case_id, BeamStatus.FAILED.value)
-
-    def _update_case_and_beams_status(self, case_repo: CaseRepository, case_id: str,
-                                      case_status: CaseStatus, beam_status: BeamStatus,
-                                      progress: float = None) -> None:
-        """Updates both case and all beam statuses atomically.
-
-        Args:
-            case_repo (CaseRepository): The case repository.
-            case_id (str): The case ID.
-            case_status (CaseStatus): The new case status.
-            beam_status (BeamStatus): The new beam status.
-            progress (float, optional): The progress percentage.
-        """
-        case_repo.update_case_status(case_id, case_status, progress=progress)
-        case_repo.update_beams_status_by_case_id(case_id, beam_status.value)
-
-    def _submit_beam_worker(self, executor: ProcessPoolExecutor, beam_id: str,
-                           beam_path: Path, active_futures: Dict) -> None:
-        """Submits a beam worker and tracks its future.
-
-        Args:
-            executor (ProcessPoolExecutor): The executor to submit to.
-            beam_id (str): The beam ID.
-            beam_path (Path): The beam path.
-            active_futures (Dict): Dictionary tracking active futures.
-        """
-        self.logger.info(f"Submitting beam worker for: {beam_id}")
-        future = executor.submit(worker_main,
-                                beam_id=beam_id,
-                                beam_path=beam_path,
-                                settings=self.settings)
-        active_futures[future] = beam_id
 
     def initialize_logging(self) -> None:
         """Initializes the structured logging for the application.
@@ -404,7 +262,8 @@ class MQIApplication:
 
         if not beam_jobs:
             case_repo.add_case(case_id, case_path)
-            self._fail_case(case_repo, case_id, "No beams found or data transfer incomplete")
+            self.logger.error(f"No beams found or data transfer incomplete for case {case_id}")
+            case_repo.fail_case(case_id, "No beams found or data transfer incomplete")
             return []
 
         case_repo.create_case_with_beams(case_id, str(case_path), beam_jobs)
@@ -422,8 +281,8 @@ class MQIApplication:
         Returns:
             bool: True if CSV interpreting succeeded, False otherwise.
         """
-        self._update_case_and_beams_status(
-            case_repo, case_id,
+        case_repo.update_case_and_beams_status(
+            case_id,
             CaseStatus.CSV_INTERPRETING,
             BeamStatus.CSV_INTERPRETING,
             progress=10.0
@@ -432,7 +291,8 @@ class MQIApplication:
         interpreting_success = run_case_level_csv_interpreting(case_id, case_path, self.settings)
 
         if not interpreting_success:
-            self._fail_case(case_repo, case_id, "CSV interpreting failed")
+            self.logger.error(f"CSV interpreting failed for case {case_id}")
+            case_repo.fail_case(case_id, "CSV interpreting failed")
 
         return interpreting_success
 
@@ -448,8 +308,8 @@ class MQIApplication:
         Returns:
             Optional[List[Dict[str, Any]]]: List of GPU assignments, or None if generation failed.
         """
-        self._update_case_and_beams_status(
-            case_repo, case_id,
+        case_repo.update_case_and_beams_status(
+            case_id,
             CaseStatus.PROCESSING,
             BeamStatus.TPS_GENERATION,
             progress=30.0
@@ -458,7 +318,8 @@ class MQIApplication:
         gpu_assignments = run_case_level_tps_generation(case_id, case_path, beam_count, self.settings)
 
         if gpu_assignments is None:
-            self._fail_case(case_repo, case_id, "TPS generation failed")
+            self.logger.error(f"TPS generation failed for case {case_id}")
+            case_repo.fail_case(case_id, "TPS generation failed")
             return None
 
         # Handle partial GPU allocation
@@ -491,7 +352,8 @@ class MQIApplication:
         upload_success = run_case_level_upload(case_id, self.settings, self.ssh_client)
 
         if not upload_success:
-            self._fail_case(case_repo, case_id, "File upload failed")
+            self.logger.error(f"File upload failed for case {case_id}")
+            case_repo.fail_case(case_id, "File upload failed")
 
         return upload_success
 
@@ -537,32 +399,9 @@ class MQIApplication:
         self.logger.info(f"Dispatching workers for case {case_id}: {num_allocated} beams with GPU, {len(pending_jobs)} pending")
 
         for job in allocated_jobs:
-            self._submit_beam_worker(executor, job["beam_id"], job["beam_path"], active_futures)
+            submit_beam_worker(executor, job["beam_id"], job["beam_path"],
+                             self.settings, active_futures, self.logger)
 
-    def _monitor_completed_workers(self, active_futures: Dict, pending_beams_by_case: Dict, executor: ProcessPoolExecutor) -> None:
-        """Monitors and handles completed worker futures.
-
-        Args:
-            active_futures (Dict): Dictionary tracking active worker futures.
-            pending_beams_by_case (Dict): Dictionary tracking pending beams by case_id.
-            executor (ProcessPoolExecutor): The executor for dispatching workers.
-        """
-        completed_futures = []
-        for future in as_completed(active_futures.keys(), timeout=0.1):
-            completed_futures.append(future)
-
-        for future in completed_futures:
-            beam_id = active_futures.pop(future)
-            try:
-                future.result()  # Raise exception if worker failed
-                self.logger.info(f"Beam worker {beam_id} completed successfully")
-
-                # Check if there are pending beams waiting for GPUs
-                if pending_beams_by_case:
-                    self._try_allocate_pending_beams(pending_beams_by_case, executor, active_futures)
-
-            except Exception as e:
-                self.logger.error(f"Beam worker {beam_id} failed", {"error": str(e)})
 
     def _process_new_case(self, case_data: dict, executor: ProcessPoolExecutor,
                          active_futures: Dict, pending_beams_by_case: Dict) -> None:
@@ -606,81 +445,6 @@ class MQIApplication:
             self._dispatch_workers(case_id, case_path, beam_jobs, gpu_assignments,
                                   case_repo, executor, active_futures, pending_beams_by_case)
 
-    def _try_allocate_pending_beams(self, pending_beams_by_case: Dict, executor, active_futures: Dict) -> None:
-        """Attempts to allocate GPUs for pending beams and dispatch workers.
-
-        Args:
-            pending_beams_by_case (Dict): Dictionary tracking pending beams by case_id.
-            executor: The ProcessPoolExecutor for dispatching workers.
-            active_futures (Dict): Dictionary tracking active worker futures.
-        """
-        cases_to_remove = []
-
-        for case_id, pending_data in list(pending_beams_by_case.items()):
-            pending_jobs = pending_data["pending_jobs"]
-            case_path = pending_data["case_path"]
-
-            if not pending_jobs:
-                cases_to_remove.append(case_id)
-                continue
-
-            # Try to allocate GPUs for pending beams
-            new_gpu_assignments = allocate_gpus_for_pending_beams(
-                case_id=case_id,
-                num_pending_beams=len(pending_jobs),
-                settings=self.settings
-            )
-
-            if new_gpu_assignments is None:
-                self.logger.error(f"Error allocating GPUs for pending beams of case {case_id}")
-                continue
-
-            if not new_gpu_assignments:
-                # No GPUs available yet, keep waiting
-                continue
-
-            # Update TPS file with new GPU assignments
-            from src.core.tps_generator import TpsGenerator
-            tps_generator = TpsGenerator(self.settings, self.logger)
-
-            # We need to append to existing TPS file or regenerate it
-            # For now, regenerate the TPS file with the new assignments
-            num_allocated = len(new_gpu_assignments)
-            jobs_to_dispatch = pending_jobs[:num_allocated]
-            remaining_jobs = pending_jobs[num_allocated:]
-
-            # Update TPS file with additional GPU assignments
-            # Note: This is a simplified approach - in production, you might want to append to existing TPS
-            success = tps_generator.generate_tps_file_with_gpu_assignments(
-                case_path=case_path,
-                case_id=case_id,
-                gpu_assignments=new_gpu_assignments,
-                execution_mode="remote"
-            )
-
-            if not success:
-                self.logger.error(f"Failed to update TPS file for pending beams of case {case_id}")
-                continue
-
-            self.logger.info(f"Allocated {num_allocated} additional GPUs for case {case_id}, dispatching workers")
-
-            # Dispatch workers for newly allocated beams
-            for job in jobs_to_dispatch:
-                beam_id = job["beam_id"]
-                beam_path = job["beam_path"]
-                self._submit_beam_worker(executor, beam_id, beam_path, active_futures)
-
-            # Update pending jobs list
-            if remaining_jobs:
-                pending_beams_by_case[case_id]["pending_jobs"] = remaining_jobs
-            else:
-                cases_to_remove.append(case_id)
-
-        # Clean up completed cases
-        for case_id in cases_to_remove:
-            del pending_beams_by_case[case_id]
-            self.logger.info(f"All beams for case {case_id} have been allocated")
-
     def run_worker_loop(self) -> None:
         """The main loop for processing cases from the queue.
         Manages a process pool to handle cases concurrently.
@@ -703,7 +467,8 @@ class MQIApplication:
                         self.logger.error(f"Error processing case from queue", {"error": str(e)})
 
                     # Monitor completed workers
-                    self._monitor_completed_workers(active_futures, pending_beams_by_case, executor)
+                    monitor_completed_workers(active_futures, pending_beams_by_case,
+                                            executor, self.settings, self.logger)
 
                 except KeyboardInterrupt:
                     self.logger.info("Received shutdown signal")
