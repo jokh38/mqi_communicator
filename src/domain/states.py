@@ -174,8 +174,41 @@ class HpcExecutionState(WorkflowState):
                             {"beam_id": context.id})
         handler = self._injected_handler or context.execution_handler
 
-        # In tests, submit_simulation_job and wait_for_job_completion are called on the handler
-        submission = handler.submit_simulation_job()
+        # Get beam info to construct TPS file path
+        beam = context.case_repo.get_beam(context.id)
+        if not beam:
+            raise ProcessingError(f"Could not retrieve beam data for beam_id: {context.id}")
+
+        # Determine handler name based on execution mode
+        handler_name = "HpcJobSubmitter" if context.execution_handler.mode == "remote" else "CsvInterpreter"
+
+        # Get TPS input file path from settings
+        tps_input_file = context.settings.get_path(
+            "tps_input_file",
+            handler_name=handler_name,
+            case_id=beam.parent_case_id,
+            beam_id=context.id
+        )
+
+        # Get mqi_run_dir and remote_log_path for command template
+        mqi_run_dir = context.settings.get_path("mqi_run_dir", handler_name=handler_name)
+        remote_log_path = context.settings.get_path(
+            "remote_log_path",
+            handler_name=handler_name,
+            case_id=beam.parent_case_id,
+            beam_id=context.id
+        )
+
+        # Submit simulation job with all required context
+        submission = handler.submit_simulation_job(
+            handler_name=handler_name,
+            command_key="remote_submit_simulation",
+            tps_input_file=tps_input_file,
+            mqi_run_dir=mqi_run_dir,
+            remote_log_path=remote_log_path,
+            case_id=beam.parent_case_id,
+            beam_id=context.id
+        )
         if not getattr(submission, "success", False):
             raise ProcessingError(f"Failed to submit HPC simulation: {getattr(submission, 'error', 'unknown error')}")
 
