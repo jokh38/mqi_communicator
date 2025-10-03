@@ -120,7 +120,7 @@ def run_case_level_csv_interpreting(case_id: str, case_path: Path,
             csv_output_dir = Path(csv_output_dir_str)
 
             # Get paths from settings
-            python_path = settings.get_executable_path("python", handler_name="CsvInterpreter")
+            python_path = settings.get_executable("python", handler_name="CsvInterpreter")
             mqi_interpreter_dir = settings.get_path("mqi_interpreter_dir", handler_name="CsvInterpreter")
 
             # Build command: cd to interpreter dir and run main_cli.py with relative path
