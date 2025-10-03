@@ -158,10 +158,10 @@ moqui_tps_parameters:
   TotalThreads: -1
   MaxHistoriesPerBatch: 10000000
   Verbosity: 0
-  ParentDir: "../data/Outputs_csv/{case_id}""
+  ParentDir: "../data/Outputs_csv/{case_id}"
   DicomDir: "rtplan"
   logFilePath: "log"
-  OutputDir: "../data/Dose_raw/{case_id}""
+  OutputDir: "../data/Dose_raw/{case_id}"
   GantryNum: 0
   UsingPhantomGeo: true
   TwoCentimeterMode: true
