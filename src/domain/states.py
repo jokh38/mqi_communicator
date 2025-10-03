@@ -179,8 +179,8 @@ class HpcExecutionState(WorkflowState):
         if not beam:
             raise ProcessingError(f"Could not retrieve beam data for beam_id: {context.id}")
 
-        # Determine handler name based on execution mode
-        handler_name = "HpcJobSubmitter" if context.execution_handler.mode == "remote" else "CsvInterpreter"
+        # Use HpcJobSubmitter for path resolution in both local and remote modes
+        handler_name = "HpcJobSubmitter"
 
         # Get TPS input file path from settings
         tps_input_file = context.settings.get_path(
