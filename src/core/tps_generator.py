@@ -232,7 +232,7 @@ class TpsGenerator:
         else:
             # Use local paths for local execution with relative paths from tps_env directory
             # Find DICOM subdirectory by looking for RT Plan file
-            from src.validators.data_integrity_validator import DataIntegrityValidator
+            from src.core.data_integrity_validator import DataIntegrityValidator
             validator = DataIntegrityValidator(self.logger)
             rtplan_path = validator.find_rtplan_file(case_path)
             if rtplan_path:
