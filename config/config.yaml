@@ -154,7 +154,7 @@ tps_generator:
 moqui_tps_parameters:
   GPUID: 0
   RandomSeed: -1932780356
-  UseAbsolutePath: false
+  UseAbsolutePath: true
   TotalThreads: -1
   MaxHistoriesPerBatch: 10000000
   Verbosity: 0

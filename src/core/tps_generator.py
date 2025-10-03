@@ -230,23 +230,26 @@ class TpsGenerator:
             paths.setdefault("logFilePath", f"{base_dir}/Dose_raw/{case_id}/simulation.log")
             paths.setdefault("ParentDir", str(csv_output_dir))
         else:
-            # Use local paths for local execution with relative paths from tps_env directory
+            # Use local paths for local execution with absolute paths
+            # Get base directory from config
+            base_dir = self.settings._yaml_config.get("paths", {}).get("base_directory", "/home/jokh38/MOQUI_SMC")
+
             # Find DICOM subdirectory by looking for RT Plan file
             from src.core.data_integrity_validator import DataIntegrityValidator
             validator = DataIntegrityValidator(self.logger)
             rtplan_path = validator.find_rtplan_file(case_path)
             if rtplan_path:
-                dicom_subdir = "/" + rtplan_path.parent.name  # e.g., "/1.2.840.113854.19.1.19556.1"
+                # Use full absolute path to DICOM directory
+                dicom_dir = str(rtplan_path.parent)
             else:
-                # Fallback: assume first subdirectory is DICOM dir
-                subdirs = [d for d in case_path.iterdir() if d.is_dir()]
-                dicom_subdir = "/" + subdirs[0].name if subdirs else "/DICOM"
+                # Fallback: use case_path directly
+                dicom_dir = str(case_path)
 
-            # All paths are relative to tps_env directory
-            paths.setdefault("ParentDir", f"../data/SHI_log/{case_id}")
-            paths.setdefault("DicomDir", dicom_subdir)
-            paths.setdefault("OutputDir", f"../data/Dose_raw/{case_id}")
-            paths.setdefault("logFilePath", f"/data/Outputs_csv/{case_id}")
+            # All paths use absolute paths
+            paths.setdefault("ParentDir", f"{base_dir}/data/SHI_log/{case_id}")
+            paths.setdefault("DicomDir", dicom_dir)
+            paths.setdefault("OutputDir", f"{base_dir}/data/Dose_raw/{case_id}")
+            paths.setdefault("logFilePath", f"{base_dir}/data/Outputs_csv/{case_id}/simulation.log")
 
         return paths
 
