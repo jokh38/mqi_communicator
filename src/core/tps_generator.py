@@ -206,7 +206,7 @@ class TpsGenerator:
         case_id: str,
         execution_mode: str
     ) -> Dict[str, Any]:
-        """Generate dynamic file paths by formatting config templates with runtime data.
+        """Generate format context for config template substitution.
 
         Args:
             case_path (Path): Path to the case directory.
@@ -214,28 +214,16 @@ class TpsGenerator:
             execution_mode (str): "local" or "remote" execution mode.
 
         Returns:
-            Dict[str, Any]: Dictionary containing resolved path parameters.
+            Dict[str, Any]: Dictionary containing format context for templates.
         """
-        # Find RT Plan directory to get actual DICOM location
-        from src.core.data_integrity_validator import DataIntegrityValidator
-        validator = DataIntegrityValidator(self.logger)
-        rtplan_path = validator.find_rtplan_file(case_path)
-
-        if rtplan_path:
-            rtplan_dir = str(rtplan_path.parent)
-        else:
-            # Fallback: use case_path
-            rtplan_dir = str(case_path)
-            self.logger.warning(f"RT Plan not found for case {case_id}, using case_path as rtplan_dir")
-
         # Get base_directory from config
         base_dir = self.settings._yaml_config.get("paths", {}).get("base_directory", "/home/jokh38/MOQUI_SMC")
 
-        # Return format context - paths will be formatted from config templates
+        # Return format context - all paths defined in config.yaml
+        # DICOM files are copied to {base_directory}/data/Outputs_csv/{case_id}/rtplan by dispatcher
         return {
             "base_directory": base_dir,
-            "case_id": case_id,
-            "rtplan_dir": rtplan_dir
+            "case_id": case_id
         }
 
     def _extract_case_data(self, case_path: Path, case_id: str) -> Dict[str, Any]:

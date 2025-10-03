@@ -146,6 +146,29 @@ def run_case_level_csv_interpreting(case_id: str, case_path: Path,
                     f"No CSV files found in the output directory {csv_output_dir} "
                     f"after case-level CSV interpreting.")
 
+            # Copy DICOM files to rtplan directory for TPS execution
+            from src.core.data_integrity_validator import DataIntegrityValidator
+            import shutil
+            validator = DataIntegrityValidator(logger)
+            rtplan_path = validator.find_rtplan_file(case_path)
+
+            if rtplan_path:
+                source_dicom_dir = rtplan_path.parent
+                rtplan_target_dir = csv_output_dir / "rtplan"
+                rtplan_target_dir.mkdir(parents=True, exist_ok=True)
+
+                # Copy all DICOM files from source to target
+                for dicom_file in source_dicom_dir.glob("*"):
+                    if dicom_file.is_file():
+                        shutil.copy2(dicom_file, rtplan_target_dir / dicom_file.name)
+
+                logger.info(f"Copied DICOM files to rtplan directory", {
+                    "source": str(source_dicom_dir),
+                    "target": str(rtplan_target_dir)
+                })
+            else:
+                logger.warning(f"No RT Plan file found for case {case_id}, skipping DICOM copy")
+
             case_repo.mark_interpreter_completed(case_id)
             case_repo.update_case_status(
                 case_id=case_id,
