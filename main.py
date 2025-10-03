@@ -124,7 +124,7 @@ class MQIApplication:
         """
         try:
             with get_db_session(self.settings, self.logger) as case_repo:
-                case_repo._db_connection.init_db()
+                case_repo.db.init_db()
             self.logger.info("Database initialized successfully",
                            {"path": str(self.settings.get_database_path())})
         except Exception as e:

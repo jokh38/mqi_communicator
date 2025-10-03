@@ -275,8 +275,8 @@ def run_case_level_tps_generation(
         logger.info(f"Starting case-level TPS generation for case: {case_id}")
 
         with get_db_session(settings, logger, handler_name=handler_name) as case_repo:
-            case_repo._db_connection.init_db()
-            gpu_repo = GpuRepository(case_repo._db_connection, logger, settings)
+            case_repo.db.init_db()
+            gpu_repo = GpuRepository(case_repo.db, logger, settings)
 
             case_repo.record_workflow_step(
                 case_id=case_id,
@@ -388,7 +388,7 @@ def run_case_level_tps_generation(
         )
         try:
             with get_db_session(settings, logger, handler_name=handler_name) as case_repo:
-                gpu_repo = GpuRepository(case_repo._db_connection, logger, settings)
+                gpu_repo = GpuRepository(case_repo.db, logger, settings)
                 gpu_repo.release_all_for_case(case_id)
         except Exception as cleanup_error:
             logger.error("Failed to cleanup GPU allocations", {"error": str(cleanup_error)})

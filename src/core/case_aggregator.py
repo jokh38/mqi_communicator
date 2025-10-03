@@ -188,7 +188,7 @@ def allocate_gpus_for_pending_beams(
 
     try:
         with get_db_session(settings, logger, handler_name=handler_name) as case_repo:
-            gpu_repo = GpuRepository(case_repo._db_connection, logger, settings)
+            gpu_repo = GpuRepository(case_repo.db, logger, settings)
 
             available_gpu_count = gpu_repo.get_available_gpu_count()
             gpus_to_allocate = min(num_pending_beams, available_gpu_count)

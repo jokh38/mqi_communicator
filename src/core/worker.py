@@ -41,8 +41,8 @@ def worker_main(beam_id: str, beam_path: Path, settings: Settings) -> None:
 
         with get_db_session(settings, logger) as case_repo:
             # Initialize database schema
-            case_repo._db_connection.init_db()
-            gpu_repo = GpuRepository(case_repo._db_connection, logger, settings)
+            case_repo.db.init_db()
+            gpu_repo = GpuRepository(case_repo.db, logger, settings)
 
             # Create ExecutionHandler based on settings
             workflow_mode = settings.execution_handler.get("Workflow", "local")
