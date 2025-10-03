@@ -341,13 +341,15 @@ def run_case_level_tps_generation(
             tps_generator = TpsGenerator(settings, logger)
 
             # Generate a separate TPS file for each beam with its own GPU assignment
+            # Use actual HpcJobSubmitter mode for execution_mode
+            execution_mode = settings.get_handler_mode("HpcJobSubmitter")
             for i, (gpu_assignment, beam) in enumerate(zip(gpu_assignments, beams[:len(gpu_assignments)])):
                 beam_gpu_assignment = [gpu_assignment]  # Single GPU for this beam
                 success = tps_generator.generate_tps_file_with_gpu_assignments(
                     case_path=case_path,
                     case_id=case_id,
                     gpu_assignments=beam_gpu_assignment,
-                    execution_mode="remote",
+                    execution_mode=execution_mode,
                     output_dir=tps_output_dir,
                     beam_name=beam.beam_id
                 )

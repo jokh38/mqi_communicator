@@ -222,11 +222,13 @@ def try_allocate_pending_beams(pending_beams_by_case: Dict, executor: ProcessPoo
                     continue
 
                 beam_gpu_assignment = [gpu_assignment]  # Single GPU for this beam
+                # Use actual HpcJobSubmitter mode for execution_mode
+                execution_mode = settings.get_handler_mode("HpcJobSubmitter")
                 success = tps_generator.generate_tps_file_with_gpu_assignments(
                     case_path=case_path,
                     case_id=case_id,
                     gpu_assignments=beam_gpu_assignment,
-                    execution_mode="remote",
+                    execution_mode=execution_mode,
                     output_dir=tps_output_dir,
                     beam_name=beam_data.beam_id
                 )
