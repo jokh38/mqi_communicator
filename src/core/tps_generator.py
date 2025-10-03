@@ -250,18 +250,15 @@ class TpsGenerator:
             paths.setdefault("logFilePath", f"{base_dir}/Dose_raw/{case_id}/simulation.log")
             paths.setdefault("ParentDir", str(csv_output_dir))
         else:
-            # Use local paths for local execution
-            # Get csv_output_dir from settings
-            csv_output_base = self.settings.get_path("csv_output_dir", handler_name="CsvInterpreter")
-            csv_output_dir = Path(csv_output_base) / case_id
+            # Use local paths for local execution with relative paths from tps_env directory
+            # Extract the DICOM subdirectory name (last part of case_path)
+            dicom_subdir = "/" + case_path.name  # e.g., "/1.2.840.113854.19.1.19556.1"
 
-            # Use settings-based paths for simulation output
-            simulation_output_dir = self.settings.get_path("simulation_output_dir", handler_name="HpcJobSubmitter", case_id=case_id)
-
-            paths.setdefault("DicomDir", str(case_path))
-            paths.setdefault("OutputDir", simulation_output_dir)
-            paths.setdefault("logFilePath", f"{simulation_output_dir}/simulation.log")
-            paths.setdefault("ParentDir", str(csv_output_dir))
+            # All paths are relative to tps_env directory
+            paths.setdefault("ParentDir", f"../data/SHI_log/{case_id}")
+            paths.setdefault("DicomDir", dicom_subdir)
+            paths.setdefault("OutputDir", f"../data/Dose_raw/{case_id}")
+            paths.setdefault("logFilePath", f"../data/Outputs_csv/{case_id}")
 
         return paths
 
