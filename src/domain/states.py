@@ -97,15 +97,23 @@ class InitialState(WorkflowState):
             raise ProcessingError(
                 f"Beam path is not a valid directory: {context.path}")
 
-        case_path = context.path.parent
-        tps_file = case_path / "moqui_tps.in"
+        # Get beam info to find TPS file
+        beam = context.case_repo.get_beam(context.id)
+        if not beam:
+            raise ProcessingError(f"Could not retrieve beam data for beam_id: {context.id}")
+
+        # TPS files are stored in csv_output_dir/case_id/moqui_tps_{beam_id}.in
+        csv_output_base = context.settings.get_path("csv_output_dir", handler_name="CsvInterpreter")
+        tps_output_dir = Path(csv_output_base) / beam.parent_case_id
+        tps_file = tps_output_dir / f"moqui_tps_{context.id}.in"
+
         if not tps_file.exists():
             raise ProcessingError(
-                f"moqui_tps.in not found at case level: {tps_file}.")
+                f"moqui_tps.in not found for beam {context.id}: {tps_file}.")
 
         context.shared_context["tps_file_path"] = tps_file
         context.logger.info("Initial validation completed successfully",
-                            {"beam_id": context.id})
+                            {"beam_id": context.id, "tps_file": str(tps_file)})
         return FileUploadState()
 
     def get_state_name(self) -> str:
