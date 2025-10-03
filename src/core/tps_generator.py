@@ -112,10 +112,17 @@ class TpsGenerator:
             # Start with base parameters from config
             parameters = self.base_parameters.copy()
 
-            # Generate dynamic paths based on execution mode
-            dynamic_paths = self._generate_dynamic_paths(
+            # Get format context (base_directory, case_id, rtplan_dir)
+            format_context = self._generate_dynamic_paths(
                 case_path, case_id, execution_mode)
-            parameters.update(dynamic_paths)
+
+            # Format path templates in base_parameters with runtime data
+            for key, value in parameters.items():
+                if isinstance(value, str) and "{" in value:
+                    try:
+                        parameters[key] = value.format(**format_context)
+                    except KeyError as e:
+                        self.logger.warning(f"Could not format parameter '{key}': missing {e}")
 
             # Extract case-specific data (gantry number and beam count)
             try:
@@ -199,10 +206,7 @@ class TpsGenerator:
         case_id: str,
         execution_mode: str
     ) -> Dict[str, Any]:
-        """Generate dynamic file paths based on execution mode.
-
-        Prioritizes paths from tps_generator configuration over hardcoded logic.
-        Falls back to original logic if configuration paths are not available.
+        """Generate dynamic file paths by formatting config templates with runtime data.
 
         Args:
             case_path (Path): Path to the case directory.
@@ -210,48 +214,29 @@ class TpsGenerator:
             execution_mode (str): "local" or "remote" execution mode.
 
         Returns:
-            Dict[str, Any]: Dictionary containing dynamic path parameters.
+            Dict[str, Any]: Dictionary containing resolved path parameters.
         """
-        paths = {}
+        # Find RT Plan directory to get actual DICOM location
+        from src.core.data_integrity_validator import DataIntegrityValidator
+        validator = DataIntegrityValidator(self.logger)
+        rtplan_path = validator.find_rtplan_file(case_path)
 
-        # Apply path generation logic based on execution mode
-        if execution_mode == "remote":
-            # Use HPC paths from config for remote execution
-            hpc_paths = self.settings.get_hpc_paths()
-            # Get base_directory from config
-            base_dir = hpc_paths.get('base_dir', self.settings._yaml_config.get("paths", {}).get("base_directory", "/home/jokh38/MOQUI_SMC"))
-
-            # Get csv_output_dir from settings (consistent with local mode)
-            csv_output_base = self.settings.get_path("csv_output_dir", handler_name="CsvInterpreter")
-            csv_output_dir = Path(csv_output_base) / case_id
-
-            paths.setdefault("DicomDir", str(case_path))
-            paths.setdefault("OutputDir", f"{base_dir}/Dose_raw/{case_id}")
-            paths.setdefault("logFilePath", f"{base_dir}/Dose_raw/{case_id}/simulation.log")
-            paths.setdefault("ParentDir", str(csv_output_dir))
+        if rtplan_path:
+            rtplan_dir = str(rtplan_path.parent)
         else:
-            # Use local paths for local execution with absolute paths
-            # Get base directory from config
-            base_dir = self.settings._yaml_config.get("paths", {}).get("base_directory", "/home/jokh38/MOQUI_SMC")
+            # Fallback: use case_path
+            rtplan_dir = str(case_path)
+            self.logger.warning(f"RT Plan not found for case {case_id}, using case_path as rtplan_dir")
 
-            # Find DICOM subdirectory by looking for RT Plan file
-            from src.core.data_integrity_validator import DataIntegrityValidator
-            validator = DataIntegrityValidator(self.logger)
-            rtplan_path = validator.find_rtplan_file(case_path)
-            if rtplan_path:
-                # Use full absolute path to DICOM directory
-                dicom_dir = str(rtplan_path.parent)
-            else:
-                # Fallback: use case_path directly
-                dicom_dir = str(case_path)
+        # Get base_directory from config
+        base_dir = self.settings._yaml_config.get("paths", {}).get("base_directory", "/home/jokh38/MOQUI_SMC")
 
-            # All paths use absolute paths
-            paths.setdefault("ParentDir", f"{base_dir}/data/SHI_log/{case_id}")
-            paths.setdefault("DicomDir", dicom_dir)
-            paths.setdefault("OutputDir", f"{base_dir}/data/Dose_raw/{case_id}")
-            paths.setdefault("logFilePath", f"{base_dir}/data/Outputs_csv/{case_id}/simulation.log")
-
-        return paths
+        # Return format context - paths will be formatted from config templates
+        return {
+            "base_directory": base_dir,
+            "case_id": case_id,
+            "rtplan_dir": rtplan_dir
+        }
 
     def _extract_case_data(self, case_path: Path, case_id: str) -> Dict[str, Any]:
         """Extract case-specific data from DICOM files or other sources.

@@ -158,9 +158,10 @@ moqui_tps_parameters:
   TotalThreads: -1
   MaxHistoriesPerBatch: 10000000
   Verbosity: 0
-  ParentDir: ""
-  DicomDir: ""
-  logFilePath: ""
+  ParentDir: "{base_directory}/data/SHI_log/{case_id}"
+  DicomDir: "{rtplan_dir}"
+  logFilePath: "{base_directory}/data/Outputs_csv/{case_id}/simulation.log"
+  OutputDir: "{base_directory}/data/Dose_raw/{case_id}"
   GantryNum: 0
   UsingPhantomGeo: true
   TwoCentimeterMode: true
@@ -182,6 +183,5 @@ moqui_tps_parameters:
   BeamNumbers: 1
   ParticlesPerHistory: 0.1
   ScoreToCTGrid: true
-  OutputDir: ""
   OutputFormat: raw
   OverwriteResults: true
