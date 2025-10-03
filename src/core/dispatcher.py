@@ -113,20 +113,24 @@ def run_case_level_csv_interpreting(case_id: str, case_path: Path,
                 progress=10.0
             )
 
-            # Build command using config template
-            case_dirs = settings.get_case_directories()
-            csv_output_template = case_dirs.get("csv_output", "/tmp/csv_output/{case_id}")
-            csv_output_dir_str = csv_output_template.format(case_id=case_id)
-            csv_output_dir = Path(csv_output_dir_str)
+            # Get CSV output directory from settings
+            csv_output_base = settings.get_path("csv_output_dir", handler_name="CsvInterpreter")
+            csv_output_dir = Path(csv_output_base) / case_id
 
             # Get paths from settings
             python_path = settings.get_executable("python", handler_name="CsvInterpreter")
             mqi_interpreter_dir = settings.get_path("mqi_interpreter_dir", handler_name="CsvInterpreter")
 
             # Build command: cd to interpreter dir and run main_cli.py with relative path
-            command = f"cd {mqi_interpreter_dir} && {python_path} main_cli.py --logdir {case_path} --outputdir {csv_output_dir_str}"
+            command = f"cd {mqi_interpreter_dir} && {python_path} main_cli.py --logdir {case_path} --outputdir {csv_output_dir}"
 
             result = execution_handler.execute_command(command, cwd=case_path)
+
+            # Log command output
+            if result.output:
+                logger.info(f"CSV interpreter output for {case_id}", {"output": result.output})
+            if result.error:
+                logger.warning(f"CSV interpreter stderr for {case_id}", {"stderr": result.error})
 
             if not result.success:
                 error_message = (
