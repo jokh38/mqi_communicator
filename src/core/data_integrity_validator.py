@@ -281,8 +281,9 @@ class DataIntegrityValidator:
 
             # Try to extract gantry number
             try:
-                gantry_number = self.extract_gantry_number_from_rtplan(case_path)
+                gantry_number, rtplan_dir = self.extract_gantry_number_from_rtplan(case_path)
                 beam_info["gantry_number"] = gantry_number
+                beam_info["rtplan_dir"] = str(rtplan_dir)
             except ProcessingError as e:
                 beam_info["gantry_error"] = str(e)
                 self.logger.warning(f"Could not extract gantry number: {e}")
@@ -344,12 +345,12 @@ class DataIntegrityValidator:
         )
         return gantry_number
 
-    def extract_gantry_number_from_rtplan(self, case_path: Path) -> int:
+    def extract_gantry_number_from_rtplan(self, case_path: Path) -> tuple[int, Path]:
         """
         Extract and validate gantry number from RT Plan file.
 
         Returns:
-            int: Gantry number from first treatment beam
+            tuple[int, Path]: Gantry number from first treatment beam and RT Plan file directory path
 
         Raises:
             ProcessingError: If validation fails (multiple gantries,
@@ -439,12 +440,13 @@ class DataIntegrityValidator:
                     f"{sorted(gantry_numbers)}"
                 )
 
-            # Return the single gantry number
+            # Return the single gantry number and RT Plan directory
             gantry_number = list(gantry_numbers)[0]
+            rtplan_dir = rtplan_path.parent
             self.logger.info(
-                f"Successfully extracted gantry number {gantry_number} from RT Plan"
+                f"Successfully extracted gantry number {gantry_number} from RT Plan at {rtplan_dir}"
             )
-            return gantry_number
+            return gantry_number, rtplan_dir
 
         except ProcessingError:
             # Re-raise ProcessingError as-is

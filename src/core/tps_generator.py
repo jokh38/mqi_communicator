@@ -281,14 +281,15 @@ class TpsGenerator:
             beam_info = validator.get_beam_information(case_path)
             beam_count = beam_info.get("beam_count", 0)
 
-            # Extract gantry number from DICOM (NEW)
+            # Extract gantry number and RT Plan directory from DICOM (NEW)
             try:
-                gantry_number = validator.extract_gantry_number_from_rtplan(
+                gantry_number, rtplan_dir = validator.extract_gantry_number_from_rtplan(
                     case_path
                 )
                 case_data["GantryNum"] = gantry_number
+                case_data["DicomDir"] = str(rtplan_dir)
                 self.logger.info(
-                    f"Extracted gantry number {gantry_number} from DICOM RT Plan"
+                    f"Extracted gantry number {gantry_number} from DICOM RT Plan at {rtplan_dir}"
                 )
             except ProcessingError as e:
                 self.logger.error(
