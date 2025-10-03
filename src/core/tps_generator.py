@@ -214,27 +214,7 @@ class TpsGenerator:
         """
         paths = {}
 
-        # Check for configured paths first (prioritize configuration)
-        if execution_mode == "local" and self.resolved_paths:
-            # Map configuration keys to moqui_tps.in parameter names
-            if "outputs_dir" in self.resolved_paths:
-                # OutputDir from configuration - format with case_id
-                output_dir = self.resolved_paths["outputs_dir"]
-                # If the path contains {case_id}, replace it
-                if "{case_id}" in output_dir:
-                    paths["OutputDir"] = output_dir.format(case_id=case_id)
-                else:
-                    paths["OutputDir"] = output_dir
-
-            if "interpreter_outputs_dir" in self.resolved_paths:
-                # ParentDir from configuration - format with case_id
-                parent_dir = self.resolved_paths["interpreter_outputs_dir"]
-                if "{case_id}" in parent_dir:
-                    paths["ParentDir"] = parent_dir.format(case_id=case_id)
-                else:
-                    paths["ParentDir"] = parent_dir
-
-        # Apply fallback logic for missing paths
+        # Apply path generation logic based on execution mode
         if execution_mode == "remote":
             # Use HPC paths from config for remote execution
             hpc_paths = self.settings.get_hpc_paths()
