@@ -246,7 +246,7 @@ class TpsGenerator:
             paths.setdefault("ParentDir", f"../data/SHI_log/{case_id}")
             paths.setdefault("DicomDir", dicom_subdir)
             paths.setdefault("OutputDir", f"../data/Dose_raw/{case_id}")
-            paths.setdefault("logFilePath", f"../data/Outputs_csv/{case_id}")
+            paths.setdefault("logFilePath", f"/data/Outputs_csv/{case_id}")
 
         return paths
 
