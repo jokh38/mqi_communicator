@@ -231,8 +231,16 @@ class TpsGenerator:
             paths.setdefault("ParentDir", str(csv_output_dir))
         else:
             # Use local paths for local execution with relative paths from tps_env directory
-            # Extract the DICOM subdirectory name (last part of case_path)
-            dicom_subdir = "/" + case_path.name  # e.g., "/1.2.840.113854.19.1.19556.1"
+            # Find DICOM subdirectory by looking for RT Plan file
+            from src.validators.data_integrity_validator import DataIntegrityValidator
+            validator = DataIntegrityValidator(self.logger)
+            rtplan_path = validator.find_rtplan_file(case_path)
+            if rtplan_path:
+                dicom_subdir = "/" + rtplan_path.parent.name  # e.g., "/1.2.840.113854.19.1.19556.1"
+            else:
+                # Fallback: assume first subdirectory is DICOM dir
+                subdirs = [d for d in case_path.iterdir() if d.is_dir()]
+                dicom_subdir = "/" + subdirs[0].name if subdirs else "/DICOM"
 
             # All paths are relative to tps_env directory
             paths.setdefault("ParentDir", f"../data/SHI_log/{case_id}")
