@@ -238,7 +238,8 @@ class TpsGenerator:
         if execution_mode == "remote":
             # Use HPC paths from config for remote execution
             hpc_paths = self.settings.get_hpc_paths()
-            base_dir = hpc_paths.get('base_dir', self.settings.get_base_directory())
+            # Get base_directory from config
+            base_dir = hpc_paths.get('base_dir', self.settings._yaml_config.get("paths", {}).get("base_directory", "/home/jokh38/MOQUI_SMC"))
 
             # Get csv_output_dir from settings (consistent with local mode)
             csv_output_base = self.settings.get_path("csv_output_dir", handler_name="CsvInterpreter")
@@ -250,8 +251,6 @@ class TpsGenerator:
             paths.setdefault("ParentDir", str(csv_output_dir))
         else:
             # Use local paths for local execution
-            base_dir = self.settings.get_base_directory()
-
             # Get csv_output_dir from settings
             csv_output_base = self.settings.get_path("csv_output_dir", handler_name="CsvInterpreter")
             csv_output_dir = Path(csv_output_base) / case_id
