@@ -66,8 +66,12 @@ def update_case_status_from_beams(case_id: str, case_repo: CaseRepository, logge
             {"case_id": case_id, "total_beams": total_beams})
         case_repo.update_case_status(case_id, CaseStatus.COMPLETED)
     else:
-        progress = (completed_beams / total_beams) * 100
+        try:
+            progress = sum(max(0.0, min(100.0, getattr(b, "progress", 0.0))) for b in beams) / total_beams
+        except Exception:
+            progress = (completed_beams / total_beams) * 100
         case_repo.update_case_status(case_id, CaseStatus.PROCESSING, progress=progress)
+
 
 
 def ensure_logger(name: str, settings) -> StructuredLogger:

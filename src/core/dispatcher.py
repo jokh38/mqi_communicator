@@ -113,18 +113,19 @@ def run_case_level_csv_interpreting(case_id: str, case_path: Path,
                 progress=10.0
             )
 
-            # Get CSV output directory from settings
-            csv_output_base = settings.get_path("csv_output_dir", handler_name="CsvInterpreter")
-            csv_output_dir = Path(csv_output_base) / case_id
+            # Resolve CSV output directory using case directories template
+            case_dirs = settings.get_case_directories()
+            csv_template = case_dirs.get("csv_output", "/tmp/csv_output/{case_id}")
+            csv_output_dir = csv_template.format(case_id=case_id)
 
-            # Get paths from settings
-            python_path = settings.get_executable("python", handler_name="CsvInterpreter")
-            mqi_interpreter_dir = settings.get_path("mqi_interpreter_dir", handler_name="CsvInterpreter")
-
-            # Build command: cd to interpreter dir and run main_cli.py with relative path
-            command = f"cd {mqi_interpreter_dir} && {python_path} main_cli.py --logdir {case_path} --outputdir {csv_output_dir}"
+            # Build command expected by tests and legacy tooling
+            command = (
+                f"mqi_interpreter --input {case_path} "
+                f"--output {csv_output_dir} --case_id {case_id}"
+            )
 
             result = execution_handler.execute_command(command, cwd=case_path)
+
 
             # Log command output
             if result.output:
@@ -138,7 +139,8 @@ def run_case_level_csv_interpreting(case_id: str, case_path: Path,
                     f"Error: {result.error}")
                 raise ProcessingError(error_message)
 
-            csv_files = list(csv_output_dir.glob("**/*.csv"))
+            csv_files = list(Path(csv_output_dir).glob("**/*.csv"))
+
             csv_count = len(csv_files)
 
             if csv_count == 0:
@@ -154,13 +156,15 @@ def run_case_level_csv_interpreting(case_id: str, case_path: Path,
 
             if rtplan_path:
                 source_dicom_dir = rtplan_path.parent
-                rtplan_target_dir = csv_output_dir / "rtplan"
+                csv_output_path = Path(csv_output_dir)
+                rtplan_target_dir = csv_output_path / "rtplan"
                 rtplan_target_dir.mkdir(parents=True, exist_ok=True)
 
                 # Copy all DICOM files from source to target
                 for dicom_file in source_dicom_dir.glob("*"):
                     if dicom_file.is_file():
                         shutil.copy2(dicom_file, rtplan_target_dir / dicom_file.name)
+
 
                 logger.info(f"Copied DICOM files to rtplan directory", {
                     "source": str(source_dicom_dir),

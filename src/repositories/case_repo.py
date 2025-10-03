@@ -327,8 +327,8 @@ class CaseRepository(BaseRepository):
             beam_path=str(beam_path),
         )
         query = """
-            INSERT INTO beams (beam_id, parent_case_id, beam_path, status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            INSERT INTO beams (beam_id, parent_case_id, beam_path, status, progress, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         """
         self._execute_query(
             query,
@@ -337,9 +337,11 @@ class CaseRepository(BaseRepository):
                 parent_case_id,
                 str(beam_path),
                 BeamStatus.PENDING.value,
+                0.0,
             ),
         )
         self.logger.info("Beam record created successfully", {"beam_id": beam_id})
+
 
     def update_beam_status(
         self, beam_id: str, status: BeamStatus, error_message: Optional[str] = None
@@ -383,6 +385,19 @@ class CaseRepository(BaseRepository):
         if row:
             return self._map_row_to_beam_data(row)
         return None
+
+    def update_beam_progress(self, beam_id: str, progress: float) -> None:
+        """Updates the progress of a specific beam.
+
+        Args:
+            beam_id (str): The beam identifier.
+            progress (float): Progress percentage (0-100).
+        """
+        self._log_operation("update_beam_progress", beam_id=beam_id, progress=progress)
+        query = "UPDATE beams SET progress = ?, updated_at = CURRENT_TIMESTAMP WHERE beam_id = ?"
+        self._execute_query(query, (progress, beam_id))
+        self.logger.info("Beam progress updated", {"beam_id": beam_id, "progress": progress})
+
 
     def assign_hpc_job_id_to_beam(self, beam_id: str, hpc_job_id: str) -> None:
         """Assigns an HPC job ID to a specific beam.
@@ -478,6 +493,7 @@ class CaseRepository(BaseRepository):
                     case_id,
                     str(job["beam_path"]),
                     BeamStatus.PENDING.value,
+                    0.0,
                 )
                 for job in beam_jobs
             ]
@@ -485,12 +501,13 @@ class CaseRepository(BaseRepository):
             # Add beams, or do nothing if they already exist
             conn.executemany(
                 """
-                INSERT INTO beams (beam_id, parent_case_id, beam_path, status, created_at, updated_at)
-                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                INSERT INTO beams (beam_id, parent_case_id, beam_path, status, progress, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 ON CONFLICT(beam_id) DO NOTHING
                 """,
                 beam_records
             )
+
         self.logger.info("Case with beams created successfully", {"case_id": case_id, "num_beams": len(beam_jobs)})
 
     def update_beams_status_by_case_id(self, case_id: str, status) -> None:
@@ -554,7 +571,7 @@ class CaseRepository(BaseRepository):
 
             # Get beams for this case
             beam_query = """
-                SELECT beam_id, status, created_at, updated_at, hpc_job_id, error_message
+                SELECT beam_id, status, progress, created_at, updated_at, hpc_job_id, error_message
                 FROM beams
                 WHERE parent_case_id = ?
                 ORDER BY beam_id ASC
@@ -566,6 +583,7 @@ class CaseRepository(BaseRepository):
                 beams.append({
                     "beam_id": beam_row["beam_id"],
                     "status": BeamStatus(beam_row["status"]),
+                    "progress": beam_row["progress"],
                     "created_at": datetime.fromisoformat(beam_row["created_at"]),
                     "updated_at": (
                         datetime.fromisoformat(beam_row["updated_at"])
@@ -574,6 +592,7 @@ class CaseRepository(BaseRepository):
                     "hpc_job_id": beam_row["hpc_job_id"],
                     "error_message": beam_row["error_message"]
                 })
+
 
             results.append({
                 "case_data": self._map_row_to_case_data(case_row),
@@ -599,17 +618,18 @@ class CaseRepository(BaseRepository):
             case_id=row["case_id"],
             case_path=Path(row["case_path"]),
             status=CaseStatus(row["status"]),
-            progress=row["progress"],
+            progress=row["progress"] if "progress" in row.keys() else 0.0,
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=(
                 datetime.fromisoformat(row["updated_at"])
                 if row["updated_at"]
                 else None
             ),
-            error_message=row["error_message"],
-            assigned_gpu=row["assigned_gpu"],
-            interpreter_completed=bool(row["interpreter_completed"]),
+            error_message=row.get("error_message") if hasattr(row, "get") else row["error_message"],
+            assigned_gpu=row.get("assigned_gpu") if hasattr(row, "get") else row["assigned_gpu"],
+            interpreter_completed=bool(row["interpreter_completed"]) if "interpreter_completed" in row.keys() else False,
         )
+
 
     def _map_row_to_beam_data(self, row) -> BeamData:
         """Maps a database row to a BeamData DTO.
@@ -625,6 +645,7 @@ class CaseRepository(BaseRepository):
             parent_case_id=row["parent_case_id"],
             beam_path=Path(row["beam_path"]),
             status=BeamStatus(row["status"]),
+            progress=row["progress"] if "progress" in row.keys() else 0.0,
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=(
                 datetime.fromisoformat(row["updated_at"])
@@ -632,7 +653,9 @@ class CaseRepository(BaseRepository):
                 else None
             ),
             hpc_job_id=row["hpc_job_id"],
+            error_message=row.get("error_message") if hasattr(row, "get") else row["error_message"],
         )
+
 
     def fail_case(self, case_id: str, error_message: str) -> None:
         """Marks a case and all its beams as failed.

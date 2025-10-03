@@ -31,9 +31,12 @@ class BeamData:
     parent_case_id: str
     beam_path: Path
     status: BeamStatus
+    progress: float
     created_at: datetime
     updated_at: Optional[datetime] = None
     hpc_job_id: Optional[str] = None
+    error_message: Optional[str] = None
+
 
 @dataclass
 class GpuResource:

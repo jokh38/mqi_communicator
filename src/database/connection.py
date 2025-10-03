@@ -131,6 +131,7 @@ class DatabaseConnection:
                         parent_case_id TEXT NOT NULL,
                         beam_path TEXT NOT NULL,
                         status TEXT NOT NULL,
+                        progress REAL DEFAULT 0.0,
                         hpc_job_id TEXT,
                         error_message TEXT,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -195,6 +196,11 @@ class DatabaseConnection:
                 if 'error_message' not in beam_columns:
                     self.logger.info("Adding error_message column to beams table")
                     conn.execute("ALTER TABLE beams ADD COLUMN error_message TEXT")
+                # Add progress column to beams table if it doesn't exist
+                if 'progress' not in beam_columns:
+                    self.logger.info("Adding progress column to beams table")
+                    conn.execute("ALTER TABLE beams ADD COLUMN progress REAL DEFAULT 0.0")
+
 
             self.logger.info("Database schema initialized successfully")
 

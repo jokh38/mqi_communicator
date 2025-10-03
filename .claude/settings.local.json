@@ -10,7 +10,9 @@
       "Read(//c/**)",
       "Bash(python -m pytest tests/test_db_context.py -v)",
       "Bash(python -m pytest tests/test_ssh_helper.py -v)",
-      "Bash(python -m pytest tests/ -v --tb=short)"
+      "Bash(python -m pytest tests/ -v --tb=short)",
+      "Bash(python -m pytest tests/test_states.py::test_hpc_execution_state_submits_job -v)",
+      "Bash(python -m pytest tests/test_states.py -v -k \"hpc\")"
     ],
     "deny": [],
     "ask": []

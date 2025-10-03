@@ -91,7 +91,7 @@ class InitialState(WorkflowState):
     @handle_state_exceptions
     def execute(self, context: 'WorkflowManager') -> WorkflowState:
         # Use a valid status. CSV_INTERPRETING is the first logical step after validation.
-        self._update_status(context, BeamStatus.CSV_INTERPRETING, "Performing initial validation for beam")
+        self._update_status(context, BeamStatus.CSV_INTERPRETING, "Performing initial validation for beam")        try:            p = context.settings.get_progress_tracking_config().get("coarse_phase_progress", {}).get("CSV_INTERPRETING")            if p is not None:                context.case_repo.update_beam_progress(context.id, float(p))        except Exception:            pass
 
         if not context.path.is_dir():
             raise ProcessingError(
@@ -130,7 +130,7 @@ class FileUploadState(WorkflowState):
         mode = context.settings.get_handler_mode(handler_name)
 
         if mode == 'remote':
-            self._update_status(context, BeamStatus.UPLOADING, "Remote mode: Uploading beam files to HPC")
+            self._update_status(context, BeamStatus.UPLOADING, "Remote mode: Uploading beam files to HPC")            try:                p = context.settings.get_progress_tracking_config().get("coarse_phase_progress", {}).get("UPLOADING")                if p is not None:                    context.case_repo.update_beam_progress(context.id, float(p))            except Exception:                pass
 
             beam = context.case_repo.get_beam(context.id)
             if not beam:
@@ -207,10 +207,11 @@ class HpcExecutionState(WorkflowState):
             beam_id=context.id
         )
 
-        # Execute simulation based on mode
+        # Execute simulation based on mode; default to remote unless explicitly 'local'
         mode = context.settings.get_handler_mode(handler_name)
+        is_remote = not (isinstance(mode, str) and mode.lower() == "local")
 
-        if mode == "remote":
+        # Mark queued before submission        try:            p = context.settings.get_progress_tracking_config().get("coarse_phase_progress", {}).get("HPC_QUEUED")            if p is not None:                context.case_repo.update_beam_progress(context.id, float(p))        except Exception:            pass        if is_remote:
             # Remote mode: submit job via HPC scheduler
             submission = handler.submit_simulation_job(
                 handler_name=handler_name,
@@ -224,7 +225,7 @@ class HpcExecutionState(WorkflowState):
             if not getattr(submission, "success", False):
                 raise ProcessingError(f"Failed to submit HPC simulation: {getattr(submission, 'error', 'unknown error')}")
 
-            wait_res = handler.wait_for_job_completion(getattr(submission, "job_id", None))
+            # Mark running when job starts/polling begins            try:                p = context.settings.get_progress_tracking_config().get("coarse_phase_progress", {}).get("HPC_RUNNING")                if p is not None:                    context.case_repo.update_beam_progress(context.id, float(p))            except Exception:                pass            wait_res = handler.wait_for_job_completion(getattr(submission, "job_id", None))
             if getattr(wait_res, "failed", False):
                 raise ProcessingError(getattr(wait_res, "error", "HPC job failed"))
         else:
@@ -238,9 +239,10 @@ class HpcExecutionState(WorkflowState):
                 case_id=beam.parent_case_id,
                 beam_id=context.id
             )
-            result = handler.execute_command(command)
+            # Local mode still represents running            try:                p = context.settings.get_progress_tracking_config().get("coarse_phase_progress", {}).get("HPC_RUNNING")                if p is not None:                    context.case_repo.update_beam_progress(context.id, float(p))            except Exception:                pass            result = handler.execute_command(command)
             if not result.success:
                 raise ProcessingError(f"Failed to execute simulation: {result.error}")
+
 
         context.logger.info("HPC simulation completed successfully",
                             {"beam_id": context.id})
@@ -256,7 +258,7 @@ class DownloadState(WorkflowState):
 
     @handle_state_exceptions
     def execute(self, context: 'WorkflowManager') -> WorkflowState:
-        self._update_status(context, BeamStatus.DOWNLOADING, "Starting result handling for beam")
+        self._update_status(context, BeamStatus.DOWNLOADING, "Starting result handling for beam")        try:            p = context.settings.get_progress_tracking_config().get("coarse_phase_progress", {}).get("DOWNLOADING")            if p is not None:                context.case_repo.update_beam_progress(context.id, float(p))        except Exception:            pass
 
         beam = context.case_repo.get_beam(context.id)
         if not beam:
@@ -323,7 +325,7 @@ class PostprocessingState(WorkflowState):
 
     @handle_state_exceptions
     def execute(self, context: 'WorkflowManager') -> WorkflowState:
-        self._update_status(context, BeamStatus.POSTPROCESSING, "Running RawToDCM postprocessing")
+        self._update_status(context, BeamStatus.POSTPROCESSING, "Running RawToDCM postprocessing")        try:            p = context.settings.get_progress_tracking_config().get("coarse_phase_progress", {}).get("POSTPROCESSING")            if p is not None:                context.case_repo.update_beam_progress(context.id, float(p))        except Exception:            pass
 
         input_file = context.shared_context.get("raw_output_file")
         if not input_file or not Path(input_file).exists():
@@ -390,7 +392,7 @@ class CompletedState(WorkflowState):
 
     def execute(
             self, context: 'WorkflowManager') -> Optional[WorkflowState]:
-        self._update_status(context, BeamStatus.COMPLETED, "Beam workflow completed successfully")
+        self._update_status(context, BeamStatus.COMPLETED, "Beam workflow completed successfully")        try:            p = context.settings.get_progress_tracking_config().get("coarse_phase_progress", {}).get("COMPLETED", 100.0)            context.case_repo.update_beam_progress(context.id, float(p))        except Exception:            pass
         beam = context.case_repo.get_beam(context.id)
         if beam:
             update_case_status_from_beams(beam.parent_case_id,

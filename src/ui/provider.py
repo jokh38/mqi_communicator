@@ -197,6 +197,7 @@ class DashboardDataProvider:
                 beam_display_data.append({
                     "beam_id": beam["beam_id"],
                     "status": beam["status"],
+                    "progress": beam.get("progress", 0.0),
                     "elapsed_time": (
                         (datetime.now() - beam["created_at"]).total_seconds()
                         if beam["created_at"] else 0
@@ -204,6 +205,7 @@ class DashboardDataProvider:
                     "hpc_job_id": beam["hpc_job_id"],
                     "error_message": beam.get("error_message")
                 })
+
 
             # Process case data
             case_display = {

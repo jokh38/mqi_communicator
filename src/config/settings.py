@@ -323,6 +323,26 @@ class Settings:
         """
         return self._yaml_config.get("tps_generator", {})
 
+    def get_progress_tracking_config(self) -> Dict[str, Any]:
+        """Returns progress tracking config with safe defaults.
+
+        Keys: polling_interval_seconds, coarse_phase_progress
+        """
+        cfg = self._yaml_config.get("progress_tracking", {}) or {}
+        # Safe defaults
+        coarse_defaults = {
+            "CSV_INTERPRETING": 10.0,
+            "UPLOADING": 20.0,
+            "HPC_QUEUED": 30.0,
+            "HPC_RUNNING": 70.0,
+            "DOWNLOADING": 85.0,
+            "POSTPROCESSING": 95.0,
+            "COMPLETED": 100.0,
+        }
+        cfg.setdefault("polling_interval_seconds", 5)
+        cfg.setdefault("coarse_phase_progress", coarse_defaults)
+        return cfg
+
     def get_completion_patterns(self) -> Dict[str, Any]:
         """
         Gets the completion markers configuration for detecting simulation completion.

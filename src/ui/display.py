@@ -305,11 +305,12 @@ class DisplayManager:
                 table.add_row(
                     f"  ├─ {beam_name}",
                     formatter.get_beam_status_text(beam['status']),
-                    "",  # No progress bar for individual beams
+                    formatter.format_progress_bar(beam.get('progress', 0.0)),
                     hpc_display,
                     formatter.format_elapsed_time(beam['elapsed_time']),
                     formatter.format_error_message(beam.get('error_message', ''), max_length=40),
                     style="dim"
                 )
+
 
         return Panel(table, title="[bold]Active Cases & Beams[/bold]", border_style="magenta")
