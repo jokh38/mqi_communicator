@@ -113,12 +113,19 @@ def run_case_level_csv_interpreting(case_id: str, case_path: Path,
                 progress=10.0
             )
 
-            # Build command based on test expectations and simple settings
+            # Build command using config template
             case_dirs = settings.get_case_directories()
             csv_output_template = case_dirs.get("csv_output", "/tmp/csv_output/{case_id}")
             csv_output_dir_str = csv_output_template.format(case_id=case_id)
             csv_output_dir = Path(csv_output_dir_str)
-            command = f"mqi_interpreter --input {case_path} --output {csv_output_dir_str} --case_id {case_id}"
+
+            # Get paths from settings
+            python_path = settings.get_executable_path("python", handler_name="CsvInterpreter")
+            mqi_interpreter_script = settings.get_executable_path("mqi_interpreter_script", handler_name="CsvInterpreter")
+            mqi_interpreter_dir = settings.get_path("mqi_interpreter_dir", handler_name="CsvInterpreter")
+
+            # Build command: cd to interpreter dir and run Python script
+            command = f"cd {mqi_interpreter_dir} && {python_path} {mqi_interpreter_script} --logdir {case_path} --outputdir {csv_output_dir_str}"
 
             result = execution_handler.execute_command(command, cwd=case_path)
 
