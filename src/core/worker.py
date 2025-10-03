@@ -203,17 +203,40 @@ def try_allocate_pending_beams(pending_beams_by_case: Dict, executor: ProcessPoo
         jobs_to_dispatch = pending_jobs[:num_allocated]
         remaining_jobs = pending_jobs[num_allocated:]
 
-        # Update TPS file with additional GPU assignments
-        # Note: This is a simplified approach - in production, you might want to append to existing TPS
-        success = tps_generator.generate_tps_file_with_gpu_assignments(
-            case_path=case_path,
-            case_id=case_id,
-            gpu_assignments=new_gpu_assignments,
-            execution_mode="remote"
-        )
+        # Get output directory for TPS files
+        from src.utils.db_context import get_db_session
+        with get_db_session(settings, logger, handler_name="HpcJobSubmitter") as case_repo:
+            beams = case_repo.get_beams_for_case(case_id)
+            csv_output_base = settings.get_path("csv_output_dir", handler_name="CsvInterpreter")
+            tps_output_dir = Path(csv_output_base) / case_id
 
-        if not success:
-            logger.error(f"Failed to update TPS file for pending beams of case {case_id}")
+            # Generate a separate TPS file for each newly allocated beam
+            all_success = True
+            for gpu_assignment, job in zip(new_gpu_assignments, jobs_to_dispatch):
+                beam_id = job["beam_id"]
+                # Find the beam data matching this beam_id
+                beam_data = next((b for b in beams if b.beam_id == beam_id), None)
+                if not beam_data:
+                    logger.error(f"Could not find beam data for {beam_id}")
+                    all_success = False
+                    continue
+
+                beam_gpu_assignment = [gpu_assignment]  # Single GPU for this beam
+                success = tps_generator.generate_tps_file_with_gpu_assignments(
+                    case_path=case_path,
+                    case_id=case_id,
+                    gpu_assignments=beam_gpu_assignment,
+                    execution_mode="remote",
+                    output_dir=tps_output_dir,
+                    beam_name=beam_data.beam_id
+                )
+
+                if not success:
+                    logger.error(f"Failed to update TPS file for beam {beam_id} of case {case_id}")
+                    all_success = False
+
+        if not all_success:
+            logger.error(f"Failed to update TPS files for some pending beams of case {case_id}")
             continue
 
         logger.info(f"Allocated {num_allocated} additional GPUs for case {case_id}, dispatching workers")

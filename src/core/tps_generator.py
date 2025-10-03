@@ -84,7 +84,9 @@ class TpsGenerator:
         case_path: Path,
         case_id: str,
         gpu_assignments: List[Dict[str, Any]],
-        execution_mode: str = "local"
+        execution_mode: str = "local",
+        output_dir: Optional[Path] = None,
+        beam_name: Optional[str] = None
     ) -> bool:
         """Generate moqui_tps.in file for a case with multiple beam-to-GPU assignments.
 
@@ -93,6 +95,8 @@ class TpsGenerator:
             case_id (str): Unique identifier for the case.
             gpu_assignments (List[Dict[str, Any]]): List of GPU assignments with beam numbers and GPU IDs.
             execution_mode (str): "local" or "remote" - determines path construction.
+            output_dir (Optional[Path]): Directory where the TPS file should be saved. If None, uses case_path.
+            beam_name (Optional[str]): Beam name to use in filename. If None, uses default "moqui_tps.in".
 
         Returns:
             bool: True if file was generated successfully, False otherwise.
@@ -154,7 +158,21 @@ class TpsGenerator:
 
             # Generate and write the file
             content = self._format_parameters_to_string(parameters)
-            output_file = case_path / "moqui_tps.in"
+
+            # Determine output directory
+            if output_dir:
+                output_directory = Path(output_dir)
+                output_directory.mkdir(parents=True, exist_ok=True)
+            else:
+                output_directory = case_path
+
+            # Determine filename based on beam_name
+            if beam_name:
+                output_filename = f"moqui_tps_{beam_name}.in"
+            else:
+                output_filename = "moqui_tps.in"
+
+            output_file = output_directory / output_filename
             with open(output_file, 'w', encoding='utf-8') as f:
                 f.write(content)
 

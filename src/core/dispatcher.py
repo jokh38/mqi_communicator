@@ -325,25 +325,38 @@ def run_case_level_tps_generation(
                 )
                 return None
 
-            tps_generator = TpsGenerator(settings, logger)
-            success = tps_generator.generate_tps_file_with_gpu_assignments(
-                case_path=case_path,
-                case_id=case_id,
-                gpu_assignments=gpu_assignments,
-                execution_mode="remote"
-            )
+            # Get beam information to use beam names in TPS files
+            beams = case_repo.get_beams_for_case(case_id)
 
-            if not success:
-                error_message = f"TPS file generation failed for case {case_id}"
-                logger.error(error_message)
-                gpu_repo.release_all_for_case(case_id)
-                case_repo.record_workflow_step(
+            # Get output directory for TPS files
+            csv_output_base = settings.get_path("csv_output_dir", handler_name="CsvInterpreter")
+            tps_output_dir = Path(csv_output_base) / case_id
+
+            tps_generator = TpsGenerator(settings, logger)
+
+            # Generate a separate TPS file for each beam with its own GPU assignment
+            for i, (gpu_assignment, beam) in enumerate(zip(gpu_assignments, beams[:len(gpu_assignments)])):
+                beam_gpu_assignment = [gpu_assignment]  # Single GPU for this beam
+                success = tps_generator.generate_tps_file_with_gpu_assignments(
+                    case_path=case_path,
                     case_id=case_id,
-                    step=WorkflowStep.TPS_GENERATION,
-                    status="failed",
-                    metadata={"error": error_message}
+                    gpu_assignments=beam_gpu_assignment,
+                    execution_mode="remote",
+                    output_dir=tps_output_dir,
+                    beam_name=beam.beam_id
                 )
-                return None
+
+                if not success:
+                    error_message = f"TPS file generation failed for beam {beam.beam_id} in case {case_id}"
+                    logger.error(error_message)
+                    gpu_repo.release_all_for_case(case_id)
+                    case_repo.record_workflow_step(
+                        case_id=case_id,
+                        step=WorkflowStep.TPS_GENERATION,
+                        status="failed",
+                        metadata={"error": error_message, "failed_beam": beam.beam_id}
+                    )
+                    return None
 
             allocated_count = len(gpu_assignments)
             pending_count = beam_count - allocated_count

@@ -24,14 +24,14 @@ paths:
     mqi_interpreter_dir: "{base_directory}/mqi_interpreter"
     mqi_run_dir: "{base_directory}/tps_env"
     raw_to_dicom_dir: "{base_directory}/RawToDCM"
-    tps_input_file: "{mqi_run_dir}/moqui_tps.in"
+    tps_input_file: "{csv_output_dir}/{case_id}/moqui_tps_{beam_id}.in"  # Generated per-beam TPS files
     remote_log_path: "{mqi_run_dir}/logs/{case_id}_{beam_id}.log"
   remote:
     remote_case_path: "placeholder/remote/path/cases/{case_id}"
     remote_beam_path: "{remote_case_path}/{beam_id}"
     remote_beam_result_path: "{remote_beam_path}/output.raw"
     remote_script_path: "placeholder/remote/scripts"
-    tps_input_file: "{mqi_run_dir}/moqui_tps.in"
+    tps_input_file: "{csv_output_dir}/{case_id}/moqui_tps_{beam_id}.in"  # Generated per-beam TPS files
     remote_log_path: "{mqi_run_dir}/logs/{case_id}_{beam_id}.log"
 
 # =====================================================================================
