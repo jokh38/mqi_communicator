@@ -136,11 +136,12 @@ class Settings:
             if not made_a_change:
                 break
 
-        # After resolution attempts, check for unresolved placeholders
+        # After resolution attempts, check for unresolved placeholders that are not in kwargs
         unresolved = re.findall(r"\{(\w+)\}", current)
-        if unresolved:
+        unresolved_not_in_kwargs = [p for p in unresolved if p not in kwargs]
+        if unresolved_not_in_kwargs:
             raise ValueError(
-                f"Unresolved placeholders {unresolved} in path '{path_name}' for mode '{mode}'."
+                f"Unresolved placeholders {unresolved_not_in_kwargs} in path '{path_name}' for mode '{mode}'."
             )
 
         return current.format(**kwargs)
