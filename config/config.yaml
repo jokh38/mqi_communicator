@@ -154,14 +154,14 @@ tps_generator:
 moqui_tps_parameters:
   GPUID: 0
   RandomSeed: -1932780356
-  UseAbsolutePath: true
+  UseAbsolutePath: false
   TotalThreads: -1
   MaxHistoriesPerBatch: 10000000
   Verbosity: 0
-  ParentDir: "{base_directory}/data/Outputs_csv/{case_id}"
-  DicomDir: "{base_directory}/data/Outputs_csv/{case_id}/rtplan"
-  logFilePath: "{base_directory}/data/Outputs_csv/{case_id}/log"
-  OutputDir: "{base_directory}/data/Dose_raw/{case_id}"
+  ParentDir: "../data/Outputs_csv/{case_id}""
+  DicomDir: "rtplan"
+  logFilePath: "log"
+  OutputDir: "../data/Dose_raw/{case_id}""
   GantryNum: 0
   UsingPhantomGeo: true
   TwoCentimeterMode: true
