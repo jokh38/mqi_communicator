@@ -199,22 +199,40 @@ class HpcExecutionState(WorkflowState):
             beam_id=context.id
         )
 
-        # Submit simulation job with all required context
-        submission = handler.submit_simulation_job(
-            handler_name=handler_name,
-            command_key="remote_submit_simulation",
-            tps_input_file=tps_input_file,
-            mqi_run_dir=mqi_run_dir,
-            remote_log_path=remote_log_path,
-            case_id=beam.parent_case_id,
-            beam_id=context.id
-        )
-        if not getattr(submission, "success", False):
-            raise ProcessingError(f"Failed to submit HPC simulation: {getattr(submission, 'error', 'unknown error')}")
+        # Execute simulation based on mode
+        mode = context.settings.get_handler_mode(handler_name)
 
-        wait_res = handler.wait_for_job_completion(getattr(submission, "job_id", None))
-        if getattr(wait_res, "failed", False):
-            raise ProcessingError(getattr(wait_res, "error", "HPC job failed"))
+        if mode == "remote":
+            # Remote mode: submit job via HPC scheduler
+            submission = handler.submit_simulation_job(
+                handler_name=handler_name,
+                command_key="remote_submit_simulation",
+                tps_input_file=tps_input_file,
+                mqi_run_dir=mqi_run_dir,
+                remote_log_path=remote_log_path,
+                case_id=beam.parent_case_id,
+                beam_id=context.id
+            )
+            if not getattr(submission, "success", False):
+                raise ProcessingError(f"Failed to submit HPC simulation: {getattr(submission, 'error', 'unknown error')}")
+
+            wait_res = handler.wait_for_job_completion(getattr(submission, "job_id", None))
+            if getattr(wait_res, "failed", False):
+                raise ProcessingError(getattr(wait_res, "error", "HPC job failed"))
+        else:
+            # Local mode: execute command directly
+            command = context.settings.get_command(
+                "remote_submit_simulation",
+                handler_name=handler_name,
+                tps_input_file=tps_input_file,
+                mqi_run_dir=mqi_run_dir,
+                remote_log_path=remote_log_path,
+                case_id=beam.parent_case_id,
+                beam_id=context.id
+            )
+            result = handler.execute_command(command)
+            if not result.success:
+                raise ProcessingError(f"Failed to execute simulation: {result.error}")
 
         context.logger.info("HPC simulation completed successfully",
                             {"beam_id": context.id})
