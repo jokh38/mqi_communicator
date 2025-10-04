@@ -25,14 +25,14 @@ paths:
     mqi_run_dir: "{base_directory}/tps_env"
     raw_to_dicom_dir: "{base_directory}/RawToDCM"
     tps_input_file: "{base_directory}/data/Outputs_csv/{case_id}/moqui_tps_{beam_id}.in"  # Generated per-beam TPS files
-    remote_log_path: "{base_directory}/tps_env/logs/{case_id}_{beam_id}.log"
+    remote_log_path: "{base_directory}/mqi_communicator/logs/sim_{case_id}_{beam_id}.log"
   remote:
     remote_case_path: "placeholder/remote/path/cases/{case_id}"
     remote_beam_path: "{remote_case_path}/{beam_id}"
     remote_beam_result_path: "{remote_beam_path}/output.raw"
     remote_script_path: "placeholder/remote/scripts"
     tps_input_file: "{base_directory}/data/Outputs_csv/{case_id}/moqui_tps_{beam_id}.in"  # Generated per-beam TPS files
-    remote_log_path: "{base_directory}/tps_env/logs/{case_id}_{beam_id}.log"
+    remote_log_path: "{base_directory}/mqi_communicator/logs/sim_{case_id}_{beam_id}.log"
 
 # =====================================================================================
 # Executables - 환경별 실행 파일 경로 설정
