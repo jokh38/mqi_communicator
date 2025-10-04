@@ -244,7 +244,12 @@ class HpcExecutionState(WorkflowState):
                 raise ProcessingError(f"Failed to execute simulation: {result.error}")
 
             # Wait for local simulation to complete by monitoring log file
-            wait_res = handler.wait_for_job_completion(job_id=None, log_file_path=remote_log_path)
+            wait_res = handler.wait_for_job_completion(
+                job_id=None,
+                log_file_path=remote_log_path,
+                beam_id=context.id,
+                case_repo=context.case_repo
+            )
             if getattr(wait_res, "failed", False):
                 raise ProcessingError(getattr(wait_res, "error", "Local simulation failed"))
 

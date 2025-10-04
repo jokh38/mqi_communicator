@@ -112,13 +112,15 @@ class ExecutionHandler:
         error: Optional[str] = None
 
     def wait_for_job_completion(self, job_id: Optional[str] = None, timeout: Optional[int] = None,
-                                poll_interval: Optional[int] = None, log_file_path: Optional[str] = None) -> "ExecutionHandler.JobWaitResult":
+                                poll_interval: Optional[int] = None, log_file_path: Optional[str] = None,
+                                beam_id: Optional[str] = None, case_repo: Optional[Any] = None) -> "ExecutionHandler.JobWaitResult":
         """
-        Wait for job completion.
+        Wait for job completion and monitor progress.
         - In remote mode with job_id: poll SLURM queue status
-        - In local mode with log_file_path: monitor log file for completion markers
+        - In local mode with log_file_path: monitor log file for completion markers and progress
         """
         import time
+        import re
         from pathlib import Path
 
         # Get timeout and poll interval from settings if not provided
@@ -131,31 +133,72 @@ class ExecutionHandler:
             # Remote mode: poll SLURM job status (to be implemented)
             return ExecutionHandler.JobWaitResult(failed=False)
         elif self.mode == "local" and log_file_path:
-            # Local mode: monitor log file for completion patterns
+            # Local mode: monitor log file for completion patterns and progress
             completion_markers = self.settings.get_completion_markers()
             success_pattern = completion_markers.get("success_pattern", "Simulation completed successfully")
             failure_patterns = completion_markers.get("failure_patterns", ["FATAL ERROR", "ERROR:", "Segmentation fault"])
 
+            # Progress tracking patterns from devplan
+            total_batches_pattern = re.compile(r"with (\d+) batches")
+            current_batch_pattern = re.compile(r"Generating particles for \((\d+) of (\d+) batches\)")
+
             start_time = time.time()
             log_path = Path(log_file_path)
+
+            total_batches = None
+            last_progress = 0.0
+            file_position = 0
 
             while time.time() - start_time < timeout:
                 if log_path.exists():
                     try:
                         with open(log_path, 'r') as f:
-                            content = f.read()
+                            # Read from last position
+                            f.seek(file_position)
+                            new_content = f.read()
+                            file_position = f.tell()
 
-                            # Check for failure patterns first
-                            for pattern in failure_patterns:
-                                if pattern in content:
-                                    return ExecutionHandler.JobWaitResult(
-                                        failed=True,
-                                        error=f"Simulation failed: found pattern '{pattern}' in log"
-                                    )
+                            if new_content:
+                                # Check for failure patterns first
+                                for pattern in failure_patterns:
+                                    if pattern in new_content:
+                                        return ExecutionHandler.JobWaitResult(
+                                            failed=True,
+                                            error=f"Simulation failed: found pattern '{pattern}' in log"
+                                        )
 
-                            # Check for success pattern
-                            if success_pattern in content:
-                                return ExecutionHandler.JobWaitResult(failed=False)
+                                # Check for success pattern
+                                if success_pattern in new_content:
+                                    # Update to 100% before returning
+                                    if case_repo and beam_id:
+                                        try:
+                                            case_repo.update_beam_progress(beam_id, 100.0)
+                                        except Exception:
+                                            pass
+                                    return ExecutionHandler.JobWaitResult(failed=False)
+
+                                # Extract total batches if not found yet
+                                if total_batches is None:
+                                    match = total_batches_pattern.search(new_content)
+                                    if match:
+                                        total_batches = int(match.group(1))
+                                        self.logger.info(f"Detected total batches: {total_batches}")
+
+                                # Extract current batch and update progress
+                                if total_batches is not None:
+                                    for match in current_batch_pattern.finditer(new_content):
+                                        current_batch = int(match.group(1))
+                                        # Calculate simulation progress (30% to 90% range for HPC phase)
+                                        sim_progress = (current_batch / total_batches) * 60 + 30
+
+                                        # Only update if progress increased by at least 1%
+                                        if case_repo and beam_id and (sim_progress - last_progress >= 1.0):
+                                            try:
+                                                case_repo.update_beam_progress(beam_id, sim_progress)
+                                                last_progress = sim_progress
+                                            except Exception as e:
+                                                self.logger.warning(f"Failed to update progress: {e}")
+
                     except Exception as e:
                         self.logger.warning(f"Error reading log file: {e}")
 
