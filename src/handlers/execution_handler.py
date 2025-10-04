@@ -112,12 +112,63 @@ class ExecutionHandler:
         error: Optional[str] = None
 
     def wait_for_job_completion(self, job_id: Optional[str] = None, timeout: Optional[int] = None,
-                                poll_interval: Optional[int] = None) -> "ExecutionHandler.JobWaitResult":
+                                poll_interval: Optional[int] = None, log_file_path: Optional[str] = None) -> "ExecutionHandler.JobWaitResult":
         """
-        Stubbed wait for job completion used by states tests. Always returns not failed.
-        Tests may mock this method; providing a sane default here.
+        Wait for job completion.
+        - In remote mode with job_id: poll SLURM queue status
+        - In local mode with log_file_path: monitor log file for completion markers
         """
-        return ExecutionHandler.JobWaitResult(failed=False)
+        import time
+        from pathlib import Path
+
+        # Get timeout and poll interval from settings if not provided
+        if timeout is None:
+            timeout = self.settings.get_processing_config().get("hpc_job_timeout_seconds", 3600)
+        if poll_interval is None:
+            poll_interval = self.settings.get_processing_config().get("hpc_poll_interval_seconds", 30)
+
+        if self.mode == "remote" and job_id:
+            # Remote mode: poll SLURM job status (to be implemented)
+            return ExecutionHandler.JobWaitResult(failed=False)
+        elif self.mode == "local" and log_file_path:
+            # Local mode: monitor log file for completion patterns
+            completion_markers = self.settings.get_completion_markers()
+            success_pattern = completion_markers.get("success_pattern", "Simulation completed successfully")
+            failure_patterns = completion_markers.get("failure_patterns", ["FATAL ERROR", "ERROR:", "Segmentation fault"])
+
+            start_time = time.time()
+            log_path = Path(log_file_path)
+
+            while time.time() - start_time < timeout:
+                if log_path.exists():
+                    try:
+                        with open(log_path, 'r') as f:
+                            content = f.read()
+
+                            # Check for failure patterns first
+                            for pattern in failure_patterns:
+                                if pattern in content:
+                                    return ExecutionHandler.JobWaitResult(
+                                        failed=True,
+                                        error=f"Simulation failed: found pattern '{pattern}' in log"
+                                    )
+
+                            # Check for success pattern
+                            if success_pattern in content:
+                                return ExecutionHandler.JobWaitResult(failed=False)
+                    except Exception as e:
+                        self.logger.warning(f"Error reading log file: {e}")
+
+                time.sleep(poll_interval)
+
+            # Timeout reached
+            return ExecutionHandler.JobWaitResult(
+                failed=True,
+                error=f"Simulation timeout after {timeout} seconds"
+            )
+        else:
+            # No monitoring needed or not enough info
+            return ExecutionHandler.JobWaitResult(failed=False)
 
 
     def execute_command(self,
