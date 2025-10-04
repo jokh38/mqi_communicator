@@ -253,7 +253,7 @@ class GpuRepository(BaseRepository):
         try:
             with self.db.transaction() as conn:
                 query = """
-                    SELECT uuid, memory_free
+                    SELECT uuid, gpu_index, memory_free
                     FROM gpu_resources
                     WHERE status = ? AND memory_free >= ?
                     ORDER BY memory_free DESC
@@ -271,6 +271,7 @@ class GpuRepository(BaseRepository):
                     return None
 
                 gpu_uuid = gpu_row["uuid"]
+                gpu_index = gpu_row["gpu_index"]
 
                 update_query = """
                     UPDATE gpu_resources
@@ -300,12 +301,13 @@ class GpuRepository(BaseRepository):
                     "GPU allocated successfully",
                     {
                         "gpu_uuid": gpu_uuid,
+                        "gpu_id": gpu_index,
                         "case_id": case_id,
                         "memory_free": gpu_row["memory_free"],
                     },
                 )
 
-                return {"gpu_uuid": gpu_uuid}
+                return {"gpu_uuid": gpu_uuid, "gpu_id": gpu_index}
 
         except Exception as e:
             self.logger.error(
