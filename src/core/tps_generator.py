@@ -135,10 +135,10 @@ class TpsGenerator:
                 return False  # Fail the case
 
             # Set beam number - use provided beam_number if available, otherwise use count
+            beam_count = len(gpu_assignments)
             if beam_number is not None:
                 parameters["BeamNumbers"] = beam_number
             else:
-                beam_count = len(gpu_assignments)
                 parameters["BeamNumbers"] = beam_count
 
             # Create GPU assignment mapping
