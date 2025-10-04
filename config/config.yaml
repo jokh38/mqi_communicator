@@ -69,7 +69,7 @@ command_templates:
     post_process: >-
       cd {raw_to_dicom_dir} && {python} {raw_to_dicom_script} --input {input_file} --output {output_dir} --dosetype 2d
     upload_result: "scp -r {local_path} {pc_user}@{pc_ip}:{pc_localdata_remote_base_dir}"
-    remote_submit_simulation: "cd {mqi_run_dir} && ./tps_env {tps_input_file}"
+    remote_submit_simulation: "nohup bash -c 'cd {mqi_run_dir} && ./tps_env {tps_input_file} > {remote_log_path} 2>&1' > /dev/null 2>&1 &"
     check_job_status: "squeue -j {job_id} -h -o \"%T\""
     check_job_history: "sacct -j {job_id} --noheader --format='State' | head -n 1"
     cleanup: "rm -rf {remote_path}"
