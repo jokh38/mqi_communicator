@@ -148,8 +148,7 @@ class LoggerFactory:
             StructuredLogger: A configured StructuredLogger instance.
         """
         if cls._config is None:
-            # Provide a safe default if not configured
-            cls._config = {"log_dir": "logs", "log_level": "INFO", "structured_logging": False}
+            raise RuntimeError("LoggerFactory has not been configured. Call LoggerFactory.configure() first.")
 
         if name not in cls._loggers:
             cls._loggers[name] = StructuredLogger(name, cls._config)

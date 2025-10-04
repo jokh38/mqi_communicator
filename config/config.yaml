@@ -109,7 +109,7 @@ completion_markers:
     - "Segmentation fault"
 
 logging:
-  log_dir: "{base_directory}/mqi_communicator/logs/"
+  log_dir: "logs"
   log_level: "INFO"
   console_level: "INFO"
   max_file_size_mb: 10
