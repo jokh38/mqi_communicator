@@ -113,10 +113,9 @@ def run_case_level_csv_interpreting(case_id: str, case_path: Path,
                 progress=10.0
             )
 
-            # Resolve CSV output directory using case directories template
-            case_dirs = settings.get_case_directories()
-            csv_template = case_dirs.get("csv_output", "/tmp/csv_output/{case_id}")
-            csv_output_dir = csv_template.format(case_id=case_id)
+            # Resolve CSV output directory using settings path
+            csv_output_base = settings.get_path("csv_output_dir", handler_name="CsvInterpreter")
+            csv_output_dir = str(Path(csv_output_base) / case_id)
 
             # Build command using config-defined Python and script paths
             python_exe = settings.get_executable("python", handler_name="CsvInterpreter")
@@ -247,8 +246,8 @@ def run_case_level_upload(case_id: str, settings: Settings,
                                            step=WorkflowStep.UPLOADING,
                                            status="started")
 
-            case_dirs = settings.get_case_directories()
-            csv_dir = Path(case_dirs.get("csv_output", f"/tmp/csv_output/{case_id}"))
+            csv_output_base = settings.get_path("csv_output_dir", handler_name="CsvInterpreter")
+            csv_dir = Path(csv_output_base) / case_id
             csv_files = list(csv_dir.glob("**/*.csv"))
 
             if not csv_files:
