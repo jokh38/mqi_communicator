@@ -134,7 +134,7 @@ class ExecutionHandler:
             return ExecutionHandler.JobWaitResult(failed=False)
         elif self.mode == "local" and log_file_path:
             # Local mode: monitor log file for completion patterns and progress
-            completion_markers = self.settings.get_completion_markers()
+            completion_markers = self.settings.get_completion_patterns()
             success_pattern = completion_markers.get("success_pattern", "Simulation completed successfully")
             failure_patterns = completion_markers.get("failure_patterns", ["FATAL ERROR", "ERROR:", "Segmentation fault"])
 

@@ -102,7 +102,7 @@ processing:
 # Completion Markers - 시뮬레이션 완료 감지용 패턴
 # =====================================================================================
 completion_markers:
-  success_pattern: "Simulation completed successfully"
+  success_pattern: "Simlulation finalizing.."
   failure_patterns:
     - "FATAL ERROR"
     - "ERROR:"
