@@ -86,7 +86,8 @@ class TpsGenerator:
         gpu_assignments: List[Dict[str, Any]],
         execution_mode: str = "local",
         output_dir: Optional[Path] = None,
-        beam_name: Optional[str] = None
+        beam_name: Optional[str] = None,
+        beam_number: Optional[int] = None
     ) -> bool:
         """Generate moqui_tps.in file for a case with multiple beam-to-GPU assignments.
 
@@ -97,6 +98,7 @@ class TpsGenerator:
             execution_mode (str): "local" or "remote" - determines path construction.
             output_dir (Optional[Path]): Directory where the TPS file should be saved. If None, uses case_path.
             beam_name (Optional[str]): Beam name to use in filename. If None, uses default "moqui_tps.in".
+            beam_number (Optional[int]): DICOM beam number (1-indexed) for this specific beam.
 
         Returns:
             bool: True if file was generated successfully, False otherwise.
@@ -132,9 +134,12 @@ class TpsGenerator:
                 # _extract_case_data already logs the error
                 return False  # Fail the case
 
-            # Set beam count and GPU assignments
-            beam_count = len(gpu_assignments)
-            parameters["BeamNumbers"] = beam_count
+            # Set beam number - use provided beam_number if available, otherwise use count
+            if beam_number is not None:
+                parameters["BeamNumbers"] = beam_number
+            else:
+                beam_count = len(gpu_assignments)
+                parameters["BeamNumbers"] = beam_count
 
             # Create GPU assignment mapping
             if gpu_assignments:

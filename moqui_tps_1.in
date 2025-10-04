@@ -1,0 +1,45 @@
+GPUID 1
+RandomSeed -1932780356
+UseAbsolutePath false
+TotalThreads -1 #(Integer, use negative value for using optimized number of threads)
+MaxHistoriesPerBatch 100000000
+Verbosity 0
+
+ParentDir ../Outputs_csv/55061194
+DicomDir rtplan
+logFilePath log
+
+GantryNum 2
+
+# If you use phantom geometry, set true
+UsingPhantomGeo true
+# While you use phantom geometry, program with two centimeter mode can get exact 2 cm position slice dose
+TwoCentimeterMode true
+
+PhantomDimX 300
+PhantomDimY 400
+PhantomDimZ 300
+PhantomUnitX 1
+PhantomUnitY 1
+PhantomUnitZ 1
+PhantomPositionX -150.0
+PhantomPositionY -200.0
+PhantomPositionZ -280.0
+Scorer Dose
+SupressStd true
+ReadStructure true
+ROIName External
+
+SourceType FluenceMap
+SimulationType perBeam
+BeamNumbers 1
+ParticlesPerHistory 0.1
+
+## Not implemented yet
+ScoreToCTGrid true
+
+OutputDir ../Dose_raw/55061194/
+OutputFormat raw
+OverwriteResults true
+
+

@@ -12,7 +12,10 @@
       "Bash(python -m pytest tests/test_ssh_helper.py -v)",
       "Bash(python -m pytest tests/ -v --tb=short)",
       "Bash(python -m pytest tests/test_states.py::test_hpc_execution_state_submits_job -v)",
-      "Bash(python -m pytest tests/test_states.py -v -k \"hpc\")"
+      "Bash(python -m pytest tests/test_states.py -v -k \"hpc\")",
+      "Bash(git log:*)",
+      "Bash(cat:*)",
+      "Bash(python:*)"
     ],
     "deny": [],
     "ask": []

@@ -280,7 +280,15 @@ class DownloadState(WorkflowState):
             handler_name=local_handler_name,
             case_id=beam.parent_case_id
         )
-        local_file_path = Path(local_raw_dir) / "output.raw"
+
+        # Get all beams for this case to determine beam number (index in sorted list)
+        all_beams = context.case_repo.get_beams_for_case(beam.parent_case_id)
+        beam_index = next((i for i, b in enumerate(all_beams) if b.beam_id == context.id), 0)
+        beam_number = beam_index + 1  # 1-indexed beam number
+
+        # Output file is named based on beam number (e.g., beam_1.raw, beam_2.raw, beam_3.raw)
+        output_filename = f"beam_{beam_number}.raw"
+        local_file_path = Path(local_raw_dir) / output_filename
 
         remote_handler_name = "HpcJobSubmitter"
         mode = context.settings.get_handler_mode(remote_handler_name)
@@ -292,7 +300,8 @@ class DownloadState(WorkflowState):
                 "remote_beam_result_path",
                 handler_name=remote_handler_name,
                 case_id=beam.parent_case_id,
-                beam_id=context.id
+                beam_id=context.id,
+                beam_number=beam_number
             )
 
             result = context.execution_handler.download_file(
@@ -320,7 +329,7 @@ class DownloadState(WorkflowState):
             context.logger.info("Local mode: Skipping download, using local file.", {"beam_id": context.id})
 
         if not local_file_path.exists():
-            raise ProcessingError(f"Result file 'output.raw' not found at expected local path: {local_file_path}")
+            raise ProcessingError(f"Result file '{output_filename}' not found at expected local path: {local_file_path}")
 
         context.shared_context["raw_output_file"] = local_file_path
 

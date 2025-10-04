@@ -300,13 +300,22 @@ class DisplayManager:
                 # Extract beam name (last part after underscore)
                 beam_name = beam["beam_id"].split("_")[-1] if "_" in beam["beam_id"] else beam["beam_id"]
 
-                hpc_display = beam["hpc_job_id"][:8] if beam["hpc_job_id"] else "N/A"
+                # Check if a GPU is assigned to this beam
+                beam_gpu_display = "N/A"
+                for gpu in gpu_data:
+                    if gpu.get('assigned_case') == beam["beam_id"]:
+                        beam_gpu_display = f"GPU {gpu['gpu_index']}"
+                        break
+
+                # Fall back to HPC job ID if available
+                if beam_gpu_display == "N/A" and beam["hpc_job_id"]:
+                    beam_gpu_display = beam["hpc_job_id"][:8]
 
                 table.add_row(
                     f"  ├─ {beam_name}",
                     formatter.get_beam_status_text(beam['status']),
                     formatter.format_progress_bar(beam.get('progress', 0.0)),
-                    hpc_display,
+                    beam_gpu_display,
                     formatter.format_elapsed_time(beam['elapsed_time']),
                     formatter.format_error_message(beam.get('error_message', ''), max_length=40),
                     style="dim"

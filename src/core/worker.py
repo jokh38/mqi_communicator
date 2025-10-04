@@ -216,28 +216,41 @@ def try_allocate_pending_beams(pending_beams_by_case: Dict, executor: ProcessPoo
             csv_output_base = settings.get_path("csv_output_dir", handler_name="CsvInterpreter")
             tps_output_dir = Path(csv_output_base) / case_id
 
-            # Generate a separate TPS file for each newly allocated beam
-            all_success = True
-            for gpu_assignment, job in zip(new_gpu_assignments, jobs_to_dispatch):
-                beam_id = job["beam_id"]
-                # Find the beam data matching this beam_id
-                beam_data = next((b for b in beams if b.beam_id == beam_id), None)
-                if not beam_data:
-                    logger.error(f"Could not find beam data for {beam_id}")
-                    all_success = False
-                    continue
+            # Get GPU repository to update GPU-to-beam assignments
+            from src.repositories.gpu_repo import GpuRepository
+            with get_db_session(settings, logger, handler_name="HpcJobSubmitter") as db_conn:
+                gpu_repo_inst = GpuRepository(db_conn, settings, logger)
 
-                beam_gpu_assignment = [gpu_assignment]  # Single GPU for this beam
-                # Use actual HpcJobSubmitter mode for execution_mode
-                execution_mode = settings.get_handler_mode("HpcJobSubmitter")
-                success = tps_generator.generate_tps_file_with_gpu_assignments(
-                    case_path=case_path,
-                    case_id=case_id,
-                    gpu_assignments=beam_gpu_assignment,
-                    execution_mode=execution_mode,
-                    output_dir=tps_output_dir,
-                    beam_name=beam_data.beam_id
-                )
+                # Generate a separate TPS file for each newly allocated beam
+                all_success = True
+                for gpu_assignment, job in zip(new_gpu_assignments, jobs_to_dispatch):
+                    beam_id = job["beam_id"]
+                    # Find the beam data matching this beam_id and its index
+                    beam_data = next((b for b in beams if b.beam_id == beam_id), None)
+                    if not beam_data:
+                        logger.error(f"Could not find beam data for {beam_id}")
+                        all_success = False
+                        continue
+
+                    # Find beam index (position in sorted beam list)
+                    beam_index = next((i for i, b in enumerate(beams) if b.beam_id == beam_id), 0)
+                    beam_number = beam_index + 1  # DICOM beam numbers are 1-indexed
+
+                    # Update GPU assignment to this specific beam (for UI display)
+                    gpu_repo_inst.assign_gpu_to_case(gpu_assignment["gpu_uuid"], beam_id)
+
+                    beam_gpu_assignment = [gpu_assignment]  # Single GPU for this beam
+                    # Use actual HpcJobSubmitter mode for execution_mode
+                    execution_mode = settings.get_handler_mode("HpcJobSubmitter")
+                    success = tps_generator.generate_tps_file_with_gpu_assignments(
+                        case_path=case_path,
+                        case_id=case_id,
+                        gpu_assignments=beam_gpu_assignment,
+                        execution_mode=execution_mode,
+                        output_dir=tps_output_dir,
+                        beam_name=beam_data.beam_id,
+                        beam_number=beam_number
+                    )
 
                 if not success:
                     logger.error(f"Failed to update TPS file for beam {beam_id} of case {case_id}")
