@@ -43,9 +43,10 @@ class DashboardLogger(StructuredLogger):
         # Call parent initializer to ensure consistent setup
         super().__init__(name, config)
 
-        # Remove console handlers to keep file-only output
+        # Remove console handlers only (not file handlers)
+        # Note: RotatingFileHandler is a subclass of StreamHandler, so we need to check specifically
         for handler in list(self.logger.handlers):
-            if isinstance(handler, logging.StreamHandler):
+            if isinstance(handler, logging.StreamHandler) and not isinstance(handler, logging.FileHandler):
                 self.logger.removeHandler(handler)
 
 
