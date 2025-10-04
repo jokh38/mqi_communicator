@@ -365,6 +365,10 @@ def run_case_level_tps_generation(
                 )
                 return None
 
+            # Assign first GPU to the case for UI display
+            if gpu_assignments:
+                case_repo.assign_gpu_to_case(case_id, gpu_assignments[0]["gpu_uuid"])
+
             # Get beam information to use beam names in TPS files
             beams = case_repo.get_beams_for_case(case_id)
 
