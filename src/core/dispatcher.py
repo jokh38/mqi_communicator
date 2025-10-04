@@ -118,10 +118,14 @@ def run_case_level_csv_interpreting(case_id: str, case_path: Path,
             csv_template = case_dirs.get("csv_output", "/tmp/csv_output/{case_id}")
             csv_output_dir = csv_template.format(case_id=case_id)
 
-            # Build command expected by tests and legacy tooling
+            # Build command using config-defined Python and script paths
+            python_exe = settings.get_executable("python", handler_name="CsvInterpreter")
+            mqi_script = settings.get_executable("mqi_interpreter_script", handler_name="CsvInterpreter")
+            mqi_interpreter_dir = settings.get_path("mqi_interpreter_dir", handler_name="CsvInterpreter")
+
             command = (
-                f"mqi_interpreter --input {case_path} "
-                f"--output {csv_output_dir} --case_id {case_id}"
+                f"cd {mqi_interpreter_dir} && {python_exe} {mqi_script} "
+                f"--logdir {case_path} --outputdir {csv_output_dir}"
             )
 
             result = execution_handler.execute_command(command, cwd=case_path)

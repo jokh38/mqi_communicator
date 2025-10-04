@@ -46,9 +46,11 @@ def test_run_case_level_csv_interpreting_success(mock_exec_handler_cls, mock_cas
     assert success is True
     mock_exec_handler_instance.execute_command.assert_called_once()
     call_args, call_kwargs = mock_exec_handler_instance.execute_command.call_args
-    assert f"mqi_interpreter --input {case_path}" in call_args[0]
-    assert f"--output /tmp/csv_output/{case_id}" in call_args[0]
-    assert f"--case_id {case_id}" in call_args[0]
+    # Updated to match new command format using config paths
+    assert "python" in call_args[0] or "/usr/bin/python3" in call_args[0]
+    assert "main_cli.py" in call_args[0]
+    assert f"--logdir {case_path}" in call_args[0]
+    assert f"--outputdir /tmp/csv_output/{case_id}" in call_args[0]
     assert call_kwargs["cwd"] == case_path
 
 @patch("src.core.dispatcher.DatabaseConnection")

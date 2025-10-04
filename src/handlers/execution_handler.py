@@ -73,24 +73,34 @@ class ExecutionHandler:
 
     def run_raw_to_dcm(self, case_id: str, path: str | Path, output_dir: Optional[Path] = None) -> ExecutionResult:
         """
-        Run raw_to_dcm either remotely or locally.
-        - Remote: invoke a fixed script path with python and required args.
-        - Local: call the CLI with derived input/output paths using the provided directory.
+        Run raw_to_dcm either remotely or locally using config-defined paths.
+        - Remote: invoke script path from config with python and required args.
+        - Local: execute the script from config with derived input/output paths.
         """
         if self.mode == "remote":
             if not self._ssh_client:
                 raise ConnectionError("SSH client not available for remote execution.")
-            script_path = "/path/to/raw_to_dcm.py"
+
+            # Get script path and python executable from config
+            python_exe = self.settings.get_executable("python", handler_name="PostProcessor")
+            script_path = self.settings.get_executable("raw_to_dicom_script", handler_name="PostProcessor")
             hpc_path = str(path)
-            cmd = f"python {script_path} --case_id {case_id} --hpc_path {hpc_path}"
+            cmd = f"{python_exe} {script_path} --case_id {case_id} --hpc_path {hpc_path}"
             # Call SSH client directly to match tests (avoid reading stdout.channel)
             self._ssh_client.exec_command(cmd)
             return ExecutionResult(True, "", "", 0)
         else:
+            # Get paths from config
+            python_exe = self.settings.get_executable("python", handler_name="PostProcessor")
+            raw_to_dicom_script = self.settings.get_executable("raw_to_dicom_script", handler_name="PostProcessor")
+            raw_to_dicom_dir = self.settings.get_path("raw_to_dicom_dir", handler_name="PostProcessor")
+
             local_case_path = Path(path)
             input_file = local_case_path / f"{case_id}.raw"
             output_dir = output_dir or (local_case_path / "dicom")
-            cmd = f"raw_to_dcm --input {input_file} --output {output_dir}"
+
+            # Build command using config-defined python and script
+            cmd = f"cd {raw_to_dicom_dir} && {python_exe} {raw_to_dicom_script} --input {input_file} --output {output_dir} --dosetype 2d"
             try:
                 res = subprocess.run(cmd, shell=True, check=True, capture_output=True, text=True, cwd=local_case_path)
                 return ExecutionResult(True, res.stdout, res.stderr, res.returncode)

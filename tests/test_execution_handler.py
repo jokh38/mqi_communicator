@@ -61,7 +61,7 @@ def test_run_raw_to_dcm_remote_mode_correct_mock(mock_ssh_client):
     """
     Given: ExecutionHandler is in 'remote' mode.
     When: run_raw_to_dcm is called.
-    Then: It should execute the raw_to_dcm command remotely via the ssh_client's exec_command.
+    Then: It should execute the raw_to_dcm command remotely via the ssh_client's exec_command using config paths.
     """
     # Arrange
     handler = ExecutionHandler(mode='remote', ssh_client=mock_ssh_client)
@@ -71,18 +71,21 @@ def test_run_raw_to_dcm_remote_mode_correct_mock(mock_ssh_client):
     # Act
     handler.run_raw_to_dcm(case_id, hpc_path)
 
-    # Assert
-    script_path = "/path/to/raw_to_dcm.py"
-    expected_command = f"python {script_path} --case_id {case_id} --hpc_path {hpc_path}"
-    # We check that the underlying exec_command on the client was called by the handler's method.
-    mock_ssh_client.exec_command.assert_called_once_with(expected_command)
+    # Assert - command should now use config-defined paths
+    # The actual command will contain python executable and script path from config
+    called_command = mock_ssh_client.exec_command.call_args[0][0]
+    assert "python" in called_command or "/usr/bin/python3" in called_command
+    assert "moqui_raw2dicom.py" in called_command
+    assert f"--case_id {case_id}" in called_command
+    assert f"--hpc_path {hpc_path}" in called_command
+    mock_ssh_client.exec_command.assert_called_once()
 
 @patch("subprocess.run")
 def test_run_raw_to_dcm_local_mode_adapted(mock_run):
     """
     Given: ExecutionHandler is in 'local' mode.
     When: run_raw_to_dcm is called with the new signature.
-    Then: It should execute the corresponding local command.
+    Then: It should execute the corresponding local command using config paths.
     """
     # Arrange
     handler = ExecutionHandler(mode='local')
@@ -94,12 +97,15 @@ def test_run_raw_to_dcm_local_mode_adapted(mock_run):
     # Act
     handler.run_raw_to_dcm(case_id, local_case_path_str)
 
-    # Assert
-    # The adapted logic should derive input/output from the case_id and path
-    expected_command = f"raw_to_dcm --input {local_case_path / f'{case_id}.raw'} --output {local_case_path / 'dicom'}"
-    mock_run.assert_called_once_with(
-        expected_command, shell=True, check=True, capture_output=True, text=True, cwd=local_case_path
-    )
+    # Assert - command should now use config-defined python and script paths
+    called_command = mock_run.call_args[0][0]
+    assert "python" in called_command or "/usr/bin/python3" in called_command
+    assert "moqui_raw2dicom.py" in called_command
+    assert f"--input {local_case_path / f'{case_id}.raw'}" in called_command
+    assert f"--output {local_case_path / 'dicom'}" in called_command
+    assert "--dosetype 2d" in called_command
+    mock_run.assert_called_once()
+    assert mock_run.call_args[1]["cwd"] == local_case_path
 
 def test_submit_simulation_job_local_mode_raises_clear_error():
     """
