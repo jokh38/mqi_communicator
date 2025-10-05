@@ -328,10 +328,9 @@ class TpsGenerator:
             return False
     
     def _format_parameters_to_string(self, parameters: Dict[str, Any]) -> str:
-        """Format parameters dictionary into the moqui_tps.in file format.
+        """Format parameters dictionary into the moqui_tps.in file format with logical groupings.
 
-        The format is: key value
- for each parameter.
+        Parameters are organized into logical groups with blank lines separating them.
 
         Args:
             parameters (Dict[str, Any]): Dictionary of parameters.
@@ -339,18 +338,74 @@ class TpsGenerator:
         Returns:
             str: Formatted string content for the file.
         """
+        # Define parameter groups in order
+        parameter_groups = [
+            # GPU and Core Settings
+            ["GPUID", "RandomSeed", "UseAbsolutePath", "TotalThreads",
+             "MaxHistoriesPerBatch", "Verbosity"],
+
+            # Path Configuration
+            ["ParentDir", "DicomDir", "logFilePath"],
+
+            # Beam Configuration
+            ["GantryNum", "BeamNumbers"],
+
+            # Phantom Geometry Settings
+            ["UsingPhantomGeo", "TwoCentimeterMode"],
+
+            # Phantom Dimensions and Position
+            ["PhantomDimX", "PhantomDimY", "PhantomDimZ",
+             "PhantomUnitX", "PhantomUnitY", "PhantomUnitZ",
+             "PhantomPositionX", "PhantomPositionY", "PhantomPositionZ"],
+
+            # Scoring Configuration
+            ["Scorer", "SupressStd", "ReadStructure", "ROIName"],
+
+            # Source and Simulation
+            ["SourceType", "SimulationType", "ParticlesPerHistory"],
+
+            # Output Settings
+            ["ScoreToCTGrid", "OutputDir", "OutputFormat", "OverwriteResults"]
+        ]
+
         lines = []
-        # Sort parameters for consistent output
-        sorted_params = sorted(parameters.items())
-        for key, value in sorted_params:
-            # Format value appropriately
-            if isinstance(value, bool):
-                formatted_value = "true" if value else "false"
-            elif isinstance(value, (int, float)):
-                formatted_value = str(value)
-            else:
-                formatted_value = str(value)
-            lines.append(f"{key} {formatted_value}")
-        # Add final newline
-        content = "\n".join(lines) + "\n"
+        used_keys = set()
+
+        # Write parameters in groups
+        for group in parameter_groups:
+            group_lines = []
+            for key in group:
+                if key in parameters:
+                    value = parameters[key]
+                    # Format value appropriately
+                    if isinstance(value, bool):
+                        formatted_value = "true" if value else "false"
+                    elif isinstance(value, (int, float)):
+                        formatted_value = str(value)
+                    else:
+                        formatted_value = str(value)
+                    group_lines.append(f"{key} {formatted_value}")
+                    used_keys.add(key)
+
+            # Add group if it has any parameters
+            if group_lines:
+                lines.extend(group_lines)
+                lines.append("")  # Blank line between groups
+
+        # Add any remaining parameters not in defined groups (sorted)
+        remaining = sorted(set(parameters.keys()) - used_keys)
+        if remaining:
+            for key in remaining:
+                value = parameters[key]
+                if isinstance(value, bool):
+                    formatted_value = "true" if value else "false"
+                elif isinstance(value, (int, float)):
+                    formatted_value = str(value)
+                else:
+                    formatted_value = str(value)
+                lines.append(f"{key} {formatted_value}")
+            lines.append("")
+
+        # Join and ensure single final newline
+        content = "\n".join(lines)
         return content
