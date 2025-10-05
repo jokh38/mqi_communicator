@@ -372,6 +372,35 @@ def run_case_level_tps_generation(
             # Get beam information to use beam names in TPS files
             beams = case_repo.get_beams_for_case(case_id)
 
+            # Get actual treatment beam numbers from DICOM RT Plan (excluding setup beams)
+            validator = DataIntegrityValidator(logger)
+            treatment_beam_numbers = validator.get_treatment_beam_numbers(case_path)
+
+            if not treatment_beam_numbers:
+                error_message = f"Failed to extract treatment beam numbers from DICOM RT Plan for case {case_id}"
+                logger.error(error_message)
+                case_repo.record_workflow_step(
+                    case_id=case_id,
+                    step=WorkflowStep.TPS_GENERATION,
+                    status="failed",
+                    metadata={"error": error_message}
+                )
+                return None
+
+            if len(treatment_beam_numbers) != len(beams):
+                error_message = (
+                    f"Mismatch between DICOM beam count ({len(treatment_beam_numbers)}) "
+                    f"and log folder beam count ({len(beams)}) for case {case_id}"
+                )
+                logger.error(error_message)
+                case_repo.record_workflow_step(
+                    case_id=case_id,
+                    step=WorkflowStep.TPS_GENERATION,
+                    status="failed",
+                    metadata={"error": error_message}
+                )
+                return None
+
             # Get output directory for TPS files
             csv_output_base = settings.get_path("csv_output_dir", handler_name="CsvInterpreter")
             tps_output_dir = Path(csv_output_base) / case_id
@@ -386,7 +415,8 @@ def run_case_level_tps_generation(
                 gpu_repo.assign_gpu_to_case(gpu_assignment["gpu_uuid"], beam.beam_id)
 
                 beam_gpu_assignment = [gpu_assignment]  # Single GPU for this beam
-                beam_number = i + 1  # DICOM beam numbers are 1-indexed
+                # Use actual DICOM beam number (excluding setup beams)
+                beam_number = treatment_beam_numbers[i]
                 success = tps_generator.generate_tps_file_with_gpu_assignments(
                     case_path=case_path,
                     case_id=case_id,

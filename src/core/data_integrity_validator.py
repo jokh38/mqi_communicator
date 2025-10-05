@@ -11,7 +11,7 @@ This module provides functionality to:
 """
 
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 import pydicom
 from pydicom.errors import InvalidDicomError
 import re
@@ -311,6 +311,72 @@ class DataIntegrityValidator:
 
         except Exception as e:
             return {"beam_count": 0, "beams": [], "error": str(e)}
+
+    def get_treatment_beam_numbers(self, case_path: Path) -> List[int]:
+        """
+        Extract treatment beam numbers from RT plan, excluding setup beams.
+
+        This returns the actual beam numbers from the DICOM file for treatment beams,
+        which may not be sequential if setup beams are present.
+
+        Args:
+            case_path: Path to the case directory
+
+        Returns:
+            List of beam numbers (1-indexed) for treatment beams only
+        """
+        try:
+            rtplan_path = self.find_rtplan_file(case_path)
+            if not rtplan_path:
+                self.logger.error("No RT plan file found for beam number extraction")
+                return []
+
+            ds = pydicom.dcmread(rtplan_path)
+
+            if ds.get("Modality") != "RTPLAN":
+                self.logger.error(f"File is not an RT plan. Modality: {ds.get('Modality')}")
+                return []
+
+            treatment_beam_numbers = []
+
+            # Check for ion beam sequence (for proton plans)
+            if hasattr(ds, "IonBeamSequence") and ds.IonBeamSequence:
+                for beam_ds in ds.IonBeamSequence:
+                    beam_description = getattr(beam_ds, "BeamDescription", "")
+                    beam_name = getattr(beam_ds, "BeamName", "")
+                    beam_number = getattr(beam_ds, "BeamNumber", None)
+
+                    # Skip setup beams
+                    if beam_description == "Site Setup" or beam_name == "SETUP":
+                        self.logger.debug(f"Skipping setup beam: {beam_name} (number: {beam_number})")
+                        continue
+
+                    if beam_number is not None:
+                        treatment_beam_numbers.append(int(beam_number))
+                        self.logger.debug(f"Found treatment beam: {beam_name} (number: {beam_number})")
+
+            # Fallback: check regular beam sequence (for photon plans)
+            elif hasattr(ds, "BeamSequence") and ds.BeamSequence:
+                for beam_ds in ds.BeamSequence:
+                    beam_description = getattr(beam_ds, "BeamDescription", "")
+                    beam_name = getattr(beam_ds, "BeamName", "")
+                    beam_number = getattr(beam_ds, "BeamNumber", None)
+
+                    # Skip setup beams
+                    if beam_description == "Site Setup" or beam_name == "SETUP":
+                        self.logger.debug(f"Skipping setup beam: {beam_name} (number: {beam_number})")
+                        continue
+
+                    if beam_number is not None:
+                        treatment_beam_numbers.append(int(beam_number))
+                        self.logger.debug(f"Found treatment beam: {beam_name} (number: {beam_number})")
+
+            self.logger.info(f"Extracted {len(treatment_beam_numbers)} treatment beam numbers: {treatment_beam_numbers}")
+            return treatment_beam_numbers
+
+        except Exception as e:
+            self.logger.error(f"Error extracting treatment beam numbers: {str(e)}")
+            return []
 
     def _extract_gantry_number_from_machine_name(self, machine_name: str) -> int:
         """
