@@ -2,13 +2,12 @@
 
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Generator, Optional, Dict, Any
+from typing import Generator, Optional
 
 from src.config.settings import Settings
 from src.database.connection import DatabaseConnection
 from src.infrastructure.logging_handler import StructuredLogger
 from src.repositories.case_repo import CaseRepository
-from src.domain.enums import WorkflowStep
 
 
 def get_handler_db_path(settings: Settings, handler_name: Optional[str] = None) -> Path:
@@ -17,13 +16,6 @@ def get_handler_db_path(settings: Settings, handler_name: Optional[str] = None) 
         db_path_str = settings.get_path("database_path", handler_name=handler_name)
         return Path(db_path_str)
     return settings.get_database_path()
-
-def remote_execution_enabled(settings: Settings, handler_name: str) -> bool:
-    """Return True if the configured mode for the handler is 'remote'."""
-    try:
-        return settings.get_handler_mode(handler_name) == "remote"
-    except Exception:
-        return False
 
 @contextmanager
 def get_db_session(
@@ -60,14 +52,3 @@ def get_db_session(
     finally:
         if db_conn:
             db_conn.close()
-
-def record_step(case_repo: CaseRepository, case_id: str, step: WorkflowStep, status: str,
-                *, error: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None) -> None:
-    """Small convenience wrapper around repository.record_workflow_step."""
-    case_repo.record_workflow_step(
-        case_id=case_id,
-        step=step,
-        status=status,
-        error_message=error,
-        metadata=metadata,
-    )

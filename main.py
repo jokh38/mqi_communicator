@@ -35,9 +35,10 @@ from src.repositories.case_repo import CaseRepository
 from src.infrastructure.gpu_monitor import GpuMonitor
 from src.handlers.execution_handler import ExecutionHandler
 from src.core.worker import submit_beam_worker, monitor_completed_workers
-from src.core.dispatcher import (prepare_beam_jobs, run_case_level_csv_interpreting,
-                                 run_case_level_upload, run_case_level_tps_generation,
-                                 scan_existing_cases, CaseDetectionHandler)
+from src.core.dispatcher import (run_case_level_csv_interpreting,
+                                 run_case_level_upload, run_case_level_tps_generation)
+from src.core.case_aggregator import prepare_beam_jobs
+from src.core.workflow_manager import scan_existing_cases, CaseDetectionHandler
 from src.domain.enums import CaseStatus, BeamStatus
 from src.utils.db_context import get_db_session
 from src.utils.ssh_helper import create_ssh_client
@@ -474,7 +475,7 @@ class MQIApplication:
                         case_data = self.case_queue.get(timeout=1.0)
                         self._process_new_case(case_data, executor, active_futures, pending_beams_by_case)
                     except mp.queues.Empty:
-                        pass  # Queue timeout, continue
+                        continue
                     except Exception as e:
                         self.logger.error(f"Error processing case from queue", {"error": str(e)})
 
@@ -571,7 +572,7 @@ class MQIApplication:
             # Run main processing loop
             self.run_worker_loop()
         except KeyboardInterrupt:
-            pass
+            return
         except Exception as e:
             if self.logger:
                 self.logger.error("Application failed", {"error": str(e)})

@@ -9,7 +9,6 @@ Phase 4 Enhancement: Adds Pydantic-based configuration validation for type safet
 and early error detection.
 """
 
-import os
 import re
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -76,17 +75,6 @@ class Settings:
             logging.getLogger(__name__).warning(message)
         except Exception:
             print(f"Warning: {message}")
-
-    def _emit_error(self, message: str, context: Optional[Dict[str, Any]] = None) -> None:
-        try:
-            if self._logger is not None:
-                if hasattr(self._logger, 'error'):
-                    self._logger.error(message, context or None)
-                    return
-            logging.basicConfig(level=logging.INFO, force=False)
-            logging.getLogger(__name__).error(message)
-        except Exception:
-            print(f"Error: {message}")
 
     def _load_from_file(self, config_path: Path) -> None:
         """
@@ -253,12 +241,12 @@ class Settings:
                 format_context[p] = self.get_path(p, handler_name, **kwargs)
                 continue
             except KeyError:
-                pass
+                format_context.pop(p, None)
             try:
                 format_context[p] = self.get_executable(p, handler_name, **kwargs)
                 continue
             except KeyError:
-                pass
+                format_context.pop(p, None)
 
             # Resolve connection details
             connections = self.get_connection_config()
@@ -488,23 +476,3 @@ class Settings:
             KeyError: If the path cannot be found or resolved
         """
         return self.get_path(path_key, handler_name, **context)
-
-    def get_validated_config(self) -> AppConfig:
-        """
-        Gets the Pydantic-validated configuration object.
-
-        Phase 4: New method to access type-safe, validated configuration.
-
-        Returns:
-            AppConfig: The validated Pydantic configuration model
-
-        Example:
-            >>> settings = Settings()
-            >>> config = settings.get_validated_config()
-            >>> timeout = config.database.connection_timeout_seconds  # Type-safe access
-            >>> assert isinstance(timeout, int)
-        """
-        if self._validated_config is None:
-            # If validation failed or wasn't run, create default config
-            self._validated_config = AppConfig()
-        return self._validated_config

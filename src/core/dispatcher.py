@@ -1,17 +1,9 @@
 """Contains logic for dispatching cases and beams for processing."""
 
-import time
-import multiprocessing as mp
-import re
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
-from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler
-
 from src.config.settings import Settings
-from src.database.connection import DatabaseConnection
-from src.repositories.case_repo import CaseRepository
 from src.handlers.execution_handler import ExecutionHandler
 from src.infrastructure.logging_handler import StructuredLogger
 from src.domain.enums import CaseStatus, WorkflowStep
@@ -20,12 +12,11 @@ from src.core.data_integrity_validator import DataIntegrityValidator
 from src.infrastructure.logging_handler import LoggerFactory
 from src.core.tps_generator import TpsGenerator
 from src.repositories.gpu_repo import GpuRepository
-from src.utils.db_context import get_db_session, get_handler_db_path, record_step
+from src.utils.db_context import get_db_session
 
-
-def _normalize_beam_identifier(value: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "", value.lower())
-
+from src.core.case_aggregator import ensure_logger as _ensure_logger
+from src.core.case_aggregator import _normalize_beam_identifier
+from src.core.workflow_manager import scan_existing_cases, CaseDetectionHandler
 
 def _resolve_persisted_beam_number(beam: Any, beam_metadata: List[Dict[str, Any]]) -> Optional[int]:
     beam_candidates = []
@@ -89,13 +80,6 @@ def _handle_dispatcher_error(
             {"case_id": case_id, "db_error": str(db_e)}
         )
 
-
-from src.core.case_aggregator import queue_case as _queue_case
-
-
-from src.core.case_aggregator import ensure_logger as _ensure_logger
-
-
 def run_case_level_csv_interpreting(case_id: str, case_path: Path,
                                     settings: Settings) -> bool:
     """
@@ -114,17 +98,7 @@ def run_case_level_csv_interpreting(case_id: str, case_path: Path,
     try:
         execution_handler = ExecutionHandler(settings=settings, mode="local")
 
-        # Use locally imported, test-patched DatabaseConnection/CaseRepository
-        try:
-            db_path_str = settings.get_path("database_path", handler_name="CsvInterpreter")
-        except Exception:
-            try:
-                db_path_str = str(settings.get_database_path())
-            except Exception:
-                db_path_str = "dummy.db"
-        db_conn = DatabaseConnection(db_path=Path(db_path_str), settings=settings, logger=logger)
-        case_repo = CaseRepository(db_conn, logger)
-        try:
+        with get_db_session(settings, logger, handler_name="CsvInterpreter") as case_repo:
             logger.info(f"Starting case-level CSV interpreting for: {case_id}")
             case_repo.record_workflow_step(
                 case_id=case_id,
@@ -220,11 +194,6 @@ def run_case_level_csv_interpreting(case_id: str, case_path: Path,
                     "exit_code": result.return_code
                 })
             return True
-        finally:
-            try:
-                db_conn.close()
-            except Exception:
-                pass
 
     except Exception as e:
         _handle_dispatcher_error(
@@ -255,17 +224,7 @@ def run_case_level_upload(case_id: str, settings: Settings,
                                              mode="remote",
                                              ssh_client=ssh_client)
 
-        # Use locally imported, test-patched DatabaseConnection/CaseRepository
-        try:
-            db_path_str = settings.get_path("database_path", handler_name="CsvInterpreter")
-        except Exception:
-            try:
-                db_path_str = str(settings.get_database_path())
-            except Exception:
-                db_path_str = "dummy.db"
-        db_conn = DatabaseConnection(db_path=Path(db_path_str), settings=settings, logger=logger)
-        case_repo = CaseRepository(db_conn, logger)
-        try:
+        with get_db_session(settings, logger, handler_name="CsvInterpreter") as case_repo:
             logger.info(f"Starting case-level file upload for: {case_id}")
             case_repo.record_workflow_step(case_id=case_id,
                                            step=WorkflowStep.UPLOADING,
@@ -286,8 +245,10 @@ def run_case_level_upload(case_id: str, settings: Settings,
                     f"No beams found in database for case {case_id} during upload.")
 
             for beam in beams:
-                # tests expect remote path: "/remote/cases/{case_id}/beam_01/{filename}"
-                remote_case_root = settings.get_hpc_paths().get("remote_case_path_template", "/remote/cases")
+                remote_case_root = settings.get_hpc_paths().get(
+                    "remote_case_path_template",
+                    "remote/cases",
+                )
                 remote_beam_dir = f"{remote_case_root}/{case_id}/{beam.beam_id}"
                 logger.info(
                     f"Uploading {len(csv_files)} CSVs to remote dir for beam {beam.beam_id}",
@@ -304,11 +265,6 @@ def run_case_level_upload(case_id: str, settings: Settings,
                                            step=WorkflowStep.UPLOADING,
                                            status="completed")
             return True
-        finally:
-            try:
-                db_conn.close()
-            except Exception:
-                pass
     except Exception as e:
         _handle_dispatcher_error(
             case_id=case_id,
@@ -319,16 +275,6 @@ def run_case_level_upload(case_id: str, settings: Settings,
             handler_name="CsvInterpreter"
         )
         return False
-
-
-
-# ... (rest of the file remains the same, but fixing db connection in tps_generation)
-
-from src.core.case_aggregator import prepare_beam_jobs
-
-
-from src.core.case_aggregator import allocate_gpus_for_pending_beams
-
 
 def run_case_level_tps_generation(
     case_id: str, case_path: Path, beam_count: int, settings: Settings
@@ -509,9 +455,3 @@ def run_case_level_tps_generation(
         except Exception as cleanup_error:
             logger.error("Failed to cleanup GPU allocations", {"error": str(cleanup_error)})
         return None
-
-
-from src.core.workflow_manager import scan_existing_cases
-
-
-from src.core.workflow_manager import CaseDetectionHandler
