@@ -33,12 +33,88 @@ def _extract_numeric_suffix(value: str) -> Optional[int]:
     return int(match.group(1)) if match else None
 
 
+def _extract_planinfo_beam_number(beam_path: Path) -> Optional[int]:
+    planinfo_path = beam_path / "PlanInfo.txt"
+    if not planinfo_path.exists():
+        return None
+
+    try:
+        for raw_line in planinfo_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            key, separator, value = line.partition(",")
+            if separator and key.strip() == "DICOM_BEAM_NUMBER":
+                return int(value.strip())
+    except (OSError, ValueError):
+        return None
+
+    return None
+
+
+def _parse_required_planinfo(beam_path: Path) -> Optional[Dict[str, Any]]:
+    planinfo_path = beam_path / "PlanInfo.txt"
+    if not planinfo_path.exists():
+        return None
+
+    values: Dict[str, str] = {}
+    try:
+        for raw_line in planinfo_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            key, separator, value = line.partition(",")
+            if not separator:
+                continue
+            values[key.strip()] = value.strip()
+    except OSError:
+        return None
+
+    patient_id = values.get("DICOM_PATIENT_ID")
+    beam_number_raw = values.get("DICOM_BEAM_NUMBER")
+    if not patient_id or beam_number_raw is None:
+        return None
+
+    try:
+        beam_number = int(beam_number_raw)
+    except ValueError:
+        return None
+
+    return {
+        "patient_id": patient_id,
+        "beam_number": beam_number,
+    }
+
+
+def _match_metadata_by_raw_beam_number(
+    raw_beam_number: int, beam_metadata: List[Dict[str, Any]]
+) -> Optional[Dict[str, Any]]:
+    numbered_matches = [
+        metadata
+        for metadata in beam_metadata
+        if metadata.get("beam_number") == raw_beam_number
+    ]
+    if len(numbered_matches) == 1:
+        return numbered_matches[0]
+    return None
+
+
 def _map_beam_folder_to_metadata(
     beam_path: Path, beam_metadata: List[Dict[str, Any]]
 ) -> Optional[Dict[str, Any]]:
     folder_name = beam_path.name
     folder_key = _normalize_beam_identifier(folder_name)
     folder_number = _extract_numeric_suffix(folder_name)
+    planinfo_beam_number = _extract_planinfo_beam_number(beam_path)
+
+    if planinfo_beam_number is not None:
+        numbered_matches = [
+            metadata
+            for metadata in beam_metadata
+            if metadata.get("beam_number") == planinfo_beam_number
+        ]
+        if len(numbered_matches) == 1:
+            return numbered_matches[0]
 
     if folder_number is not None:
         numbered_matches = [
@@ -63,6 +139,33 @@ def _map_beam_folder_to_metadata(
     ]
     if len(fuzzy_matches) == 1:
         return fuzzy_matches[0]
+
+    return None
+
+
+def _resolve_treatment_beam_index(
+    matched_metadata: Dict[str, Any], beam_metadata: List[Dict[str, Any]]
+) -> Optional[int]:
+    matched_beam_number = matched_metadata.get("beam_number")
+
+    if matched_beam_number is not None:
+        numbered_matches = [
+            index
+            for index, metadata in enumerate(beam_metadata, start=1)
+            if metadata.get("beam_number") == matched_beam_number
+        ]
+        if len(numbered_matches) == 1:
+            return numbered_matches[0]
+
+    matched_name = _normalize_beam_identifier(str(matched_metadata.get("beam_name", "")))
+    if matched_name:
+        named_matches = [
+            index
+            for index, metadata in enumerate(beam_metadata, start=1)
+            if _normalize_beam_identifier(str(metadata.get("beam_name", ""))) == matched_name
+        ]
+        if len(named_matches) == 1:
+            return named_matches[0]
 
     return None
 
@@ -195,6 +298,8 @@ def prepare_beam_jobs(
             else:
                 logger.debug(f"Excluding non-beam directory: {subdir.name}")
 
+        beam_folders.sort(key=lambda path: path.name)
+
         actual_beam_count = len(beam_folders)
         logger.info(f"Found {actual_beam_count} actual beam folders after filtering")
 
@@ -207,6 +312,7 @@ def prepare_beam_jobs(
 
         beam_info = validator.get_beam_information(case_path)
         treatment_beams = beam_info.get("beams", [])
+        rtplan_patient_id = str(beam_info.get("patient_id", "")).strip()
         if len(treatment_beams) != actual_beam_count:
             logger.error(
                 "Beam metadata count mismatch during beam preparation",
@@ -215,19 +321,56 @@ def prepare_beam_jobs(
             return []
 
         unresolved_folders = []
+        seen_planinfo_beam_numbers = set()
 
         for beam_path in beam_folders:
             beam_name = beam_path.name
             beam_id = f"{case_id}_{beam_name}"
-            matched_metadata = _map_beam_folder_to_metadata(beam_path, treatment_beams)
-            if not matched_metadata or matched_metadata.get("beam_number") is None:
+            planinfo = _parse_required_planinfo(beam_path)
+            if not planinfo:
+                logger.error(
+                    "Missing or invalid required PlanInfo data",
+                    {"beam_folder": beam_name},
+                )
+                return []
+
+            if rtplan_patient_id and planinfo["patient_id"] != rtplan_patient_id:
+                logger.error(
+                    "PlanInfo patient ID does not match RT plan patient ID",
+                    {
+                        "beam_folder": beam_name,
+                        "planinfo_patient_id": planinfo["patient_id"],
+                        "rtplan_patient_id": rtplan_patient_id,
+                    },
+                )
+                return []
+
+            raw_beam_number = int(planinfo["beam_number"])
+            if raw_beam_number in seen_planinfo_beam_numbers:
+                logger.error(
+                    "Duplicate DICOM beam number found across PlanInfo files",
+                    {"beam_folder": beam_name, "beam_number": raw_beam_number},
+                )
+                return []
+            seen_planinfo_beam_numbers.add(raw_beam_number)
+
+            matched_metadata = _match_metadata_by_raw_beam_number(
+                raw_beam_number, treatment_beams
+            )
+            treatment_beam_index = None
+            if matched_metadata:
+                treatment_beam_index = _resolve_treatment_beam_index(
+                    matched_metadata, treatment_beams
+                )
+
+            if not matched_metadata or treatment_beam_index is None:
                 unresolved_folders.append(beam_name)
                 continue
             beam_jobs.append(
                 {
                     "beam_id": beam_id,
                     "beam_path": beam_path,
-                    "beam_number": int(matched_metadata["beam_number"]),
+                    "beam_number": int(treatment_beam_index),
                 }
             )
 

@@ -18,7 +18,21 @@ from src.core.case_aggregator import ensure_logger as _ensure_logger
 from src.core.case_aggregator import _normalize_beam_identifier
 from src.core.workflow_manager import scan_existing_cases, CaseDetectionHandler
 
+def _resolve_treatment_beam_index_from_raw_number(
+    raw_beam_number: int, beam_metadata: List[Dict[str, Any]]
+) -> Optional[int]:
+    numbered_matches = [
+        index
+        for index, metadata in enumerate(beam_metadata, start=1)
+        if metadata.get("beam_number") == int(raw_beam_number)
+    ]
+    if len(numbered_matches) == 1:
+        return numbered_matches[0]
+    return None
+
+
 def _resolve_persisted_beam_number(beam: Any, beam_metadata: List[Dict[str, Any]]) -> Optional[int]:
+    persisted_beam_number = getattr(beam, "beam_number", None)
     beam_candidates = []
     beam_path = getattr(beam, "beam_path", None)
     if beam_path:
@@ -31,10 +45,20 @@ def _resolve_persisted_beam_number(beam: Any, beam_metadata: List[Dict[str, Any]
 
     for candidate in beam_candidates:
         candidate_key = _normalize_beam_identifier(candidate)
-        for metadata in beam_metadata:
+        for index, metadata in enumerate(beam_metadata, start=1):
             metadata_key = _normalize_beam_identifier(str(metadata.get("beam_name", "")))
             if candidate_key == metadata_key:
-                return metadata.get("beam_number")
+                return index
+
+    if persisted_beam_number is not None:
+        treatment_beam_index = _resolve_treatment_beam_index_from_raw_number(
+            int(persisted_beam_number), beam_metadata
+        )
+        if treatment_beam_index is not None:
+            return treatment_beam_index
+
+    if persisted_beam_number is not None:
+        return int(persisted_beam_number)
 
     return None
 
@@ -374,8 +398,34 @@ def run_case_level_tps_generation(
                 return None
 
             beam_metadata = beam_info.get("beams", [])
+            persisted_numbers = [
+                int(beam.beam_number)
+                for beam in beams
+                if getattr(beam, "beam_number", None) is not None
+            ]
+            normalized_indices = list(range(1, len(beams) + 1))
+            raw_treatment_numbers = [
+                int(metadata["beam_number"])
+                for metadata in beam_metadata
+                if metadata.get("beam_number") is not None
+            ]
+            use_persisted_indices = (
+                len(persisted_numbers) == len(beams)
+                and sorted(persisted_numbers) == normalized_indices
+            )
+            use_raw_dicom_numbers = (
+                len(persisted_numbers) == len(beams)
+                and set(persisted_numbers) == set(raw_treatment_numbers)
+            )
             for beam in beams:
-                beam_number = _resolve_persisted_beam_number(beam, beam_metadata)
+                if use_persisted_indices:
+                    beam_number = int(beam.beam_number)
+                elif use_raw_dicom_numbers and getattr(beam, "beam_number", None) is not None:
+                    beam_number = _resolve_treatment_beam_index_from_raw_number(
+                        int(beam.beam_number), beam_metadata
+                    )
+                else:
+                    beam_number = _resolve_persisted_beam_number(beam, beam_metadata)
                 if beam_number is None:
                     raise ProcessingError(f"Could not resolve beam number for {beam.beam_id}")
                 case_repo.update_beam_number(beam.beam_id, int(beam_number))
