@@ -5,6 +5,7 @@
 """Manages all CRUD operations for the 'cases' and related tables."""
 
 import json
+from json import JSONDecodeError
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -203,7 +204,7 @@ class CaseRepository(BaseRepository):
                 step = WorkflowStep(step_name)
             except ValueError:
                 # If step_name doesn't match enum, use step parameter
-                pass
+                step = step
         
         if details and not error_message:
             error_message = details
@@ -247,7 +248,14 @@ class CaseRepository(BaseRepository):
 
         steps = []
         for row in rows:
-            metadata = json.loads(row["metadata"]) if row["metadata"] else None
+            try:
+                metadata = json.loads(row["metadata"]) if row["metadata"] else None
+            except JSONDecodeError:
+                self.logger.warning(
+                    "Failed to decode workflow step metadata",
+                    {"case_id": case_id, "step": row["step"]},
+                )
+                metadata = None
 
             steps.append(
                 WorkflowStepRecord(
@@ -285,6 +293,21 @@ class CaseRepository(BaseRepository):
 
         self.logger.info(
             "GPU assigned to case", {"case_id": case_id, "gpu_uuid": gpu_uuid}
+        )
+
+    def clear_assigned_gpu_by_uuid(self, gpu_uuid: str) -> None:
+        """Clears stale case-level GPU references for a specific GPU UUID."""
+        self._log_operation("clear_assigned_gpu_by_uuid", gpu_uuid=gpu_uuid)
+
+        query = (
+            "UPDATE cases SET assigned_gpu = NULL, updated_at = CURRENT_TIMESTAMP "
+            "WHERE assigned_gpu = ?"
+        )
+
+        self._execute_query(query, (gpu_uuid,))
+
+        self.logger.info(
+            "Cleared stale case GPU assignment", {"gpu_uuid": gpu_uuid}
         )
 
     def mark_interpreter_completed(self, case_id: str) -> None:

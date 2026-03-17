@@ -34,7 +34,7 @@ from src.repositories.gpu_repo import GpuRepository
 from src.repositories.case_repo import CaseRepository
 from src.infrastructure.gpu_monitor import GpuMonitor
 from src.handlers.execution_handler import ExecutionHandler
-from src.core.worker import submit_beam_worker, monitor_completed_workers
+from src.core.worker import submit_beam_worker, monitor_completed_workers, try_allocate_pending_beams
 from src.core.dispatcher import (run_case_level_csv_interpreting,
                                  run_case_level_upload, run_case_level_tps_generation)
 from src.core.case_aggregator import prepare_beam_jobs
@@ -255,6 +255,7 @@ class MQIApplication:
                                           update_interval=interval,
                                           reconnect_handler=reconnect_fn)
             self.gpu_monitor.start()
+            self.gpu_monitor.reconcile_stale_assignments(case_repo)
             self.logger.info("GPU monitoring service started.")
         except Exception as e:
             self.logger.error("Failed to start GPU monitor", {"error": str(e)})
@@ -470,18 +471,32 @@ class MQIApplication:
             pending_beams_by_case = {}  # Track {case_id: {"case_path": Path, "pending_jobs": [job_dict]}}
             while not self.shutdown_event.is_set():
                 try:
+                    case_data = None
                     # Process new cases from queue
                     try:
                         case_data = self.case_queue.get(timeout=1.0)
-                        self._process_new_case(case_data, executor, active_futures, pending_beams_by_case)
                     except mp.queues.Empty:
-                        continue
+                        case_data = None
                     except Exception as e:
                         self.logger.error(f"Error processing case from queue", {"error": str(e)})
+
+                    if case_data is not None:
+                        self._process_new_case(case_data, executor, active_futures, pending_beams_by_case)
 
                     # Monitor completed workers
                     monitor_completed_workers(active_futures, pending_beams_by_case,
                                             executor, self.settings, self.logger)
+
+                    # Periodically try to allocate GPUs for pending beams even if
+                    # no worker completed during this iteration.
+                    if pending_beams_by_case:
+                        try_allocate_pending_beams(
+                            pending_beams_by_case,
+                            executor,
+                            active_futures,
+                            self.settings,
+                            self.logger,
+                        )
 
                 except KeyboardInterrupt:
                     self.logger.info("Received shutdown signal")

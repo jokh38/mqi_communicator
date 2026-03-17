@@ -15,7 +15,7 @@ from src.repositories.gpu_repo import GpuRepository
 from src.handlers.execution_handler import ExecutionHandler
 from src.infrastructure.logging_handler import StructuredLogger, LoggerFactory
 from src.core.tps_generator import TpsGenerator
-from src.domain.enums import BeamStatus
+from src.domain.enums import BeamStatus, CaseStatus
 from src.domain.states import WorkflowState, InitialState
 from src.utils.db_context import get_db_session
 from src.core.case_aggregator import queue_case as _queue_case
@@ -164,10 +164,43 @@ def scan_existing_cases(case_queue: mp.Queue,
                 f"Found {len(filesystem_cases)} case directories in scan directory"
             )
 
+            retryable_statuses = {
+                CaseStatus.PENDING,
+                CaseStatus.CSV_INTERPRETING,
+                CaseStatus.PROCESSING,
+                CaseStatus.POSTPROCESSING,
+                CaseStatus.FAILED,
+                CaseStatus.CANCELLED,
+            }
+            non_retryable_statuses = {CaseStatus.COMPLETED}
             new_cases = []
             for case_id, case_path in filesystem_cases:
                 if case_id not in existing_case_ids:
                     new_cases.append((case_id, case_path))
+                    continue
+
+                case_data = case_repo.get_case(case_id)
+                case_status = getattr(case_data, "status", None)
+
+                if case_status in retryable_statuses:
+                    logger.info(
+                        f"Found retryable case during startup scan: {case_id}",
+                        {"case_id": case_id, "status": case_status.value}
+                    )
+                    new_cases.append((case_id, case_path))
+                elif case_status in non_retryable_statuses:
+                    logger.info(
+                        f"Skipping existing case during startup scan: {case_id}",
+                        {"case_id": case_id, "status": case_status.value}
+                    )
+                else:
+                    logger.warning(
+                        f"Case {case_id} has unknown startup status; skipping automatic requeue",
+                        {
+                            "case_id": case_id,
+                            "status": getattr(case_status, "value", str(case_status)),
+                        },
+                    )
 
             if new_cases:
                 logger.info(f"Found {len(new_cases)} new cases to process")

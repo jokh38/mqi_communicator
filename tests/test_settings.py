@@ -35,9 +35,12 @@ def test_load_execution_handler_settings(temp_config_file: Path):
     """
     settings = Settings(config_path=temp_config_file)
 
-    assert hasattr(settings, "execution_handler")
-    assert settings.execution_handler["GpuMonitor"] == "local"
-    assert settings.execution_handler["Workflow"] == "remote"
+    if not hasattr(settings, "execution_handler"):
+        raise AssertionError("Settings should expose execution_handler")
+    if settings.execution_handler["GpuMonitor"] != "local":
+        raise AssertionError("GpuMonitor handler mode should be local")
+    if settings.execution_handler["Workflow"] != "remote":
+        raise AssertionError("Workflow handler mode should be remote")
 
 def test_get_pc_localdata_connection(temp_config_file: Path):
     """
@@ -56,4 +59,29 @@ def test_get_pc_localdata_connection(temp_config_file: Path):
         "remote_base_dir": "D:/MOQUI_RESULTS",
     }
 
-    assert connection_info == expected_info
+    if connection_info != expected_info:
+        raise AssertionError(f"Unexpected connection info: {connection_info!r}")
+
+
+def test_repo_config_uses_built_moqui_runtime_dir() -> None:
+    settings = Settings(config_path=Path("mqi_communicator/config/config.yaml"))
+
+    if settings.get_path("mqi_run_dir", handler_name="HpcJobSubmitter") != "/home/jokh38/MOQUI_SMC/moqui":
+        raise AssertionError("mqi_run_dir should resolve to the moqui repo root")
+
+
+def test_repo_config_runs_built_tps_env_from_moqui_root() -> None:
+    settings = Settings(config_path=Path("mqi_communicator/config/config.yaml"))
+
+    command = settings.get_command(
+        "remote_submit_simulation",
+        handler_name="HpcJobSubmitter",
+        case_id="55061194",
+        beam_id="55061194_2025042401440800",
+    )
+
+    if "cd /home/jokh38/MOQUI_SMC/moqui" not in command:
+        raise AssertionError(f"Unexpected runtime command: {command}")
+    expected_exec = "./build/tps_env/tps_env /home/jokh38/MOQUI_SMC/data/Outputs_csv/55061194/moqui_tps_55061194_2025042401440800.in"
+    if expected_exec not in command:
+        raise AssertionError(f"Expected executable path missing from command: {command}")

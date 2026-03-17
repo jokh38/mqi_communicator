@@ -22,7 +22,7 @@ paths:
     final_dicom_dir: "{base_directory}/data/Dose_dcm/{case_id}"
     database_path: "{base_directory}/data/mqi_communicator.db"
     mqi_interpreter_dir: "{base_directory}/mqi_interpreter"
-    mqi_run_dir: "{base_directory}/tps_env"
+    mqi_run_dir: "{base_directory}/moqui"
     raw_to_dicom_dir: "{base_directory}/RawToDCM"
     tps_input_file: "{base_directory}/data/Outputs_csv/{case_id}/moqui_tps_{beam_id}.in"  # Generated per-beam TPS files
     remote_log_path: "{base_directory}/mqi_communicator/logs/sim_{case_id}_{beam_id}.log"
@@ -39,7 +39,7 @@ paths:
 # =====================================================================================
 executables:
   local:
-    python: "/usr/bin/python3"
+    python: "/home/jokh38/miniconda3/bin/python"
     mqi_interpreter_script: "{base_directory}/mqi_interpreter/main_cli.py"
     raw_to_dicom_script: "{base_directory}/RawToDCM/moqui_raw2dicom.py"
   remote:
@@ -69,12 +69,12 @@ command_templates:
     post_process: >-
       cd {raw_to_dicom_dir} && {python} {raw_to_dicom_script} --input {input_file} --output {output_dir} --dosetype 2d
     upload_result: "scp -r {local_path} {pc_user}@{pc_ip}:{pc_localdata_remote_base_dir}"
-    remote_submit_simulation: "nohup bash -c 'cd {mqi_run_dir} && ./tps_env {tps_input_file} > {remote_log_path} 2>&1' > /dev/null 2>&1 &"
+    remote_submit_simulation: "nohup bash -c 'cd {mqi_run_dir} && ./build/tps_env/tps_env {tps_input_file} > {remote_log_path} 2>&1' > /dev/null 2>&1 &"
     check_job_status: "squeue -j {job_id} -h -o \"%T\""
     check_job_history: "sacct -j {job_id} --noheader --format='State' | head -n 1"
     cleanup: "rm -rf {remote_path}"
   remote:
-    remote_submit_simulation: "nohup bash -c 'cd {mqi_run_dir} && ./tps_env {tps_input_file} > {remote_log_path} 2>&1' > /dev/null 2>&1 &"
+    remote_submit_simulation: "nohup bash -c 'cd {mqi_run_dir} && ./build/tps_env/tps_env {tps_input_file} > {remote_log_path} 2>&1' > /dev/null 2>&1 &"
     cleanup: "rm -rf {remote_path}"
 
 # =====================================================================================

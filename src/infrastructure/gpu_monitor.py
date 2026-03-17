@@ -4,13 +4,14 @@ import csv
 import time
 import threading
 from io import StringIO
-from typing import Callable, List, Dict, Any, Optional
+from typing import Callable, List, Dict, Any, Optional, Set
 from datetime import datetime
 
 from src.infrastructure.logging_handler import StructuredLogger
 from src.domain.errors import GpuResourceError
 from src.handlers.execution_handler import ExecutionHandler
 from src.repositories.gpu_repo import GpuRepository
+from src.domain.enums import GpuStatus
 
 class GpuMonitor:
     """A long-running service that periodically fetches GPU resource data from a remote
@@ -90,7 +91,8 @@ class GpuMonitor:
 
     def _fetch_and_update_gpus(self) -> None:
         """Fetches GPU data from the remote host, parses it, and updates the repository."""
-        self.logger.debug("Attempting to fetch remote GPU data.")
+        execution_location = self._get_execution_location()
+        self.logger.debug(f"Attempting to fetch {execution_location} GPU data.")
         
         try:
             # Execute nvidia-smi command remotely
@@ -112,7 +114,7 @@ class GpuMonitor:
                 self.logger.warning("Nvidia-smi command succeeded but parsing yielded no GPU data.")
                 return
 
-            self.logger.info("Successfully fetched and parsed remote GPU data.", {
+            self.logger.info(f"Successfully fetched and parsed {execution_location} GPU data.", {
                 "gpu_count": len(gpu_data)
             })
 
@@ -135,6 +137,59 @@ class GpuMonitor:
             self.logger.error("An unexpected error occurred while fetching GPU data.", {
                 "error": str(e)
             })
+
+    def get_active_compute_gpu_uuids(self) -> Set[str]:
+        """Return GPU UUIDs that currently have a live compute app."""
+        command = (
+            "nvidia-smi --query-compute-apps=pid,gpu_uuid,process_name,used_memory "
+            "--format=csv,noheader,nounits"
+        )
+        result = self.execution_handler.execute_command(command=command)
+        if not result.success:
+            self.logger.warning("Failed to query active GPU compute apps", {
+                "return_code": result.return_code,
+                "error": result.error,
+            })
+            return set()
+
+        active_gpu_uuids: Set[str] = set()
+        for row in csv.reader(StringIO(result.output or "")):
+            if len(row) < 2:
+                continue
+            gpu_uuid = row[1].strip()
+            if gpu_uuid:
+                active_gpu_uuids.add(gpu_uuid)
+
+        return active_gpu_uuids
+
+    def reconcile_stale_assignments(self, case_repo) -> List[str]:
+        """Release DB-assigned GPUs that have no live compute app."""
+        active_gpu_uuids = self.get_active_compute_gpu_uuids()
+        reclaimed_gpu_uuids: List[str] = []
+
+        for gpu in self.gpu_repository.get_all_gpu_resources():
+            if gpu.status != GpuStatus.ASSIGNED:
+                continue
+            if gpu.uuid in active_gpu_uuids:
+                continue
+
+            self.gpu_repository.release_gpu(gpu.uuid)
+            if case_repo is not None:
+                case_repo.clear_assigned_gpu_by_uuid(gpu.uuid)
+            reclaimed_gpu_uuids.append(gpu.uuid)
+
+        if reclaimed_gpu_uuids:
+            self.logger.info("Reclaimed stale GPU assignments", {
+                "gpu_uuids": reclaimed_gpu_uuids,
+                "count": len(reclaimed_gpu_uuids),
+            })
+
+        return reclaimed_gpu_uuids
+
+    def _get_execution_location(self) -> str:
+        """Describe whether GPU polling is happening locally or remotely."""
+        mode = getattr(self.execution_handler, "mode", None)
+        return "remote" if mode == "remote" else "local"
     
     def _parse_nvidia_smi_output(self, raw_output: str) -> List[Dict[str, Any]]:
         """Parse the CSV output from nvidia-smi into structured data.

@@ -1,6 +1,8 @@
 import pytest
 from unittest.mock import MagicMock, patch
 
+from src.domain.enums import GpuStatus
+from src.domain.models import GpuResource
 from src.infrastructure.gpu_monitor import GpuMonitor
 from src.handlers.execution_handler import ExecutionHandler
 
@@ -32,7 +34,8 @@ def test_gpu_monitor_initialization(mock_logger, mock_gpu_repo, mock_execution_h
         command="nvidia-smi-test",
         update_interval=10
     )
-    assert monitor.execution_handler == mock_execution_handler
+    if monitor.execution_handler != mock_execution_handler:
+        raise AssertionError("GpuMonitor should keep the provided execution handler")
 
 @patch("threading.Thread")
 def test_fetch_and_update_gpus_uses_execution_handler(mock_thread, mock_logger, mock_gpu_repo, mock_execution_handler):
@@ -53,4 +56,109 @@ def test_fetch_and_update_gpus_uses_execution_handler(mock_thread, mock_logger, 
         command="nvidia-smi-test"
     )
 
-    assert mock_gpu_repo.update_resources.call_count == 1
+    if mock_gpu_repo.update_resources.call_count != 1:
+        raise AssertionError("GPU resources should be updated exactly once")
+
+
+@pytest.mark.parametrize(
+    ("mode", "expected_phrase"),
+    [
+        ("local", "local GPU data"),
+        ("remote", "remote GPU data"),
+    ],
+)
+def test_fetch_and_update_gpus_logs_execution_mode(
+    mode,
+    expected_phrase,
+    mock_logger,
+    mock_gpu_repo,
+    mock_execution_handler,
+):
+    mock_execution_handler.mode = mode
+    monitor = GpuMonitor(
+        logger=mock_logger,
+        execution_handler=mock_execution_handler,
+        gpu_repository=mock_gpu_repo,
+        command="nvidia-smi-test",
+        update_interval=10,
+    )
+
+    monitor._fetch_and_update_gpus()
+
+    if not any(
+        call.args and expected_phrase in call.args[0]
+        for call in mock_logger.info.call_args_list
+    ):
+        raise AssertionError(f"Expected log phrase not found: {expected_phrase}")
+
+
+def test_reconcile_stale_assignments_releases_only_unbacked_assigned_gpus(
+    mock_logger,
+    mock_gpu_repo,
+    mock_execution_handler,
+):
+    mock_execution_handler.execute_command.side_effect = [
+        MagicMock(
+            success=True,
+            output="0, GPU-ae1a4e4a, /usr/bin/python, 512\n",
+            error="",
+            return_code=0,
+        )
+    ]
+    mock_gpu_repo.get_all_gpu_resources.return_value = [
+        GpuResource(
+            uuid="GPU-ae1a4e4a",
+            gpu_index=0,
+            name="RTX 3090",
+            memory_total=24576,
+            memory_used=1024,
+            memory_free=23552,
+            temperature=30,
+            utilization=5,
+            status=GpuStatus.ASSIGNED,
+            assigned_case="beam-1",
+            last_updated=None,
+        ),
+        GpuResource(
+            uuid="GPU-stale",
+            gpu_index=1,
+            name="RTX 3090",
+            memory_total=24576,
+            memory_used=14,
+            memory_free=24562,
+            temperature=31,
+            utilization=0,
+            status=GpuStatus.ASSIGNED,
+            assigned_case="beam-2",
+            last_updated=None,
+        ),
+        GpuResource(
+            uuid="GPU-idle",
+            gpu_index=2,
+            name="RTX 3090",
+            memory_total=24576,
+            memory_used=14,
+            memory_free=24562,
+            temperature=31,
+            utilization=0,
+            status=GpuStatus.IDLE,
+            assigned_case=None,
+            last_updated=None,
+        ),
+    ]
+    case_repo = MagicMock()
+
+    monitor = GpuMonitor(
+        logger=mock_logger,
+        execution_handler=mock_execution_handler,
+        gpu_repository=mock_gpu_repo,
+        command="nvidia-smi-test",
+        update_interval=10,
+    )
+
+    reclaimed = monitor.reconcile_stale_assignments(case_repo)
+
+    mock_gpu_repo.release_gpu.assert_called_once_with("GPU-stale")
+    case_repo.clear_assigned_gpu_by_uuid.assert_called_once_with("GPU-stale")
+    if reclaimed != ["GPU-stale"]:
+        raise AssertionError(f"Unexpected reclaimed GPUs: {reclaimed!r}")

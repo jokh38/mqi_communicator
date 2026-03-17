@@ -1,6 +1,7 @@
 import builtins
 import importlib
 import sys
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -8,6 +9,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.core import worker
+from src.domain.enums import GpuStatus
 
 
 def _import_module_without_paramiko(module_name: str, monkeypatch: pytest.MonkeyPatch):
@@ -144,3 +146,48 @@ def test_worker_imports_without_paramiko_installed(monkeypatch):
 
     if not hasattr(module, "worker_main"):
         raise AssertionError("Worker import should expose worker_main")
+
+
+def test_monitor_completed_workers_releases_gpu_and_retries_pending_beams():
+    future = MagicMock()
+    future.result.return_value = None
+    active_futures = {future: "beam-10"}
+    pending_beams_by_case = {"case-1": {"pending_jobs": [{}], "case_path": Path("cases") / "case-1"}}
+    executor = MagicMock()
+    settings = MagicMock()
+    logger = MagicMock()
+    with patch.object(worker, "as_completed", return_value=[future]), \
+         patch.object(worker, "_release_beam_gpu_assignment") as release_mock, \
+         patch.object(worker, "try_allocate_pending_beams") as retry_mock:
+        worker.monitor_completed_workers(
+            active_futures=active_futures,
+            pending_beams_by_case=pending_beams_by_case,
+            executor=executor,
+            settings=settings,
+            logger=logger,
+        )
+
+    release_mock.assert_called_once_with("beam-10", settings, logger)
+    retry_mock.assert_called_once_with(pending_beams_by_case, executor, active_futures, settings, logger)
+
+
+def test_monitor_completed_workers_releases_gpu_on_failure():
+    future = MagicMock()
+    future.result.side_effect = RuntimeError("boom")
+    active_futures = {future: "beam-10"}
+    executor = MagicMock()
+    settings = MagicMock()
+    logger = MagicMock()
+    with patch.object(worker, "as_completed", return_value=[future]), \
+         patch.object(worker, "_release_beam_gpu_assignment") as release_mock, \
+         patch.object(worker, "try_allocate_pending_beams") as retry_mock:
+        worker.monitor_completed_workers(
+            active_futures=active_futures,
+            pending_beams_by_case={},
+            executor=executor,
+            settings=settings,
+            logger=logger,
+        )
+
+    release_mock.assert_called_once_with("beam-10", settings, logger)
+    retry_mock.assert_not_called()

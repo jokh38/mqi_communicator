@@ -122,6 +122,17 @@ def submit_beam_worker(executor: ProcessPoolExecutor, beam_id: str,
     active_futures[future] = beam_id
 
 
+def _release_beam_gpu_assignment(beam_id: str, settings: Settings,
+                                 logger: StructuredLogger) -> None:
+    """Release any GPU reservation currently held by a beam."""
+    try:
+        with get_db_session(settings, logger) as case_repo:
+            gpu_repo = GpuRepository(case_repo.db, logger, settings)
+            gpu_repo.release_all_for_case(beam_id)
+    except Exception as e:
+        logger.error(f"Failed to release GPU assignment for beam {beam_id}", {"error": str(e)})
+
+
 def monitor_completed_workers(active_futures: Dict, pending_beams_by_case: Dict,
                               executor: ProcessPoolExecutor, settings: Settings,
                               logger: StructuredLogger) -> None:
@@ -148,6 +159,7 @@ def monitor_completed_workers(active_futures: Dict, pending_beams_by_case: Dict,
         beam_id = active_futures.pop(future)
         try:
             future.result()  # Raise exception if worker failed
+            _release_beam_gpu_assignment(beam_id, settings, logger)
             logger.info(f"Beam worker {beam_id} completed successfully")
 
             # Check if there are pending beams waiting for GPUs
@@ -156,6 +168,7 @@ def monitor_completed_workers(active_futures: Dict, pending_beams_by_case: Dict,
                                           active_futures, settings, logger)
 
         except Exception as e:
+            _release_beam_gpu_assignment(beam_id, settings, logger)
             logger.error(f"Beam worker {beam_id} failed", {"error": str(e)})
 
 
