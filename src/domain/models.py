@@ -74,7 +74,6 @@ class SystemStats:
     failed_cases: int
     total_gpus: int
     available_gpus: int
-    busy_gpus: int
     last_updated: datetime
 
 # -------------------------------------------------------------------------------------

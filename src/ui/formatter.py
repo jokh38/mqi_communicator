@@ -24,7 +24,6 @@ CASE_STATUS_COLORS = {
 GPU_STATUS_COLORS = {
     GpuStatus.IDLE: "green",
     GpuStatus.ASSIGNED: "yellow",
-    GpuStatus.UNAVAILABLE: "red",
 }
 
 BEAM_STATUS_COLORS = {

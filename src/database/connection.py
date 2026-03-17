@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Generator, Optional
 
 from src.config.settings import Settings  # Updated import
+from src.domain.enums import GpuStatus
 from src.domain.errors import DatabaseError
 from src.infrastructure.logging_handler import StructuredLogger
 
@@ -204,6 +205,17 @@ class DatabaseConnection:
                 if 'beam_number' not in beam_columns:
                     self.logger.info("Adding beam_number column to beams table")
                     conn.execute("ALTER TABLE beams ADD COLUMN beam_number INTEGER")
+
+                # Normalize legacy GPU status values from older databases.
+                cursor = conn.execute(
+                    "UPDATE gpu_resources SET status = ? WHERE status = ?",
+                    (GpuStatus.IDLE.value, "available"),
+                )
+                if cursor.rowcount:
+                    self.logger.info(
+                        "Normalized legacy GPU statuses",
+                        {"updated_rows": cursor.rowcount, "from": "available", "to": GpuStatus.IDLE.value},
+                    )
 
 
             self.logger.info("Database schema initialized successfully")

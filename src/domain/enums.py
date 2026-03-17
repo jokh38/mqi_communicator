@@ -51,9 +51,7 @@ class WorkflowStep(Enum):
 class GpuStatus(Enum):
     """Enumeration of GPU resource statuses."""
     IDLE = "idle"
-    BUSY = "busy"
     ASSIGNED = "assigned"
-    UNAVAILABLE = "unavailable"
 
 
 class ProcessingMode(Enum):
