@@ -111,14 +111,61 @@ def test_wait_for_job_completion_remote_fails_for_unsuccessful_terminal_states(
     assert scheduler_output in result.error
 
 
-def test_submit_simulation_job_local_mode_raises_clear_error():
+@patch.object(ExecutionHandler, "_is_process_running", return_value=False)
+def test_wait_for_job_completion_local_succeeds_when_process_exits_and_output_exists(
+    _mock_is_process_running,
+    tmp_path: Path,
+):
     handler = ExecutionHandler(mode="local")
+    log_file = tmp_path / "simulation.log"
+    log_file.write_text("Beam setup complete\n")
+    output_dir = tmp_path / "beam_10"
+    output_dir.mkdir()
 
-    with pytest.raises(
-        NotImplementedError,
-        match="Local mode does not support simulation job submission.",
-    ):
-        handler.submit_simulation_job("some/script/path.sh")
+    result = handler.wait_for_job_completion(
+        timeout=1,
+        poll_interval=0,
+        log_file_path=str(log_file),
+        local_pid=4321,
+        expected_output_dir=str(output_dir),
+    )
+
+    assert result.failed is False
+
+
+@patch("subprocess.run")
+def test_submit_simulation_job_local_mode_returns_background_pid(mock_run):
+    handler = ExecutionHandler(mode="local")
+    handler.settings = MagicMock()
+    handler.settings.get_command.return_value = "nohup bash -c 'cd /tmp && ./tps_env/tps_env input.in > out.log 2>&1' > /dev/null 2>&1 &"
+    mock_run.return_value = MagicMock(
+        returncode=0,
+        stdout="4321\n",
+        stderr="",
+    )
+
+    result = handler.submit_simulation_job(
+        handler_name="HpcJobSubmitter",
+        command_key="remote_submit_simulation",
+    )
+
+    assert result.success is True
+    assert result.local_pid == 4321
+    mock_run.assert_called_once_with(
+        ["bash", "-lc", "nohup bash -c 'cd /tmp && ./tps_env/tps_env input.in > out.log 2>&1' > /dev/null 2>&1 & echo $!"],
+        check=True,
+        capture_output=True,
+        text=True,
+        cwd=None,
+    )
+
+
+def test_submit_simulation_job_local_mode_requires_handler_context():
+    handler = ExecutionHandler(mode="local")
+    result = handler.submit_simulation_job("some/script/path.sh")
+
+    assert result.success is False
+    assert "handler_name and command_key" in result.error
 
 
 def test_submit_simulation_job_remote_mode_refactored(mock_ssh_client):

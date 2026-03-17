@@ -266,7 +266,9 @@ class HpcExecutionState(WorkflowState):
                 beam_id=context.id
             )
             if not getattr(submission, "success", False):
-                raise ProcessingError(f"Failed to submit HPC simulation: {getattr(submission, 'error', 'unknown error')}")
+                raise ProcessingError(
+                    f"Failed to submit HPC simulation: {getattr(submission, 'error', 'unknown error')}"
+                )
 
             # Mark running when job starts/polling begins
             self._update_progress_from_config(context, PHASE_HPC_RUNNING)
@@ -275,29 +277,38 @@ class HpcExecutionState(WorkflowState):
             if getattr(wait_res, "failed", False):
                 raise ProcessingError(getattr(wait_res, "error", "HPC job failed"))
         else:
-            # Local mode: execute command directly
-            command = context.settings.get_command(
-                "remote_submit_simulation",
+            simulation_output_dir = context.settings.get_path(
+                "simulation_output_dir",
+                handler_name="PostProcessor",
+                case_id=beam.parent_case_id,
+            )
+            expected_output_dir = str(Path(simulation_output_dir) / f"beam_{beam.beam_number}")
+
+            # Local mode still represents running
+            self._update_progress_from_config(context, PHASE_HPC_RUNNING)
+
+            submission = handler.submit_simulation_job(
                 handler_name=handler_name,
+                command_key="remote_submit_simulation",
                 tps_input_file=tps_input_file,
                 mqi_run_dir=mqi_run_dir,
                 remote_log_path=remote_log_path,
                 case_id=beam.parent_case_id,
-                beam_id=context.id
+                beam_id=context.id,
             )
-            # Local mode still represents running
-            self._update_progress_from_config(context, PHASE_HPC_RUNNING)
-
-            result = handler.execute_command(command)
-            if not result.success:
-                raise ProcessingError(f"Failed to execute simulation: {result.error}")
+            if not getattr(submission, "success", False):
+                raise ProcessingError(
+                    f"Failed to execute simulation: {getattr(submission, 'error', 'unknown error')}"
+                )
 
             # Wait for local simulation to complete by monitoring log file
             wait_res = handler.wait_for_job_completion(
                 job_id=None,
                 log_file_path=remote_log_path,
                 beam_id=context.id,
-                case_repo=context.case_repo
+                case_repo=context.case_repo,
+                local_pid=getattr(submission, "local_pid", None),
+                expected_output_dir=expected_output_dir,
             )
             if getattr(wait_res, "failed", False):
                 raise ProcessingError(getattr(wait_res, "error", "Local simulation failed"))

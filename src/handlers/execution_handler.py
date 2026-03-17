@@ -30,6 +30,7 @@ class JobSubmissionResult(NamedTuple):
     """Result from a job submission, including a potential job ID."""
     success: bool
     job_id: Optional[str] = None
+    local_pid: Optional[int] = None
     error: Optional[str] = None
 
 
@@ -79,7 +80,9 @@ class ExecutionHandler:
 
     def wait_for_job_completion(self, job_id: Optional[str] = None, timeout: Optional[int] = None,
                                 poll_interval: Optional[int] = None, log_file_path: Optional[str] = None,
-                                beam_id: Optional[str] = None, case_repo: Optional[Any] = None) -> "ExecutionHandler.JobWaitResult":
+                                beam_id: Optional[str] = None, case_repo: Optional[Any] = None,
+                                local_pid: Optional[int] = None,
+                                expected_output_dir: Optional[str] = None) -> "ExecutionHandler.JobWaitResult":
         """
         Wait for job completion and monitor progress.
         - In remote mode with job_id: poll SLURM queue status
@@ -163,6 +166,8 @@ class ExecutionHandler:
             last_progress = 0.0
             file_position = 0
 
+            expected_output_path = Path(expected_output_dir) if expected_output_dir else None
+
             while time.time() - start_time < timeout:
                 if log_path.exists():
                     try:
@@ -184,11 +189,7 @@ class ExecutionHandler:
                                 # Check for success pattern
                                 if success_pattern in new_content:
                                     # Update to 100% before returning
-                                    if case_repo and beam_id:
-                                        try:
-                                            case_repo.update_beam_progress(beam_id, 100.0)
-                                        except Exception:
-                                            pass
+                                    self._mark_beam_complete(case_repo, beam_id)
                                     return ExecutionHandler.JobWaitResult(failed=False)
 
                                 # Extract total batches if not found yet
@@ -215,6 +216,15 @@ class ExecutionHandler:
 
                     except Exception as e:
                         self.logger.warning(f"Error reading log file: {e}")
+
+                if local_pid is not None and not self._is_process_running(local_pid):
+                    if expected_output_path and expected_output_path.exists():
+                        self._mark_beam_complete(case_repo, beam_id)
+                        return ExecutionHandler.JobWaitResult(failed=False)
+                    return ExecutionHandler.JobWaitResult(
+                        failed=True,
+                        error=f"Local simulation process {local_pid} exited without success marker",
+                    )
 
                 time.sleep(poll_interval)
 
@@ -274,11 +284,39 @@ class ExecutionHandler:
         """
         Submit a simulation job. In remote mode: either execute `sbatch {script_path}`
         when a script path is provided (test-friendly), or resolve via settings when
-        handler_name+command_key are provided. In local mode, raise NotImplementedError.
+        handler_name+command_key are provided. In local mode, submit the configured
+        background command and capture the spawned PID from the shell.
         """
-        if self.mode == "local":
-            raise NotImplementedError("Local mode does not support simulation job submission.")
         try:
+            if self.mode == "local":
+                if script_path:
+                    return JobSubmissionResult(
+                        success=False,
+                        error="Local mode requires handler_name and command_key for job submission",
+                    )
+                if not (handler_name and command_key):
+                    return JobSubmissionResult(success=False, error="Insufficient parameters for job submission")
+                cmd = self.settings.get_command(command_key, handler_name=handler_name, **context)
+                wrapped_cmd = f"{cmd} echo $!"
+                result = subprocess.run(
+                    ["bash", "-lc", wrapped_cmd],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                    cwd=None,
+                )
+                pid_text = (result.stdout or "").strip().splitlines()[-1] if (result.stdout or "").strip() else ""
+                if not pid_text.isdigit():
+                    return JobSubmissionResult(
+                        success=False,
+                        error="Could not extract local process ID from command output.",
+                    )
+                return JobSubmissionResult(
+                    success=True,
+                    job_id=pid_text,
+                    local_pid=int(pid_text),
+                )
+
             if script_path:
                 cmd = f"sbatch {script_path}"
             elif handler_name and command_key:
@@ -295,6 +333,24 @@ class ExecutionHandler:
             return JobSubmissionResult(success=False, error="Could not extract job ID from command output.")
         except Exception as e:
             return JobSubmissionResult(success=False, error=str(e))
+
+    @staticmethod
+    def _is_process_running(pid: int) -> bool:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        return True
+
+    @staticmethod
+    def _mark_beam_complete(case_repo: Optional[Any], beam_id: Optional[str]) -> None:
+        if case_repo and beam_id:
+            try:
+                case_repo.update_beam_progress(beam_id, 100.0)
+            except Exception:
+                pass
 
 
     def post_process(self, handler_name: str, **context: Any) -> ExecutionResult:

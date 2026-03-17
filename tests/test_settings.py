@@ -64,14 +64,14 @@ def test_get_pc_localdata_connection(temp_config_file: Path):
 
 
 def test_repo_config_uses_built_moqui_runtime_dir() -> None:
-    settings = Settings(config_path=Path("mqi_communicator/config/config.yaml"))
+    settings = Settings(config_path=Path("config/config.yaml"))
 
     if settings.get_path("mqi_run_dir", handler_name="HpcJobSubmitter") != "/home/jokh38/MOQUI_SMC/moqui":
         raise AssertionError("mqi_run_dir should resolve to the moqui repo root")
 
 
 def test_repo_config_runs_built_tps_env_from_moqui_root() -> None:
-    settings = Settings(config_path=Path("mqi_communicator/config/config.yaml"))
+    settings = Settings(config_path=Path("config/config.yaml"))
 
     command = settings.get_command(
         "remote_submit_simulation",
@@ -82,6 +82,6 @@ def test_repo_config_runs_built_tps_env_from_moqui_root() -> None:
 
     if "cd /home/jokh38/MOQUI_SMC/moqui" not in command:
         raise AssertionError(f"Unexpected runtime command: {command}")
-    expected_exec = "./build/tps_env/tps_env /home/jokh38/MOQUI_SMC/data/Outputs_csv/55061194/moqui_tps_55061194_2025042401440800.in"
+    expected_exec = "./tps_env/tps_env /home/jokh38/MOQUI_SMC/data/Outputs_csv/55061194/moqui_tps_55061194_2025042401440800.in"
     if expected_exec not in command:
         raise AssertionError(f"Expected executable path missing from command: {command}")

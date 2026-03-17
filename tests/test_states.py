@@ -95,6 +95,34 @@ def test_hpc_execution_state_uses_injected_handler(mock_workflow_manager):
     assert isinstance(next_state, DownloadState)
 
 
+def test_hpc_execution_state_local_uses_pid_aware_wait(mock_workflow_manager):
+    mock_handler = MagicMock(spec=ExecutionHandler)
+    mock_handler.submit_simulation_job.return_value = MagicMock(success=True, local_pid=4321)
+    mock_handler.wait_for_job_completion.return_value = MagicMock(failed=False)
+    state = HpcExecutionState(execution_handler=mock_handler)
+
+    mock_workflow_manager.settings.get_path.side_effect = lambda key, **_: {
+        "tps_input_file": "/tmp/input.in",
+        "mqi_run_dir": "/tmp/mqi",
+        "remote_log_path": "/tmp/log.txt",
+        "simulation_output_dir": "/tmp/native-output",
+    }[key]
+    mock_workflow_manager.settings.get_handler_mode.return_value = "local"
+
+    next_state = state.execute(mock_workflow_manager)
+
+    mock_handler.submit_simulation_job.assert_called_once()
+    mock_handler.wait_for_job_completion.assert_called_once_with(
+        job_id=None,
+        log_file_path="/tmp/log.txt",
+        beam_id="beam-01",
+        case_repo=mock_workflow_manager.case_repo,
+        local_pid=4321,
+        expected_output_dir="/tmp/native-output/beam_10",
+    )
+    assert isinstance(next_state, DownloadState)
+
+
 def test_download_state_stores_final_dicom_path_for_native_output(tmp_path: Path):
     manager = MagicMock(spec=WorkflowManager)
     manager.logger = MagicMock()
