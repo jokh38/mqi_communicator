@@ -13,8 +13,8 @@ from src.repositories.case_repo import CaseRepository
 from src.repositories.gpu_repo import GpuRepository
 from src.handlers.execution_handler import ExecutionHandler
 from src.infrastructure.logging_handler import StructuredLogger, LoggerFactory
+from src.core.dispatcher import allocate_gpus_for_pending_beams
 from src.core.workflow_manager import WorkflowManager
-import paramiko
 from src.core.tps_generator import TpsGenerator
 from src.config.settings import Settings
 from src.utils.db_context import get_db_session
@@ -173,8 +173,6 @@ def try_allocate_pending_beams(pending_beams_by_case: Dict, executor: ProcessPoo
         settings (Settings): Application settings.
         logger (StructuredLogger): Logger instance.
     """
-    from src.core.dispatcher import allocate_gpus_for_pending_beams
-
     cases_to_remove = []
 
     for case_id, pending_data in list(pending_beams_by_case.items()):
@@ -225,16 +223,18 @@ def try_allocate_pending_beams(pending_beams_by_case: Dict, executor: ProcessPoo
                 all_success = True
                 for gpu_assignment, job in zip(new_gpu_assignments, jobs_to_dispatch):
                     beam_id = job["beam_id"]
-                    # Find the beam data matching this beam_id and its index
+                    # Find the beam data matching this beam_id and use its persisted DICOM metadata.
                     beam_data = next((b for b in beams if b.beam_id == beam_id), None)
                     if not beam_data:
                         logger.error(f"Could not find beam data for {beam_id}")
                         all_success = False
                         continue
 
-                    # Find beam index (position in sorted beam list)
-                    beam_index = next((i for i, b in enumerate(beams) if b.beam_id == beam_id), 0)
-                    beam_number = beam_index + 1  # DICOM beam numbers are 1-indexed
+                    beam_number = beam_data.beam_number
+                    if beam_number is None:
+                        logger.error(f"Beam number missing for {beam_id}")
+                        all_success = False
+                        continue
 
                     # Update GPU assignment to this specific beam (for UI display)
                     gpu_repo_inst.assign_gpu_to_case(gpu_assignment["gpu_uuid"], beam_id)

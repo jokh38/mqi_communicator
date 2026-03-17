@@ -1,13 +1,20 @@
 """SSH client initialization helper for HPC connections."""
 
-import paramiko
-from typing import Optional
+from typing import TYPE_CHECKING, Any, Optional
+
+try:
+    import paramiko
+except ModuleNotFoundError:  # pragma: no cover - exercised via import-boundary tests
+    paramiko = None
+
+if TYPE_CHECKING:
+    import paramiko as paramiko_types
 
 from src.config.settings import Settings
 from src.infrastructure.logging_handler import StructuredLogger
 
 
-def create_ssh_client(settings: Settings, logger: StructuredLogger) -> Optional[paramiko.SSHClient]:
+def create_ssh_client(settings: Settings, logger: StructuredLogger) -> Optional[Any]:
     """Creates and connects an SSH client based on HPC configuration.
 
     This helper encapsulates the common pattern of creating and configuring
@@ -32,6 +39,10 @@ def create_ssh_client(settings: Settings, logger: StructuredLogger) -> Optional[
             pass
     """
     try:
+        if paramiko is None:
+            logger.warning("paramiko is not installed. Remote operations disabled.")
+            return None
+
         hpc_config = settings.get_hpc_connection()
 
         # Validate configuration

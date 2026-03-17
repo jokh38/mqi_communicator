@@ -311,7 +311,11 @@ class CaseRepository(BaseRepository):
     # =================================================================================
 
     def create_beam_record(
-        self, beam_id: str, parent_case_id: str, beam_path: Path
+        self,
+        beam_id: str,
+        parent_case_id: str,
+        beam_path: Path,
+        beam_number: Optional[int] = None,
     ) -> None:
         """Adds a new beam to the 'beams' table.
 
@@ -325,10 +329,13 @@ class CaseRepository(BaseRepository):
             beam_id=beam_id,
             parent_case_id=parent_case_id,
             beam_path=str(beam_path),
+            beam_number=beam_number,
         )
         query = """
-            INSERT INTO beams (beam_id, parent_case_id, beam_path, status, progress, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            INSERT INTO beams (
+                beam_id, parent_case_id, beam_path, beam_number, status, progress, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         """
         self._execute_query(
             query,
@@ -336,6 +343,7 @@ class CaseRepository(BaseRepository):
                 beam_id,
                 parent_case_id,
                 str(beam_path),
+                beam_number,
                 BeamStatus.PENDING.value,
                 0.0,
             ),
@@ -416,6 +424,16 @@ class CaseRepository(BaseRepository):
             {"beam_id": beam_id, "hpc_job_id": hpc_job_id},
         )
 
+    def update_beam_number(self, beam_id: str, beam_number: int) -> None:
+        """Persists the DICOM beam number for a beam."""
+        self._log_operation("update_beam_number", beam_id=beam_id, beam_number=beam_number)
+        query = "UPDATE beams SET beam_number = ?, updated_at = CURRENT_TIMESTAMP WHERE beam_id = ?"
+        self._execute_query(query, (beam_number, beam_id))
+        self.logger.info(
+            "Beam number updated",
+            {"beam_id": beam_id, "beam_number": beam_number},
+        )
+
     def get_beams_for_case(self, case_id: str) -> List[BeamData]:
         """Retrieves all beams associated with a given case.
 
@@ -426,7 +444,14 @@ class CaseRepository(BaseRepository):
             List[BeamData]: A list of BeamData objects.
         """
         self._log_operation("get_beams_for_case", case_id=case_id)
-        query = "SELECT * FROM beams WHERE parent_case_id = ? ORDER BY beam_id ASC"
+        query = """
+            SELECT * FROM beams
+            WHERE parent_case_id = ?
+            ORDER BY
+                CASE WHEN beam_number IS NULL THEN 1 ELSE 0 END,
+                beam_number ASC,
+                beam_id ASC
+        """
         rows = self._execute_query(query, (case_id,), fetch_all=True)
         beams = []
         for row in rows:
@@ -492,6 +517,7 @@ class CaseRepository(BaseRepository):
                     job["beam_id"],
                     case_id,
                     str(job["beam_path"]),
+                    job.get("beam_number"),
                     BeamStatus.PENDING.value,
                     0.0,
                 )
@@ -501,8 +527,10 @@ class CaseRepository(BaseRepository):
             # Add beams, or do nothing if they already exist
             conn.executemany(
                 """
-                INSERT INTO beams (beam_id, parent_case_id, beam_path, status, progress, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                INSERT INTO beams (
+                    beam_id, parent_case_id, beam_path, beam_number, status, progress, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 ON CONFLICT(beam_id) DO NOTHING
                 """,
                 beam_records
@@ -644,6 +672,7 @@ class CaseRepository(BaseRepository):
             beam_id=row["beam_id"],
             parent_case_id=row["parent_case_id"],
             beam_path=Path(row["beam_path"]),
+            beam_number=row["beam_number"] if "beam_number" in row.keys() else None,
             status=BeamStatus(row["status"]),
             progress=row["progress"] if "progress" in row.keys() else 0.0,
             created_at=datetime.fromisoformat(row["created_at"]),

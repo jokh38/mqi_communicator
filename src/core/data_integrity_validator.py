@@ -299,6 +299,7 @@ class DataIntegrityValidator:
                     beam_info["beams"].append(
                         {
                             "beam_name": beam_name,
+                            "beam_number": getattr(beam_ds, "BeamNumber", None),
                             "beam_description": beam_description,
                             "treatment_machine": getattr(
                                 beam_ds, "TreatmentMachineName", "Unknown"

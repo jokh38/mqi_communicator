@@ -1,8 +1,8 @@
 """Contains logic for dispatching cases and beams for processing."""
 
-import paramiko
 import time
 import multiprocessing as mp
+import re
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
@@ -21,6 +21,31 @@ from src.infrastructure.logging_handler import LoggerFactory
 from src.core.tps_generator import TpsGenerator
 from src.repositories.gpu_repo import GpuRepository
 from src.utils.db_context import get_db_session, get_handler_db_path, record_step
+
+
+def _normalize_beam_identifier(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", value.lower())
+
+
+def _resolve_persisted_beam_number(beam: Any, beam_metadata: List[Dict[str, Any]]) -> Optional[int]:
+    beam_candidates = []
+    beam_path = getattr(beam, "beam_path", None)
+    if beam_path:
+        beam_candidates.append(Path(beam_path).name)
+
+    beam_id = getattr(beam, "beam_id", "")
+    if beam_id:
+        beam_candidates.append(beam_id.split("_", 1)[-1])
+        beam_candidates.append(beam_id)
+
+    for candidate in beam_candidates:
+        candidate_key = _normalize_beam_identifier(candidate)
+        for metadata in beam_metadata:
+            metadata_key = _normalize_beam_identifier(str(metadata.get("beam_name", "")))
+            if candidate_key == metadata_key:
+                return metadata.get("beam_number")
+
+    return None
 
 
 def _handle_dispatcher_error(
@@ -215,7 +240,7 @@ def run_case_level_csv_interpreting(case_id: str, case_path: Path,
 
 
 def run_case_level_upload(case_id: str, settings: Settings,
-                          ssh_client: paramiko.SSHClient) -> bool:
+                          ssh_client: Any) -> bool:
     """
     Uploads all generated CSV files to each beam's remote directory.
     """
@@ -374,6 +399,7 @@ def run_case_level_tps_generation(
 
             # Get actual treatment beam numbers from DICOM RT Plan (excluding setup beams)
             validator = DataIntegrityValidator(logger)
+            beam_info = validator.get_beam_information(case_path)
             treatment_beam_numbers = validator.get_treatment_beam_numbers(case_path)
 
             if not treatment_beam_numbers:
@@ -401,6 +427,14 @@ def run_case_level_tps_generation(
                 )
                 return None
 
+            beam_metadata = beam_info.get("beams", [])
+            for beam in beams:
+                beam_number = _resolve_persisted_beam_number(beam, beam_metadata)
+                if beam_number is None:
+                    raise ProcessingError(f"Could not resolve beam number for {beam.beam_id}")
+                case_repo.update_beam_number(beam.beam_id, int(beam_number))
+                beam.beam_number = int(beam_number)
+
             # Get output directory for TPS files
             csv_output_base = settings.get_path("csv_output_dir", handler_name="CsvInterpreter")
             tps_output_dir = Path(csv_output_base) / case_id
@@ -415,8 +449,9 @@ def run_case_level_tps_generation(
                 gpu_repo.assign_gpu_to_case(gpu_assignment["gpu_uuid"], beam.beam_id)
 
                 beam_gpu_assignment = [gpu_assignment]  # Single GPU for this beam
-                # Use actual DICOM beam number (excluding setup beams)
-                beam_number = treatment_beam_numbers[i]
+                beam_number = beam.beam_number
+                if beam_number is None:
+                    raise ProcessingError(f"Beam number missing for {beam.beam_id}")
                 success = tps_generator.generate_tps_file_with_gpu_assignments(
                     case_path=case_path,
                     case_id=case_id,

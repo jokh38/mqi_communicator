@@ -6,11 +6,13 @@ either locally or on a remote machine, driven by configuration settings.
 import os
 import re
 import shutil
+import stat
 import subprocess
 from pathlib import Path
-from typing import Any, NamedTuple, Optional
+from typing import TYPE_CHECKING, Any, NamedTuple, Optional
 
-import paramiko
+if TYPE_CHECKING:
+    import paramiko
 
 from src.config.settings import Settings
 from src.infrastructure.logging_handler import LoggerFactory
@@ -51,7 +53,7 @@ class ExecutionHandler:
     def __init__(self,
                  mode: str,
                  settings: Optional[Settings] = None,
-                 ssh_client: Optional[paramiko.SSHClient] = None):
+                 ssh_client: Optional[Any] = None):
         """
         Initializes the ExecutionHandler.
         """
@@ -70,42 +72,6 @@ class ExecutionHandler:
             from src.infrastructure.logging_handler import LoggerFactory as LF
             LF.configure(self.settings)
             self.logger = LF.get_logger("ExecutionHandler")
-
-    def run_raw_to_dcm(self, case_id: str, path: str | Path, output_dir: Optional[Path] = None) -> ExecutionResult:
-        """
-        Run raw_to_dcm either remotely or locally using config-defined paths.
-        - Remote: invoke script path from config with python and required args.
-        - Local: execute the script from config with derived input/output paths.
-        """
-        if self.mode == "remote":
-            if not self._ssh_client:
-                raise ConnectionError("SSH client not available for remote execution.")
-
-            # Get script path and python executable from config
-            python_exe = self.settings.get_executable("python", handler_name="PostProcessor")
-            script_path = self.settings.get_executable("raw_to_dicom_script", handler_name="PostProcessor")
-            hpc_path = str(path)
-            cmd = f"{python_exe} {script_path} --case_id {case_id} --hpc_path {hpc_path}"
-            # Call SSH client directly to match tests (avoid reading stdout.channel)
-            self._ssh_client.exec_command(cmd)
-            return ExecutionResult(True, "", "", 0)
-        else:
-            # Get paths from config
-            python_exe = self.settings.get_executable("python", handler_name="PostProcessor")
-            raw_to_dicom_script = self.settings.get_executable("raw_to_dicom_script", handler_name="PostProcessor")
-            raw_to_dicom_dir = self.settings.get_path("raw_to_dicom_dir", handler_name="PostProcessor")
-
-            local_case_path = Path(path)
-            input_file = local_case_path / f"{case_id}.raw"
-            output_dir = output_dir or (local_case_path / "dicom")
-
-            # Build command using config-defined python and script
-            cmd = f"cd {raw_to_dicom_dir} && {python_exe} {raw_to_dicom_script} --input {input_file} --output {output_dir} --dosetype 2d"
-            try:
-                res = subprocess.run(cmd, shell=True, check=True, capture_output=True, text=True, cwd=local_case_path)
-                return ExecutionResult(True, res.stdout, res.stderr, res.returncode)
-            except subprocess.CalledProcessError as e:
-                return ExecutionResult(False, e.stdout, e.stderr, e.returncode)
 
     class JobWaitResult(NamedTuple):
         failed: bool
@@ -130,8 +96,56 @@ class ExecutionHandler:
             poll_interval = self.settings.get_processing_config().get("hpc_poll_interval_seconds", 30)
 
         if self.mode == "remote" and job_id:
-            # Remote mode: poll SLURM job status (to be implemented)
-            return ExecutionHandler.JobWaitResult(failed=False)
+            start_time = time.time()
+            unsuccessful_terminal_states = {
+                "FAILED",
+                "CANCELLED",
+                "TIMEOUT",
+                "NODE_FAIL",
+                "OUT_OF_MEMORY",
+            }
+            running_states = {"PENDING", "CONFIGURING", "RUNNING", "COMPLETING"}
+
+            while time.time() - start_time < timeout:
+                result = self.execute_command(f"squeue -h -j {job_id} -o %T")
+                if not result.success:
+                    return ExecutionHandler.JobWaitResult(
+                        failed=True,
+                        error=result.error or f"Failed to query scheduler for job {job_id}",
+                    )
+
+                scheduler_output = (result.output or "").strip()
+                state = scheduler_output.splitlines()[0].strip().upper() if scheduler_output else ""
+
+                if not state:
+                    history_result = self.execute_command(f"sacct -j {job_id} --noheader --format=State | head -n 1")
+                    if not history_result.success:
+                        return ExecutionHandler.JobWaitResult(
+                            failed=True,
+                            error=history_result.error or f"Failed to query job history for {job_id}",
+                        )
+                    history_output = (history_result.output or "").strip()
+                    state = history_output.split()[0].upper() if history_output else ""
+
+                if state == "COMPLETED":
+                    return ExecutionHandler.JobWaitResult(failed=False)
+                if state in unsuccessful_terminal_states:
+                    return ExecutionHandler.JobWaitResult(
+                        failed=True,
+                        error=f"Job {job_id} finished with state {state}",
+                    )
+                if state and state not in running_states:
+                    return ExecutionHandler.JobWaitResult(
+                        failed=True,
+                        error=f"Job {job_id} returned unexpected scheduler state {state}",
+                    )
+
+                time.sleep(poll_interval)
+
+            return ExecutionHandler.JobWaitResult(
+                failed=True,
+                error=f"Job {job_id} timed out after {timeout} seconds",
+            )
         elif self.mode == "local" and log_file_path:
             # Local mode: monitor log file for completion patterns and progress
             completion_markers = self.settings.get_completion_patterns()
@@ -215,15 +229,16 @@ class ExecutionHandler:
 
 
     def execute_command(self,
-                        command: str,
+                        command: Any,
                         cwd: Optional[Path] = None) -> ExecutionResult:
         """
         Executes a command either locally or remotely.
         """
         if self.mode == "local":
             try:
+                use_shell = isinstance(command, str)
                 result = subprocess.run(command,
-                                        shell=True,
+                                        shell=use_shell if not isinstance(command, list) else False,
                                         check=True,
                                         capture_output=True,
                                         text=True,
@@ -336,6 +351,25 @@ class ExecutionHandler:
             self.logger.error("File download failed", context={"error": str(e)})
             return DownloadResult(success=False, error=str(e))
 
+    def download_directory(self, remote_dir: str, local_dir: str) -> DownloadResult:
+        """Downloads a directory tree containing native DICOM output."""
+        try:
+            local_dir_path = Path(local_dir)
+            local_dir_path.mkdir(parents=True, exist_ok=True)
+
+            if self.mode == "local":
+                shutil.copytree(remote_dir, local_dir, dirs_exist_ok=True)
+            else:
+                if not self._ssh_client:
+                    raise ConnectionError("SSH client not available for remote download.")
+                if not self._sftp_client:
+                    self._sftp_client = self._ssh_client.open_sftp()
+                self._download_directory_recursive(self._sftp_client, remote_dir, local_dir)
+            return DownloadResult(success=True)
+        except Exception as e:
+            self.logger.error("Directory download failed", context={"error": str(e)})
+            return DownloadResult(success=False, error=str(e))
+
     def cleanup(self, handler_name: str, **context: Any) -> ExecutionResult:
         """
         Runs a cleanup command (e.g., 'rm -rf') from Settings.
@@ -357,7 +391,10 @@ class ExecutionHandler:
                 base_dir = Path("./localdata_uploads") / case_id
                 base_dir.mkdir(parents=True, exist_ok=True)
                 src = Path(local_path)
-                shutil.copy(str(src), str(base_dir / src.name))
+                if src.is_dir():
+                    shutil.copytree(src, base_dir / src.name, dirs_exist_ok=True)
+                else:
+                    shutil.copy(str(src), str(base_dir / src.name))
                 import logging
                 logging.getLogger(__name__).info(
                     f"Simulating upload by copying to local directory for case {case_id}")
@@ -381,7 +418,7 @@ class ExecutionHandler:
         if self._sftp_client:
             self._sftp_client.close()
 
-    def _mkdir_p(self, sftp: paramiko.SFTPClient, remote_directory: str):
+    def _mkdir_p(self, sftp: Any, remote_directory: str):
         """
         Creates a directory and all its parents recursively on the remote server.
         This is a more robust implementation that handles nested creation.
@@ -399,3 +436,18 @@ class ExecutionHandler:
             sftp.mkdir(basename)
             sftp.chdir(basename)
             return True
+
+    def _download_directory_recursive(
+        self,
+        sftp: Any,
+        remote_dir: str,
+        local_dir: str,
+    ) -> None:
+        Path(local_dir).mkdir(parents=True, exist_ok=True)
+        for entry in sftp.listdir_attr(remote_dir):
+            remote_path = f"{remote_dir.rstrip('/')}/{entry.filename}"
+            local_path = Path(local_dir) / entry.filename
+            if stat.S_ISDIR(entry.st_mode):
+                self._download_directory_recursive(sftp, remote_path, str(local_path))
+            else:
+                sftp.get(remote_path, str(local_path))

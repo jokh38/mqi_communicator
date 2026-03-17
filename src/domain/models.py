@@ -30,6 +30,7 @@ class BeamData:
     beam_id: str
     parent_case_id: str
     beam_path: Path
+    beam_number: Optional[int]
     status: BeamStatus
     progress: float
     created_at: datetime

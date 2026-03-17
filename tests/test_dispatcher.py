@@ -1,98 +1,183 @@
-import pytest
-from unittest.mock import MagicMock, patch
+import builtins
+import importlib
+import sys
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
-from src.core import dispatcher
+import pytest
+
 from src.config.settings import Settings
 from src.handlers.execution_handler import ExecutionHandler, ExecutionResult, UploadResult
 
+
+def _import_module_without_paramiko(module_name: str, monkeypatch: pytest.MonkeyPatch):
+    original_import = builtins.__import__
+
+    def blocked_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "paramiko":
+            raise ModuleNotFoundError("No module named 'paramiko'")
+        return original_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.delitem(sys.modules, "paramiko", raising=False)
+    monkeypatch.delitem(sys.modules, module_name, raising=False)
+    monkeypatch.delitem(sys.modules, "src.handlers.execution_handler", raising=False)
+    monkeypatch.setattr(builtins, "__import__", blocked_import)
+    return importlib.import_module(module_name)
+
+
 @pytest.fixture
 def mock_settings():
-    """Fixture for mocked Settings."""
     settings = MagicMock(spec=Settings)
     settings.get_database_path.return_value = "dummy.db"
-    settings.get_case_directories.return_value = {
-        "csv_output": "/tmp/csv_output/{case_id}"
-    }
+    settings.database = {}
+    settings.get_path.side_effect = lambda key, **_: {
+        "database_path": "dummy.db",
+        "csv_output_dir": "/tmp/csv_output",
+        "mqi_interpreter_dir": "/opt/mqi_interpreter",
+    }[key]
+    settings.get_executable.side_effect = lambda key, **_: {
+        "python": "/usr/bin/python3",
+        "mqi_interpreter_script": "/opt/main_cli.py",
+    }[key]
+    settings.get_hpc_paths.return_value = {"remote_case_path_template": "/remote/cases"}
+    settings.get_handler_mode.return_value = "local"
     mock_logging_config = MagicMock()
     mock_logging_config.log_level = "INFO"
     mock_logging_config.log_dir = Path("/tmp/logs")
     mock_logging_config.max_file_size = 10
     mock_logging_config.backup_count = 5
     settings.logging = mock_logging_config
-    settings.database = {}
     return settings
+
 
 @patch("src.core.dispatcher.DatabaseConnection")
 @patch("src.core.dispatcher.CaseRepository")
 @patch("src.core.dispatcher.ExecutionHandler")
-def test_run_case_level_csv_interpreting_success(mock_exec_handler_cls, mock_case_repo_cls, mock_db_conn_cls, mock_settings):
-    """
-    Tests that run_case_level_csv_interpreting successfully calls
-    the execution handler with the correct command.
-    """
-    # Arrange
+def test_run_case_level_csv_interpreting_success(
+    mock_exec_handler_cls,
+    mock_case_repo_cls,
+    mock_db_conn_cls,
+    mock_settings,
+):
+    dispatcher = importlib.import_module("src.core.dispatcher")
     mock_exec_handler_instance = MagicMock(spec=ExecutionHandler)
-    mock_exec_handler_instance.execute_command.return_value = ExecutionResult(success=True, output="", error="", return_code=0)
+    mock_exec_handler_instance.execute_command.return_value = ExecutionResult(
+        success=True, output="", error="", return_code=0
+    )
     mock_exec_handler_cls.return_value = mock_exec_handler_instance
 
     case_id = "test_case_01"
     case_path = Path("/dummypath/test_case_01")
 
-    # Act
     success = dispatcher.run_case_level_csv_interpreting(case_id, case_path, mock_settings)
 
-    # Assert
     assert success is True
-    mock_exec_handler_instance.execute_command.assert_called_once()
-    call_args, call_kwargs = mock_exec_handler_instance.execute_command.call_args
-    # Updated to match new command format using config paths
-    assert "python" in call_args[0] or "/usr/bin/python3" in call_args[0]
-    assert "main_cli.py" in call_args[0]
-    assert f"--logdir {case_path}" in call_args[0]
-    assert f"--outputdir /tmp/csv_output/{case_id}" in call_args[0]
-    assert call_kwargs["cwd"] == case_path
+    mock_exec_handler_instance.execute_command.assert_called_once_with(
+        "cd /opt/mqi_interpreter && /usr/bin/python3 /opt/main_cli.py "
+        f"--logdir {case_path} --outputdir /tmp/csv_output/{case_id}",
+        cwd=case_path,
+    )
+
 
 @patch("src.core.dispatcher.DatabaseConnection")
 @patch("src.core.dispatcher.CaseRepository")
 @patch("src.core.dispatcher.ExecutionHandler")
-def test_run_case_level_upload_success(mock_exec_handler_cls, mock_case_repo_cls, mock_db_conn_cls, mock_settings):
-    """
-    Tests that run_case_level_upload successfully calls the execution handler's
-    upload_file method for each CSV file.
-    """
-    # Arrange
+def test_run_case_level_upload_success(
+    mock_exec_handler_cls,
+    mock_case_repo_cls,
+    mock_db_conn_cls,
+    mock_settings,
+):
+    dispatcher = importlib.import_module("src.core.dispatcher")
     mock_exec_handler_instance = MagicMock(spec=ExecutionHandler)
     mock_exec_handler_instance.upload_file.return_value = UploadResult(success=True)
     mock_exec_handler_cls.return_value = mock_exec_handler_instance
 
     mock_ssh_client = MagicMock()
-
-    # Mock settings for HPC paths
-    mock_settings.get_hpc_paths.return_value = {
-        "remote_case_path_template": "/remote/cases"
-    }
-
-    # Mock CaseRepository to return beams
-    mock_beam = MagicMock()
-    mock_beam.parent_case_id = "test_case_01"
-    mock_beam.beam_id = "beam_01"
-    mock_case_repo_instance = mock_case_repo_cls.return_value
-    mock_case_repo_instance.get_beams_for_case.return_value = [mock_beam]
+    mock_case_repo_cls.return_value.get_beams_for_case.return_value = [
+        SimpleNamespace(parent_case_id="test_case_01", beam_id="beam_01")
+    ]
 
     case_id = "test_case_01"
-
-    # Create dummy CSV files to be "uploaded"
     with patch("src.core.dispatcher.Path.glob") as mock_glob:
         mock_csv_file = Path(f"/tmp/csv_output/{case_id}/test.csv")
         mock_glob.return_value = [mock_csv_file]
 
-        # Act
         success = dispatcher.run_case_level_upload(case_id, mock_settings, mock_ssh_client)
 
-        # Assert
-        assert success is True
-        mock_exec_handler_instance.upload_file.assert_called_once_with(
-            local_path=str(mock_csv_file),
-            remote_path=f"/remote/cases/{case_id}/beam_01/{mock_csv_file.name}"
-        )
+    assert success is True
+    mock_exec_handler_instance.upload_file.assert_called_once_with(
+        local_path=str(mock_csv_file),
+        remote_path=f"/remote/cases/{case_id}/beam_01/{mock_csv_file.name}",
+    )
+
+
+@patch("src.core.dispatcher.LoggerFactory.get_logger")
+@patch("src.core.dispatcher.TpsGenerator")
+@patch("src.core.dispatcher.DataIntegrityValidator")
+@patch("src.core.dispatcher.GpuRepository")
+@patch("src.core.dispatcher.get_db_session")
+def test_run_case_level_tps_generation_persists_extracted_beam_numbers(
+    mock_get_db_session,
+    mock_gpu_repo_cls,
+    mock_validator_cls,
+    mock_tps_generator_cls,
+    mock_get_logger,
+    mock_settings,
+):
+    dispatcher = importlib.import_module("src.core.dispatcher")
+    logger = MagicMock()
+    mock_get_logger.return_value = logger
+
+    case_repo = MagicMock()
+    case_repo.db.init_db.return_value = None
+    case_repo.get_beams_for_case.return_value = [
+        SimpleNamespace(beam_id="case-1_beam-b", beam_number=None, beam_path=Path("/cases/case-1/beam-b")),
+        SimpleNamespace(beam_id="case-1_beam-a", beam_number=None, beam_path=Path("/cases/case-1/beam-a")),
+    ]
+
+    gpu_repo = MagicMock()
+    gpu_repo.get_available_gpu_count.return_value = 2
+    gpu_repo.find_and_lock_multiple_gpus.return_value = [
+        {"gpu_uuid": "gpu-1"},
+        {"gpu_uuid": "gpu-2"},
+    ]
+
+    validator = MagicMock()
+    validator.get_beam_information.return_value = {
+        "beams": [
+            {"beam_name": "beam-b", "beam_number": 10},
+            {"beam_name": "beam-a", "beam_number": 2},
+        ]
+    }
+    validator.get_treatment_beam_numbers.return_value = [10, 2]
+
+    tps_generator = MagicMock()
+    tps_generator.generate_tps_file_with_gpu_assignments.return_value = True
+
+    mock_gpu_repo_cls.return_value = gpu_repo
+    mock_validator_cls.return_value = validator
+    mock_tps_generator_cls.return_value = tps_generator
+
+    context_manager = MagicMock()
+    context_manager.__enter__.return_value = case_repo
+    context_manager.__exit__.return_value = False
+    mock_get_db_session.return_value = context_manager
+
+    result = dispatcher.run_case_level_tps_generation(
+        case_id="case-1",
+        case_path=Path("/cases/case-1"),
+        beam_count=2,
+        settings=mock_settings,
+    )
+
+    assert result == [{"gpu_uuid": "gpu-1"}, {"gpu_uuid": "gpu-2"}]
+    case_repo.update_beam_number.assert_any_call("case-1_beam-b", 10)
+    case_repo.update_beam_number.assert_any_call("case-1_beam-a", 2)
+
+
+def test_dispatcher_module_import_does_not_require_paramiko_for_local_operations(monkeypatch):
+    module = _import_module_without_paramiko("src.core.dispatcher", monkeypatch)
+
+    assert hasattr(module, "run_case_level_csv_interpreting")

@@ -9,6 +9,7 @@
 - Allocates GPUs for pending beams at case level
 """
 
+import re
 import time
 import multiprocessing as mp
 from pathlib import Path
@@ -21,6 +22,49 @@ from src.domain.errors import ProcessingError
 from src.infrastructure.logging_handler import StructuredLogger, LoggerFactory
 from src.core.data_integrity_validator import DataIntegrityValidator
 from src.utils.db_context import get_db_session
+
+
+def _normalize_beam_identifier(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", value.lower())
+
+
+def _extract_numeric_suffix(value: str) -> Optional[int]:
+    match = re.search(r"(\d+)$", value)
+    return int(match.group(1)) if match else None
+
+
+def _map_beam_folder_to_metadata(
+    beam_path: Path, beam_metadata: List[Dict[str, Any]]
+) -> Optional[Dict[str, Any]]:
+    folder_name = beam_path.name
+    folder_key = _normalize_beam_identifier(folder_name)
+    folder_number = _extract_numeric_suffix(folder_name)
+
+    if folder_number is not None:
+        numbered_matches = [
+            metadata for metadata in beam_metadata if metadata.get("beam_number") == folder_number
+        ]
+        if len(numbered_matches) == 1:
+            return numbered_matches[0]
+
+    exact_matches = [
+        metadata
+        for metadata in beam_metadata
+        if _normalize_beam_identifier(str(metadata.get("beam_name", ""))) == folder_key
+    ]
+    if len(exact_matches) == 1:
+        return exact_matches[0]
+
+    fuzzy_matches = [
+        metadata
+        for metadata in beam_metadata
+        if folder_key in _normalize_beam_identifier(str(metadata.get("beam_name", "")))
+        or _normalize_beam_identifier(str(metadata.get("beam_name", ""))) in folder_key
+    ]
+    if len(fuzzy_matches) == 1:
+        return fuzzy_matches[0]
+
+    return None
 
 
 def update_case_status_from_beams(case_id: str, case_repo: CaseRepository, logger: StructuredLogger = None):
@@ -161,14 +205,41 @@ def prepare_beam_jobs(
             )
             return []
 
+        beam_info = validator.get_beam_information(case_path)
+        treatment_beams = beam_info.get("beams", [])
+        if len(treatment_beams) != actual_beam_count:
+            logger.error(
+                "Beam metadata count mismatch during beam preparation",
+                {"expected": actual_beam_count, "metadata_count": len(treatment_beams)},
+            )
+            return []
+
+        unresolved_folders = []
+
         for beam_path in beam_folders:
             beam_name = beam_path.name
             beam_id = f"{case_id}_{beam_name}"
-            beam_jobs.append({"beam_id": beam_id, "beam_path": beam_path})
+            matched_metadata = _map_beam_folder_to_metadata(beam_path, treatment_beams)
+            if not matched_metadata or matched_metadata.get("beam_number") is None:
+                unresolved_folders.append(beam_name)
+                continue
+            beam_jobs.append(
+                {
+                    "beam_id": beam_id,
+                    "beam_path": beam_path,
+                    "beam_number": int(matched_metadata["beam_number"]),
+                }
+            )
+
+        if unresolved_folders:
+            logger.error(
+                "Failed to map one or more beam folders to RT Plan beam metadata",
+                {"unresolved_folders": unresolved_folders},
+            )
+            return []
 
         logger.info(f"Successfully prepared {len(beam_jobs)} beam jobs for case: {case_id}")
 
-        beam_info = DataIntegrityValidator(logger).get_beam_information(case_path)
         if beam_info.get("beam_count", 0) > 0:
             logger.info(
                 f"RT plan information - Patient ID: {beam_info.get('patient_id')}, "

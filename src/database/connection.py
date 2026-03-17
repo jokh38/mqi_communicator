@@ -130,6 +130,7 @@ class DatabaseConnection:
                         beam_id TEXT PRIMARY KEY,
                         parent_case_id TEXT NOT NULL,
                         beam_path TEXT NOT NULL,
+                        beam_number INTEGER,
                         status TEXT NOT NULL,
                         progress REAL DEFAULT 0.0,
                         hpc_job_id TEXT,
@@ -200,6 +201,9 @@ class DatabaseConnection:
                 if 'progress' not in beam_columns:
                     self.logger.info("Adding progress column to beams table")
                     conn.execute("ALTER TABLE beams ADD COLUMN progress REAL DEFAULT 0.0")
+                if 'beam_number' not in beam_columns:
+                    self.logger.info("Adding beam_number column to beams table")
+                    conn.execute("ALTER TABLE beams ADD COLUMN beam_number INTEGER")
 
 
             self.logger.info("Database schema initialized successfully")

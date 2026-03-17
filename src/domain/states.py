@@ -14,7 +14,6 @@ from src.config.constants import (
     PHASE_HPC_QUEUED,
     PHASE_HPC_RUNNING,
     PHASE_DOWNLOADING,
-    PHASE_POSTPROCESSING,
     PHASE_COMPLETED,
     PROGRESS_COMPLETED,
 )
@@ -106,8 +105,6 @@ class WorkflowState(ABC):
             if p is not None:
                 context.case_repo.update_beam_progress(context.id, float(p))
         except Exception:
-            # Silently ignore all errors (defensive programming)
-            # Progress tracking is non-critical and should never crash the workflow
             pass
 
     @abstractmethod
@@ -316,7 +313,7 @@ class HpcExecutionState(WorkflowState):
 
 
 class DownloadState(WorkflowState):
-    """Downloads the raw result file from the HPC and cleans up the remote directory."""
+    """Locates or downloads the native DICOM result for a beam."""
 
     @handle_state_exceptions
     def execute(self, context: 'WorkflowManager') -> WorkflowState:
@@ -330,28 +327,25 @@ class DownloadState(WorkflowState):
             raise ProcessingError(f"Could not retrieve beam data for beam_id: {context.id}")
 
         local_handler_name = "PostProcessor"
-        local_raw_dir = context.settings.get_path(
+        local_result_base = context.settings.get_path(
             "simulation_output_dir",
             handler_name=local_handler_name,
             case_id=beam.parent_case_id
         )
 
-        # Get all beams for this case to determine beam number (index in sorted list)
-        all_beams = context.case_repo.get_beams_for_case(beam.parent_case_id)
-        beam_index = next((i for i, b in enumerate(all_beams) if b.beam_id == context.id), 0)
-        beam_number = beam_index + 1  # 1-indexed beam number
+        beam_number = beam.beam_number
+        if beam_number is None:
+            raise ProcessingError(f"Beam number missing for beam_id: {context.id}")
 
-        # Output file is named based on beam number (e.g., beam_1.raw, beam_2.raw, beam_3.raw)
-        output_filename = f"beam_{beam_number}.raw"
-        local_file_path = Path(local_raw_dir) / output_filename
+        local_result_path = Path(local_result_base) / f"beam_{beam_number}"
 
         remote_handler_name = "HpcJobSubmitter"
         mode = context.settings.get_handler_mode(remote_handler_name)
 
         if mode == 'remote':
-            context.logger.info("Remote mode: Downloading results from HPC", {"beam_id": context.id})
+            context.logger.info("Remote mode: Downloading native DICOM results from HPC", {"beam_id": context.id})
 
-            remote_file_path = context.settings.get_path(
+            remote_result_path = context.settings.get_path(
                 "remote_beam_result_path",
                 handler_name=remote_handler_name,
                 case_id=beam.parent_case_id,
@@ -359,14 +353,17 @@ class DownloadState(WorkflowState):
                 beam_number=beam_number
             )
 
-            result = context.execution_handler.download_file(
-                remote_path=remote_file_path,
-                local_path=str(local_file_path)
+            result = context.execution_handler.download_directory(
+                remote_dir=remote_result_path,
+                local_dir=str(local_result_path)
             )
             if not result.success:
-                raise ProcessingError(f"Failed to download result file: {result.error}")
+                raise ProcessingError(f"Failed to download DICOM result directory: {result.error}")
 
-            context.logger.info("Beam result downloaded successfully", {"beam_id": context.id, "path": str(local_file_path)})
+            context.logger.info(
+                "Beam result downloaded successfully",
+                {"beam_id": context.id, "path": str(local_result_path)},
+            )
 
             # Cleanup remote directory
             remote_beam_dir = context.shared_context.get("remote_beam_dir")
@@ -380,56 +377,20 @@ class DownloadState(WorkflowState):
                 else:
                     context.logger.warning("Failed to cleanup remote directory", {"beam_id": context.id, "error": cleanup_result.error})
 
-        else: # local mode
-            context.logger.info("Local mode: Skipping download, using local file.", {"beam_id": context.id})
+        else:  # local mode
+            context.logger.info("Local mode: Using native DICOM output directory.", {"beam_id": context.id})
 
-        if not local_file_path.exists():
-            raise ProcessingError(f"Result file '{output_filename}' not found at expected local path: {local_file_path}")
-
-        context.shared_context["raw_output_file"] = local_file_path
-
-        return PostprocessingState()
-
-    def get_state_name(self) -> str:
-        return "Download Results"
-
-
-class PostprocessingState(WorkflowState):
-    """Runs RawToDCM locally on the beam's output."""
-
-    @handle_state_exceptions
-    def execute(self, context: 'WorkflowManager') -> WorkflowState:
-        self._update_status(
-            context, BeamStatus.POSTPROCESSING, "Running RawToDCM postprocessing"
-        )
-        self._update_progress_from_config(context, PHASE_POSTPROCESSING)
-
-        input_file = context.shared_context.get("raw_output_file")
-        if not input_file or not Path(input_file).exists():
+        if not local_result_path.exists():
             raise ProcessingError(
-                f"Raw output file not found: {input_file}")
+                f"Native DICOM result directory not found at expected path: {local_result_path}"
+            )
 
-        output_dir = Path(input_file).parent / "dcm_output"
-        # Delegate to execution handler to run conversion, passing output_dir
-        res = context.execution_handler.run_raw_to_dcm(
-            case_id=Path(input_file).stem.replace(".raw", ""),
-            path=str(Path(input_file).parent),
-            output_dir=output_dir
-        )
-        if not getattr(res, "success", False):
-            raise ProcessingError(f"RawToDCM failed for beam {context.id}: {getattr(res, 'error', '')}")
+        context.shared_context["final_result_path"] = str(local_result_path)
 
-        # Ensure directory exists for the tests and contains at least one file
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        context.logger.info("Postprocessing completed successfully",
-                            {"beam_id": context.id})
-        context.shared_context["final_result_path"] = str(output_dir)
         return UploadResultToPCLocalDataState()
 
     def get_state_name(self) -> str:
-        return "Postprocessing"
-
+        return "Download Results"
 
 
 class UploadResultToPCLocalDataState(WorkflowState):
