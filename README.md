@@ -104,6 +104,18 @@ The current code uses these configured path families:
 - final DICOM output root: `paths.local.final_dicom_dir`
 - database path: `paths.local.database_path`
 
+To clear the SQLite state database for a fresh start, stop the app first and run:
+
+```bash
+bash scripts/clear_db.sh
+```
+
+You can also pass an explicit config path:
+
+```bash
+bash scripts/clear_db.sh config/config.yaml
+```
+
 Generated TPS files are written as:
 
 ```text

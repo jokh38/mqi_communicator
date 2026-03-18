@@ -26,55 +26,46 @@ This document provides comprehensive testing procedures for the MQI Communicator
 
 ## Testing Procedure
 
-### Phase 1: Pre-Launch Validation
+### Phase 1: Database Initialization
 
-#### 1.1 Configuration Check
+#### 1.1 Clean Existing Database
 ```bash
-# Verify configuration file exists and is valid
-python3 -c "from src.config.settings import Settings; s = Settings(); print('Config OK')"
+# Navigate to project directory
+cd /home/jokh38/MOQUI_SMC/mqi_communicator
 
-# Check execution handler modes
-grep -A 20 "^ExecutionHandler:" config/config.yaml
+# Backup existing database (optional)
+if [ -f ../data/mqi_communicator.db ]; then
+    cp ../data/mqi_communicator.db ../data/mqi_communicator.db.backup_$(date +%Y%m%d_%H%M%S)
+    echo "✓ Database backed up"
+fi
 
-# Verify critical paths exist
-cat config/config.yaml | grep -E "(scan_directory|csv_output_dir|database_path)"
+# Remove existing database to start fresh
+rm -f ../data/mqi_communicator.db
+rm -f ../data/mqi_communicator.db-shm
+rm -f ../data/mqi_communicator.db-wal
+echo "✓ Database files removed"
 ```
 
 **Expected Result:**
-- Configuration loads without errors
-- All execution handlers show correct mode (local/remote)
-- Critical paths are properly configured
+- Existing database files are backed up (if they exist)
+- All database-related files (.db, .db-shm, .db-wal) are removed
+- Clean slate for testing
 
-#### 1.2 Database State Check
+#### 1.2 Initialize Fresh Database
 ```bash
-# Check if database exists and schema is initialized
-sqlite3 ../data/mqi_communicator.db "SELECT name FROM sqlite_master WHERE type='table';"
+# The database will be automatically initialized on first run
+# Verify database directory exists
+mkdir -p ../data
+echo "✓ Data directory ready"
 
-# Check for existing cases
-sqlite3 ../data/mqi_communicator.db "SELECT case_id, status, created_at FROM cases ORDER BY created_at DESC LIMIT 10;"
-
-# Check GPU assignments
-sqlite3 ../data/mqi_communicator.db "SELECT * FROM gpus;"
+# Optional: Verify configuration is correct
+python3 -c "from src.config.settings import Settings; s = Settings(); print('✓ Configuration valid')"
 ```
 
 **Expected Result:**
-- Database tables exist: `cases`, `beams`, `gpus`
-- Previous case records (if any) show proper status transitions
-- GPU table is initialized (may be empty before monitoring starts)
-
-#### 1.3 GPU Availability Check
-```bash
-# Check GPU availability
-nvidia-smi --query-gpu=index,uuid,name,memory.total,memory.free,utilization.gpu --format=csv,noheader,nounits
-
-# Verify GPU count
-nvidia-smi --list-gpus | wc -l
-```
-
-**Expected Result:**
-- At least one GPU is available
-- GPU has free memory
-- No errors in nvidia-smi output
+- Data directory exists
+- Configuration loads successfully
+- System ready for fresh start
 
 ### Phase 2: Application Launch
 
