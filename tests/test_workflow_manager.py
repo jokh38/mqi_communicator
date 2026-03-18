@@ -7,7 +7,7 @@ from src.domain.enums import CaseStatus
 from src.core.workflow_manager import scan_existing_cases
 
 
-def _case(case_id: str, status: CaseStatus):
+def _case(case_id: str, status: CaseStatus, retry_count: int = 0):
     return SimpleNamespace(
         case_id=case_id,
         case_path=Path(f"/cases/{case_id}"),
@@ -18,10 +18,12 @@ def _case(case_id: str, status: CaseStatus):
         error_message=None,
         assigned_gpu=None,
         interpreter_completed=False,
+        retry_count=retry_count,
     )
 
 
-def test_scan_existing_cases_requeues_failed_case(tmp_path):
+def test_scan_existing_cases_skips_failed_case(tmp_path):
+    """W-4 fix: FAILED cases are non-retryable and should be skipped."""
     case_path = tmp_path / "55061194"
     case_path.mkdir()
 
@@ -38,10 +40,10 @@ def test_scan_existing_cases_requeues_failed_case(tmp_path):
     context_manager.__exit__.return_value = False
 
     with patch("src.core.workflow_manager.get_db_session", return_value=context_manager), \
-         patch("src.core.workflow_manager._queue_case", return_value=True) as queue_mock:
+         patch("src.core.workflow_manager._queue_case") as queue_mock:
         scan_existing_cases(case_queue, settings, logger)
 
-    queue_mock.assert_called_once_with("55061194", case_path, case_queue, logger)
+    queue_mock.assert_not_called()
 
 
 def test_scan_existing_cases_skips_completed_case(tmp_path):
@@ -73,11 +75,12 @@ def test_scan_existing_cases_requeues_processing_case(tmp_path):
 
     settings = MagicMock()
     settings.get_case_directories.return_value = {"scan": tmp_path}
+    settings.get_processing_config.return_value = {"max_case_retries": 3}
     logger = MagicMock()
     case_queue = MagicMock()
     case_repo = MagicMock()
     case_repo.get_all_case_ids.return_value = ["55061194"]
-    case_repo.get_case.return_value = _case("55061194", CaseStatus.PROCESSING)
+    case_repo.get_case.return_value = _case("55061194", CaseStatus.PROCESSING, retry_count=0)
 
     context_manager = MagicMock()
     context_manager.__enter__.return_value = case_repo

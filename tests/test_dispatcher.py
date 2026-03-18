@@ -185,7 +185,8 @@ def test_run_case_level_tps_generation_persists_treatment_beam_indices(
         settings=mock_settings,
     )
 
-    if result != [{"gpu_uuid": "gpu-1"}, {"gpu_uuid": "gpu-2"}]:
+    # W-3 fix: gpu_assignments now include beam_id for proper matching
+    if result != [{"gpu_uuid": "gpu-1", "beam_id": "case-1_beam-b"}, {"gpu_uuid": "gpu-2", "beam_id": "case-1_beam-a"}]:
         raise AssertionError(f"Unexpected GPU assignment result: {result!r}")
     case_repo.update_beam_number.assert_any_call("case-1_beam-b", 1)
     case_repo.update_beam_number.assert_any_call("case-1_beam-a", 2)
@@ -298,10 +299,11 @@ def test_run_case_level_tps_generation_uses_treatment_beam_indices_for_timestamp
             settings=mock_settings,
         )
 
+    # W-3 fix: gpu_assignments now include beam_id for proper matching
     assert result == [
-        {"gpu_uuid": "gpu-1", "gpu_id": 0},
-        {"gpu_uuid": "gpu-2", "gpu_id": 1},
-        {"gpu_uuid": "gpu-3", "gpu_id": 2},
+        {"gpu_uuid": "gpu-1", "gpu_id": 0, "beam_id": "55061194_2025042401440800"},
+        {"gpu_uuid": "gpu-2", "gpu_id": 1, "beam_id": "55061194_2025042401501400"},
+        {"gpu_uuid": "gpu-3", "gpu_id": 2, "beam_id": "55061194_2025042401552900"},
     ]
     case_repo.update_beam_number.assert_any_call("55061194_2025042401440800", 1)
     case_repo.update_beam_number.assert_any_call("55061194_2025042401501400", 2)

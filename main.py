@@ -414,7 +414,7 @@ class MQIApplication:
                 "pending_jobs": pending_jobs
             }
 
-        self.logger.info(f"Dispatching workers for case {case_id}: {num_allocated} beams with GPU, {len(pending_jobs)} pending")
+        self.logger.info(f"Dispatching workers for case {case_id}: {len(allocated_jobs)} beams with GPU, {len(pending_jobs)} pending")
 
         for job in allocated_jobs:
             submit_beam_worker(executor, job["beam_id"], job["beam_path"],
