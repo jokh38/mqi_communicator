@@ -17,6 +17,7 @@ This script is responsible for:
 import sys
 import signal
 import time
+import os
 import multiprocessing as mp
 import paramiko
 from pathlib import Path
@@ -28,6 +29,7 @@ from watchdog.observers import Observer
 
 from src.config.settings import Settings
 from src.infrastructure.logging_handler import StructuredLogger, LoggerFactory
+from src.infrastructure.process_registry import ProcessRegistry
 from src.infrastructure.ui_process_manager import UIProcessManager
 from src.database.connection import DatabaseConnection
 from src.repositories.gpu_repo import GpuRepository
@@ -67,6 +69,7 @@ class MQIApplication:
         self.executor: Optional[ProcessPoolExecutor] = None
         self.ui_process_manager: Optional[UIProcessManager] = None
         self.gpu_monitor: Optional[GpuMonitor] = None
+        self.process_registry: Optional[ProcessRegistry] = None
         self.monitor_db_connection: Optional[DatabaseConnection] = None
         self.ssh_client: Optional[paramiko.SSHClient] = None
         self.shutdown_event = threading.Event()
@@ -566,6 +569,8 @@ class MQIApplication:
         # Stop dashboard UI process
         if self.ui_process_manager:
             self.ui_process_manager.stop()
+        if self.process_registry:
+            self.process_registry.unregister_current_process(os.getpid())
         # Executor shutdown handled by context manager
         self.logger.info("Shutdown complete")
 
@@ -576,6 +581,13 @@ class MQIApplication:
         try:
             # Initialize core components
             self.initialize_logging()
+            self.process_registry = ProcessRegistry(
+                repo_root=Path(__file__).resolve().parent,
+                config_path=self.config_path,
+                logger=self.logger,
+            )
+            self.process_registry.reclaim_previous_instance(os.getpid())
+            self.process_registry.register_current_process(os.getpid())
             self.initialize_database()
             # Conditionally initialize SSH if any handler is remote
             handler_modes = self.settings.execution_handler.values()

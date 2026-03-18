@@ -1,5 +1,6 @@
 import multiprocessing as mp
 from pathlib import Path
+import unittest
 from unittest.mock import MagicMock, patch
 
 from main import MQIApplication
@@ -90,3 +91,43 @@ def test_start_gpu_monitor_reconciles_stale_assignments_with_case_repo_session()
     execution_handler_cls.assert_called_once()
     gpu_monitor.start.assert_called_once()
     gpu_monitor.reconcile_stale_assignments.assert_called_once_with(case_repo)
+
+
+def test_run_reclaims_and_registers_matching_previous_process_before_startup():
+    app = MQIApplication(config_path=Path("config/config.yaml"))
+    lifecycle = []
+    registry = MagicMock()
+
+    def mark(name, value=None):
+        lifecycle.append(name)
+        return value
+
+    def init_logging():
+        app.logger = MagicMock()
+        mark("logging")
+
+    app.initialize_logging = MagicMock(side_effect=init_logging)
+    app.initialize_database = MagicMock(side_effect=lambda: mark("database"))
+    app.initialize_ssh_client = MagicMock(side_effect=lambda: mark("ssh"))
+    app.start_file_watcher = MagicMock(side_effect=lambda: mark("watcher"))
+    app.start_dashboard = MagicMock(side_effect=lambda: mark("dashboard"))
+    app.start_gpu_monitor = MagicMock(side_effect=lambda: mark("gpu"))
+    app.run_worker_loop = MagicMock(side_effect=lambda: mark("worker_loop"))
+    app.shutdown = MagicMock(side_effect=lambda: mark("shutdown"))
+    app.settings = MagicMock()
+    app.settings.execution_handler = {"GpuMonitor": "local"}
+
+    registry.reclaim_previous_instance.side_effect = lambda current_pid: mark("reclaim")
+    registry.register_current_process.side_effect = lambda current_pid: mark("register")
+
+    with patch("main.ProcessRegistry", return_value=registry), \
+         patch("main.scan_existing_cases", side_effect=lambda *args, **kwargs: mark("scan")), \
+         patch("main.threading.Thread") as thread_cls:
+        thread = MagicMock()
+        thread.start.side_effect = lambda: mark("monitor_thread")
+        thread_cls.return_value = thread
+        app.run()
+
+    testcase = unittest.TestCase()
+    testcase.assertLess(lifecycle.index("reclaim"), lifecycle.index("database"))
+    testcase.assertLess(lifecycle.index("register"), lifecycle.index("scan"))
