@@ -381,6 +381,10 @@ def prepare_beam_jobs(
             )
             return []
 
+        # Sort beam_jobs by beam_number to match database ordering (W-3 enhancement)
+        # This ensures beam_jobs order matches the GPU assignments from dispatcher
+        beam_jobs.sort(key=lambda job: job["beam_number"])
+
         logger.info(f"Successfully prepared {len(beam_jobs)} beam jobs for case: {case_id}")
 
         if beam_info.get("beam_count", 0) > 0:
