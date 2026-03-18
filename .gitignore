@@ -142,3 +142,11 @@ cython_debug/
 
 # Local git worktrees
 .worktrees/
+
+# Project-specific ignores
+.omc/
+*.db
+dummy.db
+test_main.pid
+localdata_uploads/
+monitoring_report_*.md
