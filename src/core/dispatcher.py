@@ -444,6 +444,9 @@ def run_case_level_tps_generation(
                 # Update GPU assignment to this specific beam (for UI display)
                 gpu_repo.assign_gpu_to_case(gpu_assignment["gpu_uuid"], beam.beam_id)
 
+                # W-3 fix: Add beam_id to gpu_assignment for proper matching in main.py
+                gpu_assignment["beam_id"] = beam.beam_id
+
                 beam_gpu_assignment = [gpu_assignment]  # Single GPU for this beam
                 beam_number = beam.beam_number
                 if beam_number is None:

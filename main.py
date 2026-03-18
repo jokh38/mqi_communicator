@@ -255,7 +255,8 @@ class MQIApplication:
                                           update_interval=interval,
                                           reconnect_handler=reconnect_fn)
             self.gpu_monitor.start()
-            self.gpu_monitor.reconcile_stale_assignments(case_repo)
+            with get_db_session(self.settings, self.logger) as case_repo:
+                self.gpu_monitor.reconcile_stale_assignments(case_repo)
             self.logger.info("GPU monitoring service started.")
         except Exception as e:
             self.logger.error("Failed to start GPU monitor", {"error": str(e)})
@@ -389,10 +390,13 @@ class MQIApplication:
         """
         case_repo.update_case_status(case_id, CaseStatus.PROCESSING, progress=50.0)
 
-        # Only dispatch workers for beams with GPU assignments
-        num_allocated = len(gpu_assignments)
-        allocated_jobs = beam_jobs[:num_allocated]
-        pending_jobs = beam_jobs[num_allocated:]
+        # W-3 fix: Match beam_jobs with gpu_assignments by beam_id instead of positional slicing
+        # Create a set of beam_ids that have GPU assignments
+        assigned_beam_ids = {gpu_assignment.get("beam_id") for gpu_assignment in gpu_assignments if gpu_assignment.get("beam_id")}
+
+        # Separate jobs into allocated and pending based on beam_id matching
+        allocated_jobs = [job for job in beam_jobs if job["beam_id"] in assigned_beam_ids]
+        pending_jobs = [job for job in beam_jobs if job["beam_id"] not in assigned_beam_ids]
 
         # Mark allocated beams as ready for processing
         for job in allocated_jobs:
@@ -517,7 +521,13 @@ class MQIApplication:
                     if not self.ui_process_manager.restart():
                         self.logger.error("Failed to restart the dashboard UI process.")
 
-                # Add other service checks here if needed (e.g., GPU monitor)
+                # Periodically reconcile stale GPU assignments (C-3 fix)
+                if self.gpu_monitor:
+                    try:
+                        with get_db_session(self.settings, self.logger) as case_repo:
+                            self.gpu_monitor.reconcile_stale_assignments(case_repo)
+                    except Exception as e:
+                        self.logger.error("Error reconciling stale GPU assignments", {"error": str(e)})
 
             except Exception as e:
                 self.logger.error("Error in service monitoring thread", {"error": str(e)})
@@ -564,8 +574,6 @@ class MQIApplication:
         Initializes and starts all components, then enters the main processing loop.
         """
         try:
-            # breakpoint() # Paused here
-            
             # Initialize core components
             self.initialize_logging()
             self.initialize_database()
@@ -610,8 +618,9 @@ def setup_signal_handlers(app: MQIApplication) -> None:
             app.logger.info(message.strip())
         else:
             print(message)
-        app.shutdown()
-        sys.exit(0)
+        # Set shutdown event to trigger graceful shutdown in run() finally block
+        # This avoids double shutdown (W-1 fix)
+        app.shutdown_event.set()
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 

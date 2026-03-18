@@ -164,15 +164,19 @@ def scan_existing_cases(case_queue: mp.Queue,
                 f"Found {len(filesystem_cases)} case directories in scan directory"
             )
 
+            # W-4 fix: Get max retry limit from config
+            processing_config = settings.get_processing_config()
+            max_retries = processing_config.get("max_case_retries", 3)
+
             retryable_statuses = {
                 CaseStatus.PENDING,
                 CaseStatus.CSV_INTERPRETING,
                 CaseStatus.PROCESSING,
                 CaseStatus.POSTPROCESSING,
-                CaseStatus.FAILED,
-                CaseStatus.CANCELLED,
             }
-            non_retryable_statuses = {CaseStatus.COMPLETED}
+            # W-4 fix: Don't automatically retry FAILED or CANCELLED cases
+            non_retryable_statuses = {CaseStatus.COMPLETED, CaseStatus.FAILED, CaseStatus.CANCELLED}
+
             new_cases = []
             for case_id, case_path in filesystem_cases:
                 if case_id not in existing_case_ids:
@@ -181,11 +185,21 @@ def scan_existing_cases(case_queue: mp.Queue,
 
                 case_data = case_repo.get_case(case_id)
                 case_status = getattr(case_data, "status", None)
+                retry_count = getattr(case_data, "retry_count", 0)
 
+                # W-4 fix: Check retry limit
                 if case_status in retryable_statuses:
+                    if retry_count >= max_retries:
+                        logger.warning(
+                            f"Case {case_id} has exceeded max retries ({retry_count}/{max_retries}). Skipping.",
+                            {"case_id": case_id, "status": case_status.value, "retry_count": retry_count}
+                        )
+                        continue
+                    # W-4 fix: Increment retry count for retryable cases
+                    case_repo.increment_retry_count(case_id)
                     logger.info(
-                        f"Found retryable case during startup scan: {case_id}",
-                        {"case_id": case_id, "status": case_status.value}
+                        f"Found retryable case during startup scan: {case_id} (retry {retry_count + 1}/{max_retries})",
+                        {"case_id": case_id, "status": case_status.value, "retry_count": retry_count + 1}
                     )
                     new_cases.append((case_id, case_path))
                 elif case_status in non_retryable_statuses:

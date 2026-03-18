@@ -709,6 +709,20 @@ class CaseRepository(BaseRepository):
         )
 
 
+    def increment_retry_count(self, case_id: str) -> None:
+        """Increments the retry count for a case (W-4 fix).
+
+        Args:
+            case_id (str): The case ID.
+        """
+        self._log_operation("increment_retry_count", case_id)
+        query = """
+            UPDATE cases
+            SET retry_count = retry_count + 1, updated_at = CURRENT_TIMESTAMP
+            WHERE case_id = ?
+        """
+        self._execute_query(query, (case_id,))
+
     def fail_case(self, case_id: str, error_message: str) -> None:
         """Marks a case and all its beams as failed.
 

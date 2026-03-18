@@ -69,12 +69,14 @@ command_templates:
     post_process: >-
       cd {raw_to_dicom_dir} && {python} {raw_to_dicom_script} --input {input_file} --output {output_dir} --dosetype 2d
     upload_result: "scp -r {local_path} {pc_user}@{pc_ip}:{pc_localdata_remote_base_dir}"
-    remote_submit_simulation: "nohup bash -c 'cd {mqi_run_dir} && ./tps_env/tps_env {tps_input_file} > {remote_log_path} 2>&1' > /dev/null 2>&1 &"
+    # W-7 fix: Remove trailing & to allow proper process tracking
+    remote_submit_simulation: "cd {mqi_run_dir} && ./tps_env/tps_env {tps_input_file} > {remote_log_path} 2>&1"
     check_job_status: "squeue -j {job_id} -h -o \"%T\""
     check_job_history: "sacct -j {job_id} --noheader --format='State' | head -n 1"
     cleanup: "rm -rf {remote_path}"
   remote:
-    remote_submit_simulation: "nohup bash -c 'cd {mqi_run_dir} && ./tps_env/tps_env {tps_input_file} > {remote_log_path} 2>&1' > /dev/null 2>&1 &"
+    # W-7 fix: For remote, keep background process but use proper PID tracking
+    remote_submit_simulation: "cd {mqi_run_dir} && ./tps_env/tps_env {tps_input_file} > {remote_log_path} 2>&1 & echo $!"
     cleanup: "rm -rf {remote_path}"
 
 # =====================================================================================
@@ -97,12 +99,13 @@ processing:
   scan_interval_seconds: 60
   hpc_poll_interval_seconds: 30
   hpc_job_timeout_seconds: 3600
+  max_case_retries: 3  # W-4 fix: Maximum retries for failed cases
 
 # =====================================================================================
 # Completion Markers - 시뮬레이션 완료 감지용 패턴
 # =====================================================================================
 completion_markers:
-  success_pattern: "Simlulation finalizing.."
+  success_pattern: "Simulation finalizing.."
   failure_patterns:
     - "FATAL ERROR"
     - "ERROR:"

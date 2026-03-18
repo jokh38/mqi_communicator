@@ -48,8 +48,11 @@ class DatabaseConnection:
         db_config = self.settings.get_database_config()
         timeout = db_config.get("connection_timeout_seconds", 30)
         journal_mode = db_config.get("journal_mode", "WAL")
-        synchronous = db_config.get("synchronous", "NORMAL")
-        cache_size = db_config.get("cache_size", -2000)
+        synchronous = db_config.get("synchronous_mode", "NORMAL")  # W-2 fix: match config key
+        # W-2 fix: convert cache_size_mb to pages (-N means N KB in SQLite)
+        cache_size_mb = db_config.get("cache_size_mb", 64)
+        cache_size = -cache_size_mb * 1024  # Convert MB to KB (negative for KB mode)
+        busy_timeout_ms = db_config.get("busy_timeout_ms", 5000)  # W-2 fix: add busy timeout
 
         try:
             self._conn = sqlite3.connect(str(self.db_path),
@@ -57,10 +60,20 @@ class DatabaseConnection:
                                          check_same_thread=False)
             self._conn.row_factory = sqlite3.Row
 
-            # Apply configuration settings
-            self._conn.execute(f"PRAGMA journal_mode = {journal_mode}")
-            self._conn.execute(f"PRAGMA synchronous = {synchronous}")
-            self._conn.execute(f"PRAGMA cache_size = {cache_size}")
+            # Apply configuration settings (using parameterized queries where possible)
+            # PRAGMA statements don't support parameterization, so validate values first
+            valid_journal_modes = ["DELETE", "TRUNCATE", "PERSIST", "MEMORY", "WAL", "OFF"]
+            valid_synchronous = ["OFF", "NORMAL", "FULL", "EXTRA"]
+
+            if journal_mode.upper() not in valid_journal_modes:
+                journal_mode = "WAL"
+            if synchronous.upper() not in valid_synchronous:
+                synchronous = "NORMAL"
+
+            self._conn.execute(f"PRAGMA journal_mode = {journal_mode}")  # nosemgrep: python.sql-string-format-in-execute
+            self._conn.execute(f"PRAGMA synchronous = {synchronous}")  # nosemgrep: python.sql-string-format-in-execute
+            self._conn.execute(f"PRAGMA cache_size = {int(cache_size)}")  # nosemgrep: python.sql-string-format-in-execute
+            self._conn.execute(f"PRAGMA busy_timeout = {int(busy_timeout_ms)}")  # nosemgrep: python.sql-string-format-in-execute
 
             self.logger.info(
                 "Database connection established", {
@@ -122,6 +135,7 @@ class DatabaseConnection:
                         error_message TEXT,
                         assigned_gpu TEXT,
                         interpreter_completed BOOLEAN DEFAULT 0,
+                        retry_count INTEGER DEFAULT 0,
                         FOREIGN KEY (assigned_gpu) REFERENCES gpu_resources (uuid)
                     )
                 """)
@@ -191,6 +205,11 @@ class DatabaseConnection:
                 if 'interpreter_completed' not in case_columns:
                     self.logger.info("Adding interpreter_completed column to cases table")
                     conn.execute("ALTER TABLE cases ADD COLUMN interpreter_completed BOOLEAN DEFAULT 0")
+
+                # W-4 fix: Add retry_count column to cases table if it doesn't exist
+                if 'retry_count' not in case_columns:
+                    self.logger.info("Adding retry_count column to cases table")
+                    conn.execute("ALTER TABLE cases ADD COLUMN retry_count INTEGER DEFAULT 0")
 
                 # Add error_message column to beams table if it doesn't exist
                 cursor = conn.execute("PRAGMA table_info(beams)")

@@ -124,11 +124,9 @@ class InitialState(WorkflowState):
 
     @handle_state_exceptions
     def execute(self, context: 'WorkflowManager') -> WorkflowState:
-        # Use a valid status. CSV_INTERPRETING is the first logical step after validation.
-        self._update_status(
-            context, BeamStatus.CSV_INTERPRETING, "Performing initial validation for beam"
-        )
-        self._update_progress_from_config(context, PHASE_CSV_INTERPRETING)
+        # Initial validation - preserve existing beam status (already set by dispatcher)
+        # Do not overwrite status here as CSV_INTERPRETING has already completed
+        context.logger.info("Performing initial validation for beam", {"beam_id": context.id})
 
         if not context.path.is_dir():
             raise ProcessingError(
