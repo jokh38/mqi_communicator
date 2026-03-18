@@ -191,3 +191,38 @@ def test_monitor_completed_workers_releases_gpu_on_failure():
 
     release_mock.assert_called_once_with("beam-10", settings, logger)
     retry_mock.assert_not_called()
+
+
+def test_monitor_completed_workers_handles_completed_future_while_others_still_running():
+    completed_future = MagicMock()
+    completed_future.done.return_value = True
+    completed_future.result.return_value = None
+
+    pending_future = MagicMock()
+    pending_future.done.return_value = False
+
+    active_futures = {
+        completed_future: "beam-10",
+        pending_future: "beam-11",
+    }
+    pending_beams_by_case = {}
+    executor = MagicMock()
+    settings = MagicMock()
+    logger = MagicMock()
+
+    with patch.object(worker, "_release_beam_gpu_assignment") as release_mock, \
+         patch.object(worker, "try_allocate_pending_beams") as retry_mock:
+        worker.monitor_completed_workers(
+            active_futures=active_futures,
+            pending_beams_by_case=pending_beams_by_case,
+            executor=executor,
+            settings=settings,
+            logger=logger,
+        )
+
+    release_mock.assert_called_once_with("beam-10", settings, logger)
+    retry_mock.assert_not_called()
+    if completed_future in active_futures:
+        raise AssertionError("Completed future should be removed from active_futures")
+    if pending_future not in active_futures:
+        raise AssertionError("Pending future should remain tracked")

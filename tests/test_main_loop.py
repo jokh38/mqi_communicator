@@ -58,3 +58,35 @@ def test_run_worker_loop_attempts_pending_beam_allocation_when_queue_is_empty():
         app.run_worker_loop()
 
     allocate_mock.assert_called_once()
+
+
+def test_start_gpu_monitor_reconciles_stale_assignments_with_case_repo_session():
+    app = MQIApplication(config_path=Path("mqi_communicator/config/config.yaml"))
+    app.logger = MagicMock()
+    app.settings = MagicMock()
+    app.settings.execution_handler = {"GpuMonitor": "local"}
+    app.settings.get_gpu_config.return_value = {
+        "monitor_interval": 10,
+        "gpu_monitor_command": "nvidia-smi --query-gpu=index --format=csv,noheader",
+    }
+
+    monitor_db_connection = MagicMock()
+    case_repo = MagicMock()
+    app._create_db_connection = MagicMock(return_value=monitor_db_connection)
+
+    repo_context = MagicMock()
+    repo_context.__enter__.return_value = case_repo
+    repo_context.__exit__.return_value = False
+
+    gpu_monitor = MagicMock()
+
+    with patch("main.GpuRepository") as gpu_repo_cls, \
+         patch("main.ExecutionHandler") as execution_handler_cls, \
+         patch("main.GpuMonitor", return_value=gpu_monitor), \
+         patch("main.get_db_session", return_value=repo_context):
+        app.start_gpu_monitor()
+
+    gpu_repo_cls.assert_called_once_with(monitor_db_connection, app.logger, app.settings)
+    execution_handler_cls.assert_called_once()
+    gpu_monitor.start.assert_called_once()
+    gpu_monitor.reconcile_stale_assignments.assert_called_once_with(case_repo)

@@ -145,14 +145,11 @@ def monitor_completed_workers(active_futures: Dict, pending_beams_by_case: Dict,
         settings (Settings): Application settings.
         logger (StructuredLogger): Logger instance.
     """
-    from concurrent.futures import TimeoutError as FuturesTimeoutError
+    completed_futures = [
+        future for future in list(active_futures.keys()) if future.done()
+    ]
 
-    completed_futures = []
-    try:
-        for future in as_completed(active_futures.keys(), timeout=0.1):
-            completed_futures.append(future)
-    except FuturesTimeoutError:
-        # No futures completed yet - this is normal, just return
+    if not completed_futures:
         return
 
     for future in completed_futures:

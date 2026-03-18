@@ -127,8 +127,12 @@ Python packages listed in [`requirements.txt`](/C:/MOQUI_SMC/mqi_communicator/re
 - `paramiko`
 - `PyYAML`
 - `pydicom`
+- `pytest` for the local test suite
 
-Operational dependencies used by the code:
+System prerequisites used by the code are documented in
+[`docs/system-prerequisites.md`](/home/jokh38/MOQUI_SMC/mqi_communicator/docs/system-prerequisites.md).
+
+Operational dependencies used by the code include:
 
 - `nvidia-smi` for GPU monitoring
 - `ttyd` if `ui.web.enabled: true`
@@ -168,5 +172,5 @@ This section documents behavior that is visible in the code today and is easy to
 1. Edit [`config/config.yaml`](/C:/MOQUI_SMC/mqi_communicator/config/config.yaml) for your environment.
 2. Ensure the configured directories and external scripts actually exist.
 3. Install Python dependencies with `pip install -r requirements.txt`.
-4. Install `ttyd` or disable `ui.web.enabled`.
+4. Install the required system prerequisites in [`docs/system-prerequisites.md`](/home/jokh38/MOQUI_SMC/mqi_communicator/docs/system-prerequisites.md).
 5. Start the app with `python main.py`.

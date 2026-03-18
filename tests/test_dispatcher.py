@@ -131,7 +131,7 @@ def test_run_case_level_upload_success(
 @patch("src.core.dispatcher.DataIntegrityValidator")
 @patch("src.core.dispatcher.GpuRepository")
 @patch("src.core.dispatcher.get_db_session")
-def test_run_case_level_tps_generation_persists_extracted_beam_numbers(
+def test_run_case_level_tps_generation_persists_treatment_beam_indices(
     mock_get_db_session,
     mock_gpu_repo_cls,
     mock_validator_cls,
@@ -187,7 +187,7 @@ def test_run_case_level_tps_generation_persists_extracted_beam_numbers(
 
     if result != [{"gpu_uuid": "gpu-1"}, {"gpu_uuid": "gpu-2"}]:
         raise AssertionError(f"Unexpected GPU assignment result: {result!r}")
-    case_repo.update_beam_number.assert_any_call("case-1_beam-b", 10)
+    case_repo.update_beam_number.assert_any_call("case-1_beam-b", 1)
     case_repo.update_beam_number.assert_any_call("case-1_beam-a", 2)
 
 
@@ -196,3 +196,113 @@ def test_dispatcher_module_import_does_not_require_paramiko_for_local_operations
 
     if not hasattr(module, "run_case_level_csv_interpreting"):
         raise AssertionError("Dispatcher import should expose run_case_level_csv_interpreting")
+
+
+def test_resolve_persisted_beam_number_prefers_existing_beam_number():
+    dispatcher = importlib.import_module("src.core.dispatcher")
+    beam = SimpleNamespace(
+        beam_id="55061194_2025042401440800",
+        beam_path=Path("/cases/55061194/2025042401440800"),
+        beam_number=2,
+    )
+
+    result = dispatcher._resolve_persisted_beam_number(
+        beam,
+        beam_metadata=[{"beam_name": "non_matching_name", "beam_number": 99}],
+    )
+
+    assert result == 2
+
+
+def test_resolve_persisted_beam_number_uses_treatment_beam_index_for_timestamp_folders():
+    dispatcher = importlib.import_module("src.core.dispatcher")
+    beam = SimpleNamespace(
+        beam_id="55061194_2025042401552900",
+        beam_path=Path("/cases/55061194/2025042401552900"),
+        beam_number=4,
+    )
+
+    result = dispatcher._resolve_persisted_beam_number(
+        beam,
+        beam_metadata=[
+            {"beam_name": "beam a", "beam_number": 2},
+            {"beam_name": "beam b", "beam_number": 3},
+            {"beam_name": "beam c", "beam_number": 4},
+        ],
+    )
+
+    assert result == 3
+
+
+def test_run_case_level_tps_generation_uses_treatment_beam_indices_for_timestamp_folders(
+    mock_settings,
+):
+    dispatcher = importlib.import_module("src.core.dispatcher")
+    logger = MagicMock()
+
+    case_repo = MagicMock()
+    case_repo.db.init_db.return_value = None
+    case_repo.get_beams_for_case.return_value = [
+        SimpleNamespace(
+            beam_id="55061194_2025042401440800",
+            beam_number=1,
+            beam_path=Path("cases") / "55061194" / "2025042401440800",
+        ),
+        SimpleNamespace(
+            beam_id="55061194_2025042401501400",
+            beam_number=2,
+            beam_path=Path("cases") / "55061194" / "2025042401501400",
+        ),
+        SimpleNamespace(
+            beam_id="55061194_2025042401552900",
+            beam_number=3,
+            beam_path=Path("cases") / "55061194" / "2025042401552900",
+        ),
+    ]
+
+    gpu_repo = MagicMock()
+    gpu_repo.get_available_gpu_count.return_value = 3
+    gpu_repo.find_and_lock_multiple_gpus.return_value = [
+        {"gpu_uuid": "gpu-1", "gpu_id": 0},
+        {"gpu_uuid": "gpu-2", "gpu_id": 1},
+        {"gpu_uuid": "gpu-3", "gpu_id": 2},
+    ]
+
+    validator = MagicMock()
+    validator.get_beam_information.return_value = {
+        "beams": [
+            {"beam_name": "beam a", "beam_number": 2},
+            {"beam_name": "beam b", "beam_number": 3},
+            {"beam_name": "beam c", "beam_number": 4},
+        ]
+    }
+    validator.get_treatment_beam_numbers.return_value = [2, 3, 4]
+
+    tps_generator = MagicMock()
+    tps_generator.generate_tps_file_with_gpu_assignments.return_value = True
+
+    context_manager = MagicMock()
+    context_manager.__enter__.return_value = case_repo
+    context_manager.__exit__.return_value = False
+    mock_settings.get_handler_mode.return_value = "local"
+
+    with patch.object(dispatcher.LoggerFactory, "get_logger", return_value=logger), \
+         patch.object(dispatcher, "TpsGenerator", return_value=tps_generator), \
+         patch.object(dispatcher, "DataIntegrityValidator", return_value=validator), \
+         patch.object(dispatcher, "GpuRepository", return_value=gpu_repo), \
+         patch.object(dispatcher, "get_db_session", return_value=context_manager):
+        result = dispatcher.run_case_level_tps_generation(
+            case_id="55061194",
+            case_path=Path("cases") / "55061194",
+            beam_count=3,
+            settings=mock_settings,
+        )
+
+    assert result == [
+        {"gpu_uuid": "gpu-1", "gpu_id": 0},
+        {"gpu_uuid": "gpu-2", "gpu_id": 1},
+        {"gpu_uuid": "gpu-3", "gpu_id": 2},
+    ]
+    case_repo.update_beam_number.assert_any_call("55061194_2025042401440800", 1)
+    case_repo.update_beam_number.assert_any_call("55061194_2025042401501400", 2)
+    case_repo.update_beam_number.assert_any_call("55061194_2025042401552900", 3)

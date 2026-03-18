@@ -4,6 +4,9 @@
 # =====================================================================================
 """Manages the UI subprocess lifecycle, handling its creation, monitoring, and termination."""
 
+import os
+import shutil
+import signal
 import subprocess
 import sys
 import platform
@@ -70,8 +73,9 @@ class UIProcessManager:
                 if not self._validate_ttyd_available():
                     raise RuntimeError("ttyd not available")
 
-                if not self._check_port_available(web_config.get("port", 8080)):
-                    raise RuntimeError(f"Port {web_config.get('port', 8080)} already in use")
+                port = web_config.get("port", 8080)
+                if not self._ensure_web_port_ready(port):
+                    raise RuntimeError(f"Port {port} already in use")
 
             command = self._get_ui_command()
 
@@ -382,6 +386,216 @@ class UIProcessManager:
             if self.logger:
                 self.logger.error(f"Port {port} is already in use")
             return False
+
+    def _ensure_web_port_ready(self, port: int) -> bool:
+        """Ensure the configured UI port is free, reclaiming stale dashboard processes when safe."""
+        if self._check_port_available(port):
+            return True
+
+        owner_info = self._find_port_owner_info(port)
+        if not owner_info:
+            if self.logger:
+                self.logger.error("UI port is in use but the owning process could not be identified", {
+                    "port": port
+                })
+            return False
+
+        if not self._is_stale_dashboard_process(owner_info):
+            if self.logger:
+                self.logger.error("UI port is occupied by a non-dashboard process", {
+                    "port": port,
+                    "pid": owner_info.get("pid"),
+                    "command": owner_info.get("command"),
+                })
+            return False
+
+        if self.logger:
+            self.logger.warning("UI port is occupied by a stale MOQUI dashboard process. Reclaiming port.", {
+                "port": port,
+                "pid": owner_info.get("pid"),
+                "command": owner_info.get("command"),
+            })
+
+        if not self._terminate_process_tree(owner_info["pid"]):
+            if self.logger:
+                self.logger.error("Failed to terminate stale dashboard process", {
+                    "port": port,
+                    "pid": owner_info.get("pid"),
+                })
+            return False
+
+        if not self._wait_for_port_available(port):
+            if self.logger:
+                self.logger.error("Dashboard port did not clear after terminating stale process", {
+                    "port": port,
+                    "pid": owner_info.get("pid"),
+                })
+            return False
+
+        if self.logger:
+            self.logger.info("Successfully reclaimed UI port from stale dashboard process", {
+                "port": port,
+                "pid": owner_info.get("pid"),
+            })
+        return True
+
+    def _find_port_owner_info(self, port: int) -> Optional[Dict[str, Any]]:
+        """Return PID and command for the process listening on a TCP port."""
+        pid = self._find_port_owner_pid(port)
+        if pid is None:
+            return None
+        return {
+            "pid": pid,
+            "command": self._get_process_command(pid),
+        }
+
+    def _find_port_owner_pid(self, port: int) -> Optional[int]:
+        """Resolve the PID of the process listening on the target TCP port."""
+        commands = []
+        if shutil.which("lsof"):
+            commands.append(["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"])
+        if shutil.which("fuser"):
+            commands.append(["fuser", "-n", "tcp", str(port)])
+
+        for command in commands:
+            try:
+                result = subprocess.run(
+                    command,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+            except Exception:
+                continue
+
+            output = " ".join(
+                part.strip()
+                for part in [result.stdout, result.stderr]
+                if part and part.strip()
+            )
+            for token in output.split():
+                if token.isdigit():
+                    return int(token)
+        return None
+
+    def _get_process_command(self, pid: int) -> str:
+        """Return a readable command line for a PID when available."""
+        try:
+            result = subprocess.run(
+                ["ps", "-p", str(pid), "-o", "command="],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            command = result.stdout.strip()
+            if command:
+                return command
+        except Exception:
+            pass
+        return ""
+
+    def _is_stale_dashboard_process(self, owner_info: Dict[str, Any]) -> bool:
+        """Recognize a stale MOQUI dashboard listener that is safe to reclaim."""
+        command = (owner_info.get("command") or "").lower()
+        return "src.ui.dashboard" in command or ("ttyd" in command and "moqui communicator dashboard" in command)
+
+    def _wait_for_port_available(self, port: int, timeout: float = 5.0) -> bool:
+        """Wait for a TCP port to become available."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if self._check_port_available(port):
+                return True
+            time.sleep(0.1)
+        return False
+
+    def _terminate_process_tree(self, pid: int, timeout: float = 5.0) -> bool:
+        """Terminate a process and its descendants."""
+        if platform.system() == "Windows":
+            return self._terminate_process_tree_windows(pid)
+        return self._terminate_process_tree_unix(pid, timeout=timeout)
+
+    def _terminate_process_tree_windows(self, pid: int) -> bool:
+        """Terminate a process tree on Windows."""
+        try:
+            result = subprocess.run(
+                ["taskkill", "/PID", str(pid), "/T", "/F"],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            return result.returncode == 0
+        except Exception:
+            return False
+
+    def _terminate_process_tree_unix(self, pid: int, timeout: float = 5.0) -> bool:
+        """Terminate a process tree on Unix-like platforms."""
+        pids = self._collect_descendant_pids(pid)
+        pids.append(pid)
+
+        for target_pid in reversed(pids):
+            try:
+                os.kill(target_pid, signal.SIGTERM)
+            except ProcessLookupError:
+                continue
+            except Exception:
+                return False
+
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            alive = [target_pid for target_pid in pids if self._pid_exists(target_pid)]
+            if not alive:
+                return True
+            time.sleep(0.1)
+
+        for target_pid in reversed(pids):
+            try:
+                os.kill(target_pid, signal.SIGKILL)
+            except ProcessLookupError:
+                continue
+            except Exception:
+                return False
+
+        time.sleep(0.1)
+        return not any(self._pid_exists(target_pid) for target_pid in pids)
+
+    def _collect_descendant_pids(self, pid: int) -> list[int]:
+        """Collect descendant PIDs for a root process using ps."""
+        descendants: list[int] = []
+        queue = [pid]
+
+        while queue:
+            parent_pid = queue.pop()
+            try:
+                result = subprocess.run(
+                    ["ps", "-o", "pid=", "--ppid", str(parent_pid)],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+            except Exception:
+                continue
+
+            child_pids = []
+            for line in result.stdout.splitlines():
+                line = line.strip()
+                if line.isdigit():
+                    child_pid = int(line)
+                    child_pids.append(child_pid)
+                    descendants.append(child_pid)
+
+            queue.extend(child_pids)
+
+        return descendants
+
+    def _pid_exists(self, pid: int) -> bool:
+        """Check whether a PID still exists."""
+        try:
+            os.kill(pid, 0)
+            return True
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
 
     def _get_process_creation_flags(self) -> int:
         """Gets the appropriate process creation flags based on the platform.
