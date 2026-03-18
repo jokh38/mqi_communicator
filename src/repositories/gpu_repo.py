@@ -62,6 +62,11 @@ class GpuRepository(BaseRepository):
                 memory_free = excluded.memory_free,
                 temperature = excluded.temperature,
                 utilization = excluded.utilization,
+                status = CASE
+                    WHEN gpu_resources.assigned_case IS NOT NULL THEN gpu_resources.status
+                    ELSE excluded.status
+                END,
+                assigned_case = gpu_resources.assigned_case,
                 last_updated = CURRENT_TIMESTAMP
         """
 
@@ -132,7 +137,7 @@ class GpuRepository(BaseRepository):
     def find_and_lock_multiple_gpus(
         self, case_id: str, num_gpus: int, min_memory_mb: Optional[int] = None
     ) -> Optional[List[Dict[str, Any]]]:
-        """Atomically finds multiple idle GPUs with sufficient memory and assigns them to a case.
+        """Atomically reserves multiple idle GPUs with sufficient memory.
 
         Args:
             case_id (str): The case identifier requesting the GPUs.
@@ -181,7 +186,7 @@ class GpuRepository(BaseRepository):
 
                     update_query = """
                         UPDATE gpu_resources
-                        SET status = ?, assigned_case = ?,
+                        SET status = ?, assigned_case = NULL,
                             last_updated = CURRENT_TIMESTAMP
                         WHERE uuid = ? AND status = ?
                     """
@@ -190,7 +195,6 @@ class GpuRepository(BaseRepository):
                         update_query,
                         (
                             GpuStatus.ASSIGNED.value,
-                            case_id,
                             gpu_uuid,
                             GpuStatus.IDLE.value,
                         ),
@@ -230,7 +234,7 @@ class GpuRepository(BaseRepository):
     def find_and_lock_available_gpu(
         self, case_id: str, min_memory_mb: Optional[int] = None
     ) -> Optional[Dict[str, str]]:
-        """Atomically finds an idle GPU with sufficient memory and assigns it to a case.
+        """Atomically reserves one idle GPU with sufficient memory.
 
         Args:
             case_id (str): The case identifier requesting the GPU.
@@ -275,7 +279,7 @@ class GpuRepository(BaseRepository):
 
                 update_query = """
                     UPDATE gpu_resources
-                    SET status = ?, assigned_case = ?,
+                    SET status = ?, assigned_case = NULL,
                         last_updated = CURRENT_TIMESTAMP
                     WHERE uuid = ? AND status = ?
                 """
@@ -284,7 +288,6 @@ class GpuRepository(BaseRepository):
                     update_query,
                     (
                         GpuStatus.ASSIGNED.value,
-                        case_id,
                         gpu_uuid,
                         GpuStatus.IDLE.value,
                     ),

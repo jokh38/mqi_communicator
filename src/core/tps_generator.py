@@ -138,6 +138,9 @@ class TpsGenerator:
             beam_count = len(gpu_assignments)
             if beam_number is not None:
                 parameters["BeamNumbers"] = beam_number
+                output_dir_template = str(parameters.get("OutputDir", "")).rstrip("/")
+                if output_dir_template and not output_dir_template.endswith(f"/beam_{beam_number}"):
+                    parameters["OutputDir"] = f"{output_dir_template}/beam_{beam_number}"
             else:
                 parameters["BeamNumbers"] = beam_count
 

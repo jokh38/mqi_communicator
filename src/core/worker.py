@@ -11,12 +11,13 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from src.repositories.gpu_repo import GpuRepository
 from src.handlers.execution_handler import ExecutionHandler
 from src.infrastructure.logging_handler import StructuredLogger, LoggerFactory
-from src.core.case_aggregator import allocate_gpus_for_pending_beams
+from src.core.case_aggregator import allocate_gpus_for_pending_beams, update_case_status_from_beams
 from src.core.workflow_manager import WorkflowManager
 from src.core.tps_generator import TpsGenerator
 from src.config.settings import Settings
 from src.utils.db_context import get_db_session
 from src.utils.ssh_helper import create_ssh_client
+from src.domain.enums import BeamStatus
 
 
 def worker_main(beam_id: str, beam_path: Path, settings: Settings) -> None:
@@ -133,6 +134,22 @@ def _release_beam_gpu_assignment(beam_id: str, settings: Settings,
         logger.error(f"Failed to release GPU assignment for beam {beam_id}", {"error": str(e)})
 
 
+def _mark_beam_failed(beam_id: str, error: Exception, settings: Settings, logger: StructuredLogger) -> None:
+    """Persist worker bootstrap failures that happen before workflow error handling exists."""
+    try:
+        with get_db_session(settings, logger) as case_repo:
+            error_message = f"Worker failed before workflow completion: {error}"
+            case_repo.update_beam_status(beam_id, BeamStatus.FAILED, error_message=error_message)
+            beam = case_repo.get_beam(beam_id)
+            if beam:
+                update_case_status_from_beams(beam.parent_case_id, case_repo, logger)
+    except Exception as db_error:
+        logger.error(
+            f"Failed to persist worker failure for beam {beam_id}",
+            {"error": str(db_error), "original_error": str(error)},
+        )
+
+
 def monitor_completed_workers(active_futures: Dict, pending_beams_by_case: Dict,
                               executor: ProcessPoolExecutor, settings: Settings,
                               logger: StructuredLogger) -> None:
@@ -166,6 +183,7 @@ def monitor_completed_workers(active_futures: Dict, pending_beams_by_case: Dict,
 
         except Exception as e:
             _release_beam_gpu_assignment(beam_id, settings, logger)
+            _mark_beam_failed(beam_id, e, settings, logger)
             logger.error(f"Beam worker {beam_id} failed", {"error": str(e)})
 
 

@@ -85,3 +85,17 @@ def test_repo_config_runs_built_tps_env_from_moqui_root() -> None:
     expected_exec = "./tps_env/tps_env /home/jokh38/MOQUI_SMC/data/Outputs_csv/55061194/moqui_tps_55061194_2025042401440800.in"
     if expected_exec not in command:
         raise AssertionError(f"Expected executable path missing from command: {command}")
+
+
+def test_repo_config_uses_single_case_prefix_in_sim_log_name() -> None:
+    settings = Settings(config_path=Path("config/config.yaml"))
+
+    log_path = settings.get_path(
+        "remote_log_path",
+        handler_name="HpcJobSubmitter",
+        case_id="55061194",
+        beam_id="55061194_2025042401440800",
+    )
+
+    if log_path != "/home/jokh38/MOQUI_SMC/mqi_communicator/logs/sim_55061194_2025042401440800.log":
+        raise AssertionError(f"Unexpected log path: {log_path}")

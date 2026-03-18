@@ -2,6 +2,7 @@
 
 import sqlite3
 import threading
+import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Generator, Optional
@@ -59,6 +60,7 @@ class DatabaseConnection:
                                          timeout=timeout,
                                          check_same_thread=False)
             self._conn.row_factory = sqlite3.Row
+            self._conn.execute("PRAGMA foreign_keys = ON")
 
             # Apply configuration settings (using parameterized queries where possible)
             # PRAGMA statements don't support parameterization, so validate values first
@@ -121,127 +123,187 @@ class DatabaseConnection:
 
     def init_db(self) -> None:
         """Initializes the database schema, creating all necessary tables and indexes."""
-        try:
-            with self.transaction() as conn:
-                # Create cases table
-                conn.execute("""
-                    CREATE TABLE IF NOT EXISTS cases (
-                        case_id TEXT PRIMARY KEY,
-                        case_path TEXT NOT NULL,
-                        status TEXT NOT NULL,
-                        progress REAL DEFAULT 0.0,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        error_message TEXT,
-                        assigned_gpu TEXT,
-                        interpreter_completed BOOLEAN DEFAULT 0,
-                        retry_count INTEGER DEFAULT 0,
-                        FOREIGN KEY (assigned_gpu) REFERENCES gpu_resources (uuid)
+        db_config = self.settings.get_database_config()
+        max_attempts = max(1, int(db_config.get("schema_init_retry_attempts", 5)))
+        retry_delay_ms = max(0, int(db_config.get("schema_init_retry_delay_ms", 200)))
+
+        for attempt in range(1, max_attempts + 1):
+            try:
+                with self.transaction() as conn:
+                    # Create cases table
+                    conn.execute("""
+                        CREATE TABLE IF NOT EXISTS cases (
+                            case_id TEXT PRIMARY KEY,
+                            case_path TEXT NOT NULL,
+                            status TEXT NOT NULL,
+                            progress REAL DEFAULT 0.0,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            error_message TEXT,
+                            assigned_gpu TEXT,
+                            interpreter_completed BOOLEAN DEFAULT 0,
+                            retry_count INTEGER DEFAULT 0,
+                            FOREIGN KEY (assigned_gpu) REFERENCES gpu_resources (uuid)
+                        )
+                    """)
+                    # Create beams table
+                    conn.execute("""
+                        CREATE TABLE IF NOT EXISTS beams (
+                            beam_id TEXT PRIMARY KEY,
+                            parent_case_id TEXT NOT NULL,
+                            beam_path TEXT NOT NULL,
+                            beam_number INTEGER,
+                            status TEXT NOT NULL,
+                            progress REAL DEFAULT 0.0,
+                            hpc_job_id TEXT,
+                            error_message TEXT,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            FOREIGN KEY (parent_case_id) REFERENCES cases (case_id)
+                        )
+                    """)
+                    # Create gpu_resources table
+                    conn.execute("""
+                        CREATE TABLE IF NOT EXISTS gpu_resources (
+                            uuid TEXT PRIMARY KEY,
+                            gpu_index INTEGER NOT NULL,
+                            name TEXT NOT NULL,
+                            memory_total INTEGER NOT NULL,
+                            memory_used INTEGER NOT NULL,
+                            memory_free INTEGER NOT NULL,
+                            temperature INTEGER NOT NULL,
+                            utilization INTEGER NOT NULL,
+                            status TEXT NOT NULL,
+                            assigned_case TEXT,
+                            last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            FOREIGN KEY (assigned_case) REFERENCES beams (beam_id)
+                        )
+                    """)
+                    # Create workflow_steps table
+                    conn.execute("""
+                        CREATE TABLE IF NOT EXISTS workflow_steps (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            case_id TEXT NOT NULL,
+                            step TEXT NOT NULL,
+                            started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            completed_at TIMESTAMP,
+                            status TEXT NOT NULL,
+                            error_message TEXT,
+                            metadata TEXT,
+                            FOREIGN KEY (case_id) REFERENCES cases (case_id)
+                        )
+                    """)
+                    cursor = conn.execute("PRAGMA table_info(gpu_resources)")
+                    columns = [column[1] for column in cursor.fetchall()]
+                    if 'gpu_index' not in columns:
+                        self.logger.info("Adding gpu_index column to gpu_resources table")
+                        conn.execute("ALTER TABLE gpu_resources ADD COLUMN gpu_index INTEGER DEFAULT 0")
+
+                    # Add interpreter_completed column to cases table if it doesn't exist
+                    cursor = conn.execute("PRAGMA table_info(cases)")
+                    case_columns = [column[1] for column in cursor.fetchall()]
+                    if 'interpreter_completed' not in case_columns:
+                        self.logger.info("Adding interpreter_completed column to cases table")
+                        conn.execute("ALTER TABLE cases ADD COLUMN interpreter_completed BOOLEAN DEFAULT 0")
+
+                    if 'retry_count' not in case_columns:
+                        self.logger.info("Adding retry_count column to cases table")
+                        conn.execute("ALTER TABLE cases ADD COLUMN retry_count INTEGER DEFAULT 0")
+
+                    cursor = conn.execute("PRAGMA table_info(beams)")
+                    beam_columns = [column[1] for column in cursor.fetchall()]
+                    if 'error_message' not in beam_columns:
+                        self.logger.info("Adding error_message column to beams table")
+                        conn.execute("ALTER TABLE beams ADD COLUMN error_message TEXT")
+                    if 'progress' not in beam_columns:
+                        self.logger.info("Adding progress column to beams table")
+                        conn.execute("ALTER TABLE beams ADD COLUMN progress REAL DEFAULT 0.0")
+                    if 'beam_number' not in beam_columns:
+                        self.logger.info("Adding beam_number column to beams table")
+                        conn.execute("ALTER TABLE beams ADD COLUMN beam_number INTEGER")
+
+                    self._migrate_gpu_assignment_foreign_key(conn)
+
+                    conn.execute("CREATE INDEX IF NOT EXISTS idx_cases_status ON cases (status)")
+                    conn.execute("CREATE INDEX IF NOT EXISTS idx_cases_updated ON cases (updated_at)")
+                    conn.execute("CREATE INDEX IF NOT EXISTS idx_gpu_status ON gpu_resources (status)")
+                    conn.execute("CREATE INDEX IF NOT EXISTS idx_workflow_case ON workflow_steps (case_id)")
+                    conn.execute("CREATE INDEX IF NOT EXISTS idx_beams_parent_case ON beams (parent_case_id)")
+
+                    cursor = conn.execute(
+                        "UPDATE gpu_resources SET status = ? WHERE status = ?",
+                        (GpuStatus.IDLE.value, "available"),
                     )
-                """)
-                # Create beams table
-                conn.execute("""
-                    CREATE TABLE IF NOT EXISTS beams (
-                        beam_id TEXT PRIMARY KEY,
-                        parent_case_id TEXT NOT NULL,
-                        beam_path TEXT NOT NULL,
-                        beam_number INTEGER,
-                        status TEXT NOT NULL,
-                        progress REAL DEFAULT 0.0,
-                        hpc_job_id TEXT,
-                        error_message TEXT,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        FOREIGN KEY (parent_case_id) REFERENCES cases (case_id)
+                    if cursor.rowcount:
+                        self.logger.info(
+                            "Normalized legacy GPU statuses",
+                            {"updated_rows": cursor.rowcount, "from": "available", "to": GpuStatus.IDLE.value},
+                        )
+
+                self.logger.info("Database schema initialized successfully")
+                return
+
+            except sqlite3.OperationalError as e:
+                if "database is locked" in str(e).lower() and attempt < max_attempts:
+                    self.logger.warning(
+                        "Database schema initialization hit a transient lock; retrying",
+                        {"attempt": attempt, "max_attempts": max_attempts, "error": str(e)},
                     )
-                """)
-                # Create gpu_resources table
-                conn.execute("""
-                    CREATE TABLE IF NOT EXISTS gpu_resources (
-                        uuid TEXT PRIMARY KEY,
-                        gpu_index INTEGER NOT NULL,
-                        name TEXT NOT NULL,
-                        memory_total INTEGER NOT NULL,
-                        memory_used INTEGER NOT NULL,
-                        memory_free INTEGER NOT NULL,
-                        temperature INTEGER NOT NULL,
-                        utilization INTEGER NOT NULL,
-                        status TEXT NOT NULL,
-                        assigned_case TEXT,
-                        last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        FOREIGN KEY (assigned_case) REFERENCES cases (case_id)
-                    )
-                """)
-                # Create workflow_steps table
-                conn.execute("""
-                    CREATE TABLE IF NOT EXISTS workflow_steps (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        case_id TEXT NOT NULL,
-                        step TEXT NOT NULL,
-                        started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        completed_at TIMESTAMP,
-                        status TEXT NOT NULL,
-                        error_message TEXT,
-                        metadata TEXT,
-                        FOREIGN KEY (case_id) REFERENCES cases (case_id)
-                    )
-                """)
-                # Create indexes
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_cases_status ON cases (status)")
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_cases_updated ON cases (updated_at)")
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_gpu_status ON gpu_resources (status)")
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_workflow_case ON workflow_steps (case_id)")
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_beams_parent_case ON beams (parent_case_id)")
+                    if retry_delay_ms:
+                        time.sleep(retry_delay_ms / 1000)
+                    continue
+                self.logger.error("Failed to initialize database schema", {"error": str(e)})
+                raise DatabaseError(f"Failed to initialize database schema: {e}")
+            except sqlite3.Error as e:
+                self.logger.error("Failed to initialize database schema", {"error": str(e)})
+                raise DatabaseError(f"Failed to initialize database schema: {e}")
 
-                cursor = conn.execute("PRAGMA table_info(gpu_resources)")
-                columns = [column[1] for column in cursor.fetchall()]
-                if 'gpu_index' not in columns:
-                    self.logger.info("Adding gpu_index column to gpu_resources table")
-                    conn.execute("ALTER TABLE gpu_resources ADD COLUMN gpu_index INTEGER DEFAULT 0")
+    def _migrate_gpu_assignment_foreign_key(self, conn: sqlite3.Connection) -> None:
+        """Ensure gpu_resources.assigned_case references beams.beam_id."""
+        foreign_keys = conn.execute("PRAGMA foreign_key_list(gpu_resources)").fetchall()
+        assigned_case_targets = [
+            fk[2]
+            for fk in foreign_keys
+            if len(fk) > 3 and fk[3] == "assigned_case"
+        ]
 
-                # Add interpreter_completed column to cases table if it doesn't exist
-                cursor = conn.execute("PRAGMA table_info(cases)")
-                case_columns = [column[1] for column in cursor.fetchall()]
-                if 'interpreter_completed' not in case_columns:
-                    self.logger.info("Adding interpreter_completed column to cases table")
-                    conn.execute("ALTER TABLE cases ADD COLUMN interpreter_completed BOOLEAN DEFAULT 0")
+        if assigned_case_targets == ["beams"]:
+            return
 
-                # W-4 fix: Add retry_count column to cases table if it doesn't exist
-                if 'retry_count' not in case_columns:
-                    self.logger.info("Adding retry_count column to cases table")
-                    conn.execute("ALTER TABLE cases ADD COLUMN retry_count INTEGER DEFAULT 0")
+        self.logger.info(
+            "Migrating gpu_resources.assigned_case foreign key",
+            {"current_targets": assigned_case_targets or ["none"], "target": "beams"},
+        )
 
-                # Add error_message column to beams table if it doesn't exist
-                cursor = conn.execute("PRAGMA table_info(beams)")
-                beam_columns = [column[1] for column in cursor.fetchall()]
-                if 'error_message' not in beam_columns:
-                    self.logger.info("Adding error_message column to beams table")
-                    conn.execute("ALTER TABLE beams ADD COLUMN error_message TEXT")
-                # Add progress column to beams table if it doesn't exist
-                if 'progress' not in beam_columns:
-                    self.logger.info("Adding progress column to beams table")
-                    conn.execute("ALTER TABLE beams ADD COLUMN progress REAL DEFAULT 0.0")
-                if 'beam_number' not in beam_columns:
-                    self.logger.info("Adding beam_number column to beams table")
-                    conn.execute("ALTER TABLE beams ADD COLUMN beam_number INTEGER")
-
-                # Normalize legacy GPU status values from older databases.
-                cursor = conn.execute(
-                    "UPDATE gpu_resources SET status = ? WHERE status = ?",
-                    (GpuStatus.IDLE.value, "available"),
-                )
-                if cursor.rowcount:
-                    self.logger.info(
-                        "Normalized legacy GPU statuses",
-                        {"updated_rows": cursor.rowcount, "from": "available", "to": GpuStatus.IDLE.value},
-                    )
-
-
-            self.logger.info("Database schema initialized successfully")
-
-        except sqlite3.Error as e:
-            self.logger.error("Failed to initialize database schema", {"error": str(e)})
-            raise DatabaseError(f"Failed to initialize database schema: {e}")
+        conn.execute("DROP INDEX IF EXISTS idx_gpu_status")
+        conn.execute("ALTER TABLE gpu_resources RENAME TO gpu_resources_legacy")
+        conn.execute("""
+            CREATE TABLE gpu_resources (
+                uuid TEXT PRIMARY KEY,
+                gpu_index INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                memory_total INTEGER NOT NULL,
+                memory_used INTEGER NOT NULL,
+                memory_free INTEGER NOT NULL,
+                temperature INTEGER NOT NULL,
+                utilization INTEGER NOT NULL,
+                status TEXT NOT NULL,
+                assigned_case TEXT,
+                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (assigned_case) REFERENCES beams (beam_id)
+            )
+        """)
+        conn.execute("""
+            INSERT INTO gpu_resources (
+                uuid, gpu_index, name, memory_total, memory_used, memory_free,
+                temperature, utilization, status, assigned_case, last_updated
+            )
+            SELECT
+                uuid, gpu_index, name, memory_total, memory_used, memory_free,
+                temperature, utilization, status, assigned_case, last_updated
+            FROM gpu_resources_legacy
+        """)
+        conn.execute("DROP TABLE gpu_resources_legacy")
 
     def close(self) -> None:
         """Closes the database connection."""

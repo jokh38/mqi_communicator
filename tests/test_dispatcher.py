@@ -199,11 +199,56 @@ def test_dispatcher_module_import_does_not_require_paramiko_for_local_operations
         raise AssertionError("Dispatcher import should expose run_case_level_csv_interpreting")
 
 
+def test_run_case_level_tps_generation_releases_gpu_by_uuid_on_generation_failure(
+    mock_settings,
+):
+    sys.modules.pop("src.core.dispatcher", None)
+    dispatcher = importlib.import_module("src.core.dispatcher")
+    logger = MagicMock()
+
+    case_repo = MagicMock()
+    case_repo.db.init_db.return_value = None
+    case_repo.get_beams_for_case.return_value = [
+        SimpleNamespace(beam_id="case-1_beam-a", beam_number=1, beam_path=Path("cases") / "case-1" / "beam-a"),
+    ]
+
+    gpu_repo = MagicMock()
+    gpu_repo.get_available_gpu_count.return_value = 1
+    gpu_repo.find_and_lock_multiple_gpus.return_value = [{"gpu_uuid": "gpu-1"}]
+
+    validator = MagicMock()
+    validator.get_beam_information.return_value = {"beams": [{"beam_name": "beam-a", "beam_number": 1}]}
+    validator.get_treatment_beam_numbers.return_value = [1]
+
+    tps_generator = MagicMock()
+    tps_generator.generate_tps_file_with_gpu_assignments.return_value = False
+
+    context_manager = MagicMock()
+    context_manager.__enter__.return_value = case_repo
+    context_manager.__exit__.return_value = False
+
+    with patch("src.core.dispatcher.LoggerFactory.get_logger", return_value=logger), \
+         patch("src.core.dispatcher.GpuRepository", return_value=gpu_repo), \
+         patch("src.core.dispatcher.DataIntegrityValidator", return_value=validator), \
+         patch("src.core.dispatcher.TpsGenerator", return_value=tps_generator), \
+         patch("src.core.dispatcher.get_db_session", return_value=context_manager):
+        result = dispatcher.run_case_level_tps_generation(
+            case_id="case-1",
+            case_path=Path("cases") / "case-1",
+            beam_count=1,
+            settings=mock_settings,
+        )
+
+    if result is not None:
+        raise AssertionError(f"Expected TPS generation failure to return None, got {result!r}")
+    gpu_repo.release_gpu.assert_called_once_with("gpu-1")
+
+
 def test_resolve_persisted_beam_number_prefers_existing_beam_number():
     dispatcher = importlib.import_module("src.core.dispatcher")
     beam = SimpleNamespace(
         beam_id="55061194_2025042401440800",
-        beam_path=Path("/cases/55061194/2025042401440800"),
+        beam_path=Path("cases") / "55061194" / "2025042401440800",
         beam_number=2,
     )
 
@@ -212,14 +257,15 @@ def test_resolve_persisted_beam_number_prefers_existing_beam_number():
         beam_metadata=[{"beam_name": "non_matching_name", "beam_number": 99}],
     )
 
-    assert result == 2
+    if result != 2:
+        raise AssertionError(f"Expected resolved beam number 2, got {result!r}")
 
 
 def test_resolve_persisted_beam_number_uses_treatment_beam_index_for_timestamp_folders():
     dispatcher = importlib.import_module("src.core.dispatcher")
     beam = SimpleNamespace(
         beam_id="55061194_2025042401552900",
-        beam_path=Path("/cases/55061194/2025042401552900"),
+        beam_path=Path("cases") / "55061194" / "2025042401552900",
         beam_number=4,
     )
 
@@ -232,7 +278,8 @@ def test_resolve_persisted_beam_number_uses_treatment_beam_index_for_timestamp_f
         ],
     )
 
-    assert result == 3
+    if result != 3:
+        raise AssertionError(f"Expected resolved beam number 3, got {result!r}")
 
 
 def test_run_case_level_tps_generation_uses_treatment_beam_indices_for_timestamp_folders(
@@ -300,11 +347,13 @@ def test_run_case_level_tps_generation_uses_treatment_beam_indices_for_timestamp
         )
 
     # W-3 fix: gpu_assignments now include beam_id for proper matching
-    assert result == [
+    expected_result = [
         {"gpu_uuid": "gpu-1", "gpu_id": 0, "beam_id": "55061194_2025042401440800"},
         {"gpu_uuid": "gpu-2", "gpu_id": 1, "beam_id": "55061194_2025042401501400"},
         {"gpu_uuid": "gpu-3", "gpu_id": 2, "beam_id": "55061194_2025042401552900"},
     ]
+    if result != expected_result:
+        raise AssertionError(f"Unexpected GPU assignment result: {result!r}")
     case_repo.update_beam_number.assert_any_call("55061194_2025042401440800", 1)
     case_repo.update_beam_number.assert_any_call("55061194_2025042401501400", 2)
     case_repo.update_beam_number.assert_any_call("55061194_2025042401552900", 3)

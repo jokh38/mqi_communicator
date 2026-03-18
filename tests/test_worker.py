@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.core import worker
+from src.domain.enums import BeamStatus
 from src.domain.enums import GpuStatus
 
 
@@ -148,6 +149,8 @@ def test_worker_imports_without_paramiko_installed(monkeypatch):
         raise AssertionError("Worker import should expose worker_main")
 
 
+
+
 def test_monitor_completed_workers_releases_gpu_and_retries_pending_beams():
     future = MagicMock()
     future.result.return_value = None
@@ -191,6 +194,46 @@ def test_monitor_completed_workers_releases_gpu_on_failure():
 
     release_mock.assert_called_once_with("beam-10", settings, logger)
     retry_mock.assert_not_called()
+
+
+def test_monitor_completed_workers_marks_failed_beam_when_worker_crashes():
+    future = MagicMock()
+    future.done.return_value = True
+    future.result.side_effect = RuntimeError("database is locked")
+    active_futures = {future: "beam-10"}
+    executor = MagicMock()
+    settings = MagicMock()
+    logger = MagicMock()
+    case_repo = MagicMock()
+    case_repo.get_beam.return_value = SimpleNamespace(parent_case_id="case-1")
+
+    repo_context = MagicMock()
+    repo_context.__enter__.return_value = case_repo
+    repo_context.__exit__.return_value = False
+
+    with patch.object(worker, "_release_beam_gpu_assignment") as release_mock, \
+         patch.object(worker, "try_allocate_pending_beams") as retry_mock, \
+         patch.object(worker, "get_db_session", return_value=repo_context), \
+         patch.object(worker, "update_case_status_from_beams") as aggregate_mock:
+        worker.monitor_completed_workers(
+            active_futures=active_futures,
+            pending_beams_by_case={},
+            executor=executor,
+            settings=settings,
+            logger=logger,
+        )
+
+    release_mock.assert_called_once_with("beam-10", settings, logger)
+    retry_mock.assert_not_called()
+    case_repo.update_beam_status.assert_called_once()
+    call = case_repo.update_beam_status.call_args
+    if call.args[0] != "beam-10":
+        raise AssertionError(f"Expected failed beam_id 'beam-10', got {call.args[0]!r}")
+    if call.args[1] != BeamStatus.FAILED:
+        raise AssertionError(f"Expected FAILED status, got {call.args[1]!r}")
+    if "database is locked" not in call.kwargs["error_message"]:
+        raise AssertionError(f"Expected error_message to include lock failure, got {call.kwargs['error_message']!r}")
+    aggregate_mock.assert_called_once_with("case-1", case_repo, logger)
 
 
 def test_monitor_completed_workers_handles_completed_future_while_others_still_running():

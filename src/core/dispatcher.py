@@ -464,7 +464,10 @@ def run_case_level_tps_generation(
                 if not success:
                     error_message = f"TPS file generation failed for beam {beam.beam_id} in case {case_id}"
                     logger.error(error_message)
-                    gpu_repo.release_all_for_case(case_id)
+                    for allocated_gpu in gpu_assignments:
+                        gpu_uuid = allocated_gpu.get("gpu_uuid")
+                        if gpu_uuid:
+                            gpu_repo.release_gpu(gpu_uuid)
                     case_repo.record_workflow_step(
                         case_id=case_id,
                         step=WorkflowStep.TPS_GENERATION,
