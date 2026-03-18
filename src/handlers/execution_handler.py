@@ -77,9 +77,30 @@ class ExecutionHandler:
         failed: bool
         error: Optional[str] = None
 
+    def start_local_process(self, command: Any, cwd: Optional[Path] = None) -> subprocess.Popen:
+        """Starts a local subprocess without blocking.
+
+        Args:
+            command: Command string or list to execute.
+            cwd: Optional working directory.
+
+        Returns:
+            subprocess.Popen: The running process handle.
+        """
+        use_shell = isinstance(command, str)
+        return subprocess.Popen(
+            command,
+            shell=use_shell if not isinstance(command, list) else False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True,
+            cwd=cwd,
+        )
+
     def wait_for_job_completion(self, job_id: Optional[str] = None, timeout: Optional[int] = None,
                                 poll_interval: Optional[int] = None, log_file_path: Optional[str] = None,
-                                beam_id: Optional[str] = None, case_repo: Optional[Any] = None) -> "ExecutionHandler.JobWaitResult":
+                                beam_id: Optional[str] = None, case_repo: Optional[Any] = None,
+                                process: Optional[subprocess.Popen] = None) -> "ExecutionHandler.JobWaitResult":
         """
         Wait for job completion and monitor progress.
         - In remote mode with job_id: poll SLURM queue status
@@ -176,6 +197,9 @@ class ExecutionHandler:
                                 # Check for failure patterns first
                                 for pattern in failure_patterns:
                                     if pattern in new_content:
+                                        if process:
+                                            process.kill()
+                                            process.wait()
                                         return ExecutionHandler.JobWaitResult(
                                             failed=True,
                                             error=f"Simulation failed: found pattern '{pattern}' in log"
@@ -189,6 +213,8 @@ class ExecutionHandler:
                                             case_repo.update_beam_progress(beam_id, 100.0)
                                         except Exception:
                                             pass
+                                    if process:
+                                        process.wait()
                                     return ExecutionHandler.JobWaitResult(failed=False)
 
                                 # Extract total batches if not found yet
@@ -216,9 +242,56 @@ class ExecutionHandler:
                     except Exception as e:
                         self.logger.warning(f"Error reading log file: {e}")
 
+                # Check if the process exited without a success/failure pattern in the log
+                if process and process.poll() is not None:
+                    # Process terminated — do one final read of the log
+                    if log_path.exists():
+                        try:
+                            with open(log_path, 'r') as f:
+                                f.seek(file_position)
+                                remaining = f.read()
+                                if remaining:
+                                    if success_pattern in remaining:
+                                        if case_repo and beam_id:
+                                            try:
+                                                case_repo.update_beam_progress(beam_id, 100.0)
+                                            except Exception:
+                                                pass
+                                        return ExecutionHandler.JobWaitResult(failed=False)
+                                    for pattern in failure_patterns:
+                                        if pattern in remaining:
+                                            return ExecutionHandler.JobWaitResult(
+                                                failed=True,
+                                                error=f"Simulation failed: found pattern '{pattern}' in log"
+                                            )
+                        except Exception:
+                            pass
+
+                    rc = process.returncode
+                    if rc == 0:
+                        if case_repo and beam_id:
+                            try:
+                                case_repo.update_beam_progress(beam_id, 100.0)
+                            except Exception:
+                                pass
+                        return ExecutionHandler.JobWaitResult(failed=False)
+                    else:
+                        stderr_output = ""
+                        try:
+                            stderr_output = process.stderr.read() if process.stderr else ""
+                        except Exception:
+                            pass
+                        return ExecutionHandler.JobWaitResult(
+                            failed=True,
+                            error=f"Simulation process exited with code {rc}: {stderr_output}"
+                        )
+
                 time.sleep(poll_interval)
 
             # Timeout reached
+            if process:
+                process.kill()
+                process.wait()
             return ExecutionHandler.JobWaitResult(
                 failed=True,
                 error=f"Simulation timeout after {timeout} seconds"

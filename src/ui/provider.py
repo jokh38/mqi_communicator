@@ -5,7 +5,7 @@
 """Fetches and processes data required for the UI dashboard."""
 
 from typing import Dict, List, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 from src.repositories.case_repo import CaseRepository
 from src.repositories.gpu_repo import GpuRepository
@@ -149,7 +149,7 @@ class DashboardDataProvider:
                 "status": case.status,
                 "progress": case.progress,
                 "assigned_gpu": case.assigned_gpu,
-                "elapsed_time": (datetime.now() - case.created_at).total_seconds() if case.created_at else 0
+                "elapsed_time": (datetime.now(timezone.utc) - case.created_at.replace(tzinfo=timezone.utc)).total_seconds() if case.created_at else 0
             })
         return processed_cases
 
@@ -199,7 +199,7 @@ class DashboardDataProvider:
                     "status": beam["status"],
                     "progress": beam.get("progress", 0.0),
                     "elapsed_time": (
-                        (datetime.now() - beam["created_at"]).total_seconds()
+                        (datetime.now(timezone.utc) - beam["created_at"].replace(tzinfo=timezone.utc)).total_seconds()
                         if beam["created_at"] else 0
                     ),
                     "hpc_job_id": beam["hpc_job_id"],
@@ -214,7 +214,7 @@ class DashboardDataProvider:
                 "progress": case.progress,
                 "assigned_gpu": case.assigned_gpu,
                 "elapsed_time": (
-                    (datetime.now() - case.created_at).total_seconds()
+                    (datetime.now(timezone.utc) - case.created_at.replace(tzinfo=timezone.utc)).total_seconds()
                     if case.created_at else 0
                 ),
                 "beam_count": len(beams),

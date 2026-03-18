@@ -257,7 +257,7 @@ class HpcExecutionState(WorkflowState):
                 handler_name=handler_name,
                 case_id=beam.parent_case_id
             )
-            beam_output_dir = Path(simulation_output_dir) / f"beam_{beam_number}"
+            beam_output_dir = Path(simulation_output_dir)
             beam_output_dir.mkdir(parents=True, exist_ok=True)
             context.logger.info("Ensured simulation output directory exists",
                                 {"beam_id": context.id, "path": str(beam_output_dir)})
@@ -267,6 +267,7 @@ class HpcExecutionState(WorkflowState):
         is_remote = not (isinstance(mode, str) and mode.lower() == "local")
 
         # Mark queued before submission
+        self._update_status(context, BeamStatus.HPC_QUEUED, "Beam queued for HPC execution")
         self._update_progress_from_config(context, PHASE_HPC_QUEUED)
 
         if is_remote:
@@ -286,23 +287,14 @@ class HpcExecutionState(WorkflowState):
                 )
 
             # Mark running when job starts/polling begins
+            self._update_status(context, BeamStatus.HPC_RUNNING, "HPC simulation running")
             self._update_progress_from_config(context, PHASE_HPC_RUNNING)
 
             wait_res = handler.wait_for_job_completion(getattr(submission, "job_id", None))
             if getattr(wait_res, "failed", False):
                 raise ProcessingError(getattr(wait_res, "error", "HPC job failed"))
         else:
-            simulation_output_dir = context.settings.get_path(
-                "simulation_output_dir",
-                handler_name="PostProcessor",
-                case_id=beam.parent_case_id,
-            )
-            expected_output_dir = str(Path(simulation_output_dir) / f"beam_{beam.beam_number}")
-
-            # Local mode still represents running
-            self._update_progress_from_config(context, PHASE_HPC_RUNNING)
-
-            submission = handler.submit_simulation_job(
+            command = context.settings.get_command(
                 handler_name=handler_name,
                 command_key="remote_submit_simulation",
                 tps_input_file=tps_input_file,
@@ -311,19 +303,19 @@ class HpcExecutionState(WorkflowState):
                 case_id=beam.parent_case_id,
                 beam_id=context.id,
             )
-            if not getattr(submission, "success", False):
-                raise ProcessingError(
-                    f"Failed to execute simulation: {getattr(submission, 'error', 'unknown error')}"
-                )
+            self._update_status(context, BeamStatus.HPC_RUNNING, "Local simulation running")
+            self._update_progress_from_config(context, PHASE_HPC_RUNNING)
 
-            # Wait for local simulation to complete by monitoring log file
+            # Launch simulation non-blocking so log can be monitored for progress
+            sim_process = handler.start_local_process(command)
+
+            # Monitor log file for progress and completion while process runs
             wait_res = handler.wait_for_job_completion(
                 job_id=None,
                 log_file_path=remote_log_path,
                 beam_id=context.id,
                 case_repo=context.case_repo,
-                local_pid=getattr(submission, "local_pid", None),
-                expected_output_dir=expected_output_dir,
+                process=sim_process
             )
             if getattr(wait_res, "failed", False):
                 raise ProcessingError(getattr(wait_res, "error", "Local simulation failed"))
@@ -363,7 +355,7 @@ class DownloadState(WorkflowState):
         if beam_number is None:
             raise ProcessingError(f"Beam number missing for beam_id: {context.id}")
 
-        local_result_path = Path(local_result_base) / f"beam_{beam_number}"
+        local_result_path = Path(local_result_base)
 
         remote_handler_name = "HpcJobSubmitter"
         mode = context.settings.get_handler_mode(remote_handler_name)

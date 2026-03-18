@@ -113,9 +113,7 @@ def test_download_state_stores_final_dicom_path_for_native_output(tmp_path: Path
 
     simulation_output_dir = tmp_path / "native-output"
     simulation_output_dir.mkdir()
-    expected_dicom_dir = simulation_output_dir / "beam_10"
-    expected_dicom_dir.mkdir()
-    (expected_dicom_dir / "dose.dcm").touch()
+    (simulation_output_dir / "dose.dcm").touch()
     manager.settings.get_path.side_effect = lambda key, **_: {
         "simulation_output_dir": str(simulation_output_dir),
     }[key]
@@ -123,7 +121,7 @@ def test_download_state_stores_final_dicom_path_for_native_output(tmp_path: Path
 
     next_state = DownloadState().execute(manager)
 
-    assert manager.shared_context["final_result_path"] == str(expected_dicom_dir)  # nosemgrep: assert-for-authz
+    assert manager.shared_context["final_result_path"] == str(simulation_output_dir)  # nosemgrep: assert-for-authz
     assert type(next_state) is UploadResultToPCLocalDataState  # nosemgrep: assert-for-authz
 
 

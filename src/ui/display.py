@@ -148,7 +148,11 @@ class DisplayManager:
         try:
             # Header
             current_time = datetime.now(self._local_tz).strftime('%Y-%m-%d %H:%M:%S KST')
-            header_text = Text(f"MQI Communicator Dashboard - Last Updated: {current_time}", justify="center")
+            header_text = Text.assemble(
+                Text("MQI Communicator Dashboard", style="bold bright_white"),
+                Text(f"  -  Last Updated: {current_time}", style="dim"),
+                justify="center",
+            )
             self.layout["header"].update(Panel(header_text, style="bold blue"))
 
             # System Stats
@@ -182,7 +186,9 @@ class DisplayManager:
                 if cases_data:
                     print("\nActive Cases:")
                     for case in cases_data:
-                        print(f"  - {case['case_id']}: {case['status']} ({case['progress']:.1f}%)")
+                        from src.domain.enums import CASE_STAGE_MAPPING, TOTAL_STAGES
+                        current_stage = CASE_STAGE_MAPPING.get(case['status'], 0)
+                        print(f"  - {case['case_id']}: {case['status']} ({current_stage}/{TOTAL_STAGES})")
                 print("="*60)
         except Exception as e:
             self.logger.error("Error updating display", {"error": str(e)})
@@ -227,14 +233,14 @@ class DisplayManager:
         table.add_column("ID", style="dim", width=5)
         table.add_column("Name", style="cyan")
         table.add_column("Status", style="white")
-        table.add_column("Mem (Used/Total)", style="white")
+        table.add_column("Mem", style="white")
         table.add_column("Util", style="white")
         table.add_column("Temp", style="white")
 
         for gpu in gpu_data:
             table.add_row(
                 str(gpu['gpu_index']),
-                gpu['name'],
+                gpu['name'].replace("NVIDIA ", "").replace("GeForce ", ""),
                 formatter.get_gpu_status_text(gpu['status']),
                 formatter.format_memory_usage(gpu['memory_used'], gpu['memory_total']),
                 formatter.format_utilization(gpu['utilization']),
@@ -254,14 +260,12 @@ class DisplayManager:
         # Get detailed case+beam data
         cases_with_beams = self.provider.get_cases_with_beams_data()
 
-        # Create a mapping from GPU UUID to index for display
         gpu_data = self.provider.get_gpu_data()
-        uuid_to_index = {gpu['uuid']: gpu['gpu_index'] for gpu in gpu_data}
 
         table = Table(expand=True, show_header=True)
         table.add_column("Case / Beam ID", style="cyan", no_wrap=True)
         table.add_column("Status", style="white")
-        table.add_column("Progress", style="white", width=28)
+        table.add_column("Progress", style="white", width=22)
         table.add_column("GPU/Job", style="dim")
         table.add_column("Elapsed", style="dim")
         table.add_column("Error", style="red", overflow="fold")
@@ -269,15 +273,6 @@ class DisplayManager:
         for item in cases_with_beams:
             case_display = item["case_display"]
             beams = item["beams"]
-
-            # Map GPU UUID to index for display
-            assigned_gpu_display = "N/A"
-            if case_display['assigned_gpu']:
-                gpu_index = uuid_to_index.get(case_display['assigned_gpu'])
-                if gpu_index is not None:
-                    assigned_gpu_display = str(gpu_index)
-                else:
-                    assigned_gpu_display = case_display['assigned_gpu'][-4:]
 
             # Add case row with interpreter completion indicator
             case_id_display = f"[bold]{case_display['case_id']}[/bold]"
@@ -288,8 +283,8 @@ class DisplayManager:
             table.add_row(
                 case_id_display,
                 formatter.get_case_status_text(case_display['status']),
-                formatter.format_progress_bar(case_display['progress']),
-                assigned_gpu_display,
+                formatter.format_stage_display(case_display['status'], progress=case_display['progress']),
+                "",
                 formatter.format_elapsed_time(case_display['elapsed_time']),
                 formatter.format_error_message(case_display.get('error_message', ''), max_length=40),
                 style="bold"
@@ -301,20 +296,20 @@ class DisplayManager:
                 beam_name = beam["beam_id"].split("_")[-1] if "_" in beam["beam_id"] else beam["beam_id"]
 
                 # Check if a GPU is assigned to this beam
-                beam_gpu_display = "N/A"
+                beam_gpu_display = ""
                 for gpu in gpu_data:
                     if gpu.get('assigned_case') == beam["beam_id"]:
                         beam_gpu_display = f"GPU {gpu['gpu_index']}"
                         break
 
                 # Fall back to HPC job ID if available
-                if beam_gpu_display == "N/A" and beam["hpc_job_id"]:
+                if not beam_gpu_display and beam["hpc_job_id"]:
                     beam_gpu_display = beam["hpc_job_id"][:8]
 
                 table.add_row(
                     f"  ├─ {beam_name}",
                     formatter.get_beam_status_text(beam['status']),
-                    formatter.format_progress_bar(beam.get('progress', 0.0)),
+                    formatter.format_stage_display(beam['status'], progress=beam.get('progress', 0.0)),
                     beam_gpu_display,
                     formatter.format_elapsed_time(beam['elapsed_time']),
                     formatter.format_error_message(beam.get('error_message', ''), max_length=40),

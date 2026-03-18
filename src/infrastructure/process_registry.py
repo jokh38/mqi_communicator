@@ -26,7 +26,9 @@ class ProcessRegistry:
         self.repo_root = repo_root.resolve()
         self.config_path = config_path.resolve() if config_path else None
         self.logger = logger
-        self.runtime_file = runtime_file or self.repo_root / ".runtime" / "main_process.json"
+        self.runtime_file = (
+            runtime_file or self.repo_root / ".runtime" / "main_process.json"
+        )
         self.main_script = (self.repo_root / "main.py").resolve()
 
     def reclaim_previous_instance(self, current_pid: Optional[int] = None) -> None:
@@ -37,12 +39,18 @@ class ProcessRegistry:
         metadata = self._read_runtime_metadata()
         if metadata:
             metadata_pid = metadata.get("pid")
-            if isinstance(metadata_pid, int) and metadata_pid != current_pid and self._metadata_matches_instance(metadata):
+            if (
+                isinstance(metadata_pid, int)
+                and metadata_pid != current_pid
+                and self._metadata_matches_instance(metadata)
+            ):
                 if self._pid_matches_instance(metadata_pid):
                     self._reclaim_pid(metadata_pid, "runtime metadata")
                     reclaimed_pids.add(metadata_pid)
 
-        for candidate in self._find_matching_process_candidates(current_pid=current_pid):
+        for candidate in self._find_matching_process_candidates(
+            current_pid=current_pid
+        ):
             pid = candidate.get("pid")
             if not isinstance(pid, int) or pid == current_pid or pid in reclaimed_pids:
                 continue
@@ -66,24 +74,37 @@ class ProcessRegistry:
         """Remove runtime metadata when it still belongs to the current process."""
         current_pid = current_pid or os.getpid()
         metadata = self._read_runtime_metadata()
-        if metadata and metadata.get("pid") == current_pid and self.runtime_file.exists():
+        if (
+            metadata
+            and metadata.get("pid") == current_pid
+            and self.runtime_file.exists()
+        ):
             self.runtime_file.unlink()
 
     def _reclaim_pid(self, pid: int, source: str) -> None:
         if self.logger:
-            self.logger.warning("Reclaiming stale MQI process before startup", {
-                "pid": pid,
-                "source": source,
-            })
+            self.logger.warning(
+                "Reclaiming stale MQI process before startup",
+                {
+                    "pid": pid,
+                    "source": source,
+                },
+            )
 
         if not self._terminate_process_tree(pid):
             if self.logger:
-                self.logger.error("Failed to terminate stale MQI process", {"pid": pid, "source": source})
+                self.logger.error(
+                    "Failed to terminate stale MQI process",
+                    {"pid": pid, "source": source},
+                )
             return
 
         if not self._wait_for_exit(pid):
             if self.logger:
-                self.logger.error("Timed out waiting for stale MQI process to exit", {"pid": pid, "source": source})
+                self.logger.error(
+                    "Timed out waiting for stale MQI process to exit",
+                    {"pid": pid, "source": source},
+                )
 
     def _metadata_matches_instance(self, metadata: dict[str, Any]) -> bool:
         metadata_repo = metadata.get("repo_root")
@@ -98,7 +119,9 @@ class ProcessRegistry:
         if resolved_repo != self.repo_root:
             return False
 
-        return self._normalize_config_path(metadata.get("config_path")) == self.config_path
+        return (
+            self._normalize_config_path(metadata.get("config_path")) == self.config_path
+        )
 
     def _pid_matches_instance(self, pid: int) -> bool:
         candidate = {
@@ -111,6 +134,18 @@ class ProcessRegistry:
     def _candidate_matches_instance(self, candidate: dict[str, Any]) -> bool:
         command = candidate.get("command") or ""
         if not command or "main.py" not in command:
+            return False
+
+        # Check if the process is actually a Python process, not a shell wrapper
+        tokens = command.split()
+        if not tokens:
+            return False
+        first_token = Path(tokens[0]).name
+        if (
+            not first_token.startswith("python")
+            and not first_token.endswith("python3")
+            and not first_token.endswith("python")
+        ):
             return False
 
         cwd = self._normalize_path(candidate.get("cwd"))
@@ -134,7 +169,9 @@ class ProcessRegistry:
         except OSError:
             return None
 
-    def _find_matching_process_candidates(self, current_pid: Optional[int] = None) -> list[dict[str, Any]]:
+    def _find_matching_process_candidates(
+        self, current_pid: Optional[int] = None
+    ) -> list[dict[str, Any]]:
         current_pid = current_pid or os.getpid()
         if platform.system() == "Windows":
             return self._find_process_candidates_windows(current_pid)
@@ -162,14 +199,18 @@ class ProcessRegistry:
             command = parts[1] if len(parts) > 1 else ""
             if "main.py" not in command:
                 continue
-            candidates.append({
-                "pid": pid,
-                "command": command,
-                "cwd": self._get_process_cwd(pid),
-            })
+            candidates.append(
+                {
+                    "pid": pid,
+                    "command": command,
+                    "cwd": self._get_process_cwd(pid),
+                }
+            )
         return candidates
 
-    def _find_process_candidates_windows(self, current_pid: int) -> list[dict[str, Any]]:
+    def _find_process_candidates_windows(
+        self, current_pid: int
+    ) -> list[dict[str, Any]]:
         try:
             result = self._run_command(
                 [
@@ -200,7 +241,9 @@ class ProcessRegistry:
             candidates.append({"pid": pid, "command": command, "cwd": None})
         return candidates
 
-    def _extract_main_script_path(self, command: str, cwd: Optional[Path]) -> Optional[Path]:
+    def _extract_main_script_path(
+        self, command: str, cwd: Optional[Path]
+    ) -> Optional[Path]:
         try:
             tokens = shlex.split(command)
         except ValueError:
@@ -347,7 +390,15 @@ class ProcessRegistry:
     def _get_process_command_windows(self, pid: int) -> str:
         try:
             result = self._run_command(
-                ["wmic", "process", "where", f"ProcessId={pid}", "get", "CommandLine", "/value"],
+                [
+                    "wmic",
+                    "process",
+                    "where",
+                    f"ProcessId={pid}",
+                    "get",
+                    "CommandLine",
+                    "/value",
+                ],
             )
         except (subprocess.CalledProcessError, FileNotFoundError, OSError):
             return ""

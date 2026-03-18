@@ -36,9 +36,16 @@ from src.repositories.gpu_repo import GpuRepository
 from src.repositories.case_repo import CaseRepository
 from src.infrastructure.gpu_monitor import GpuMonitor
 from src.handlers.execution_handler import ExecutionHandler
-from src.core.worker import submit_beam_worker, monitor_completed_workers, try_allocate_pending_beams
-from src.core.dispatcher import (run_case_level_csv_interpreting,
-                                 run_case_level_upload, run_case_level_tps_generation)
+from src.core.worker import (
+    submit_beam_worker,
+    monitor_completed_workers,
+    try_allocate_pending_beams,
+)
+from src.core.dispatcher import (
+    run_case_level_csv_interpreting,
+    run_case_level_upload,
+    run_case_level_tps_generation,
+)
 from src.core.case_aggregator import prepare_beam_jobs
 from src.core.workflow_manager import scan_existing_cases, CaseDetectionHandler
 from src.domain.enums import CaseStatus, BeamStatus
@@ -82,7 +89,9 @@ class MQIApplication:
             DatabaseConnection: An initialized database connection.
         """
         db_path = self.settings.get_database_path()
-        return DatabaseConnection(db_path=db_path, settings=self.settings, logger=self.logger)
+        return DatabaseConnection(
+            db_path=db_path, settings=self.settings, logger=self.logger
+        )
 
     def _create_case_repository(self, db_conn: DatabaseConnection) -> CaseRepository:
         """Creates a case repository with the given database connection.
@@ -108,7 +117,6 @@ class MQIApplication:
             return None
         return scan_directory
 
-
     def initialize_logging(self) -> None:
         """Initializes the structured logging for the application.
         Exits the application if logging cannot be initialized.
@@ -129,11 +137,12 @@ class MQIApplication:
         try:
             with get_db_session(self.settings, self.logger) as case_repo:
                 case_repo.db.init_db()
-            self.logger.info("Database initialized successfully",
-                           {"path": str(self.settings.get_database_path())})
+            self.logger.info(
+                "Database initialized successfully",
+                {"path": str(self.settings.get_database_path())},
+            )
         except Exception as e:
-            self.logger.error("Failed to initialize database",
-                              {"error": str(e)})
+            self.logger.error("Failed to initialize database", {"error": str(e)})
             sys.exit(1)
 
     def start_file_watcher(self) -> None:
@@ -144,9 +153,7 @@ class MQIApplication:
                 return
             event_handler = CaseDetectionHandler(self.case_queue, self.logger)
             self.observer = Observer()
-            self.observer.schedule(event_handler,
-                                   str(scan_directory),
-                                   recursive=False)
+            self.observer.schedule(event_handler, str(scan_directory), recursive=False)
             self.observer.start()
             self.logger.info(f"Watching for new cases in: {scan_directory}")
         except Exception as e:
@@ -167,7 +174,8 @@ class MQIApplication:
                 # Ensure config_path is a string for the subprocess arguments.
                 config_path=str(self.config_path) if self.config_path else None,
                 config=self.settings,
-                logger=self.logger)
+                logger=self.logger,
+            )
             # Start UI as separate process
             if self.ui_process_manager.start():
                 self.logger.info("Dashboard UI process started successfully")
@@ -178,6 +186,7 @@ class MQIApplication:
 
                 if web_config.get("enabled", False):
                     import socket
+
                     web_port = web_config.get("port", 8080)
                     bind_address = web_config.get("bind_address", "0.0.0.0")
 
@@ -217,28 +226,36 @@ class MQIApplication:
             self.logger.info("Initializing GPU monitoring service.")
             # Create a dedicated database connection for the monitor
             self.monitor_db_connection = self._create_db_connection()
-            gpu_repo = GpuRepository(self.monitor_db_connection, self.logger, self.settings)
+            gpu_repo = GpuRepository(
+                self.monitor_db_connection, self.logger, self.settings
+            )
 
             # GpuMonitor의 실행 모드를 먼저 확인
             handler_mode = self.settings.execution_handler.get("GpuMonitor", "local")
 
             # remote 모드일 경우에만 ssh_client를 확인
             if handler_mode == "remote" and not self.ssh_client:
-                self.logger.error("SSH client not available. Cannot start remote GPU monitor.")
+                self.logger.error(
+                    "SSH client not available. Cannot start remote GPU monitor."
+                )
                 return
 
             # ExecutionHandler 생성 시 ssh_client를 조건부로 전달
-            execution_handler = ExecutionHandler(settings=self.settings,
-                                             mode=handler_mode,
-                                             ssh_client=self.ssh_client if handler_mode == "remote" else None)
+            execution_handler = ExecutionHandler(
+                settings=self.settings,
+                mode=handler_mode,
+                ssh_client=self.ssh_client if handler_mode == "remote" else None,
+            )
 
             # Get interval from settings
             gpu_config = self.settings.get_gpu_config()
-            interval = gpu_config.get('monitor_interval', 60)
+            interval = gpu_config.get("monitor_interval", 60)
             if interval is None:
-                self.logger.warning("GPU monitor_interval not found in config, defaulting to 60 seconds.")
+                self.logger.warning(
+                    "GPU monitor_interval not found in config, defaulting to 60 seconds."
+                )
                 interval = 60
-            command = gpu_config.get('gpu_monitor_command')
+            command = gpu_config.get("gpu_monitor_command")
 
             def _reconnect_gpu_handler() -> Optional[ExecutionHandler]:
                 new_ssh = create_ssh_client(self.settings, self.logger)
@@ -263,7 +280,7 @@ class MQIApplication:
             self.logger.info("GPU monitoring service started.")
         except Exception as e:
             self.logger.error("Failed to start GPU monitor", {"error": str(e)})
-    
+
     def _discover_beams(self, case_id: str, case_path: Path, case_repo: CaseRepository):
         """Discovers beams and validates data transfer completion.
 
@@ -275,20 +292,28 @@ class MQIApplication:
         Returns:
             List[Dict[str, Any]]: List of beam job dictionaries, or empty list if discovery failed.
         """
-        self.logger.info(f"Discovering beams and validating data transfer for case: {case_id}")
+        self.logger.info(
+            f"Discovering beams and validating data transfer for case: {case_id}"
+        )
         beam_jobs = prepare_beam_jobs(case_id, case_path, self.settings)
 
         if not beam_jobs:
             case_repo.add_case(case_id, case_path)
-            self.logger.error(f"No beams found or data transfer incomplete for case {case_id}")
+            self.logger.error(
+                f"No beams found or data transfer incomplete for case {case_id}"
+            )
             case_repo.fail_case(case_id, "No beams found or data transfer incomplete")
             return []
 
         case_repo.create_case_with_beams(case_id, str(case_path), beam_jobs)
-        self.logger.info(f"Created {len(beam_jobs)} beam records in DB for case {case_id}")
+        self.logger.info(
+            f"Created {len(beam_jobs)} beam records in DB for case {case_id}"
+        )
         return beam_jobs
 
-    def _run_csv_interpreting(self, case_id: str, case_path: Path, case_repo: CaseRepository) -> bool:
+    def _run_csv_interpreting(
+        self, case_id: str, case_path: Path, case_repo: CaseRepository
+    ) -> bool:
         """Runs case-level CSV interpretation.
 
         Args:
@@ -303,10 +328,12 @@ class MQIApplication:
             case_id,
             CaseStatus.CSV_INTERPRETING,
             BeamStatus.CSV_INTERPRETING,
-            progress=10.0
+            progress=10.0,
         )
         self.logger.info(f"Starting case-level CSV interpreting for {case_id}")
-        interpreting_success = run_case_level_csv_interpreting(case_id, case_path, self.settings)
+        interpreting_success = run_case_level_csv_interpreting(
+            case_id, case_path, self.settings
+        )
 
         if not interpreting_success:
             self.logger.error(f"CSV interpreting failed for case {case_id}")
@@ -314,7 +341,9 @@ class MQIApplication:
 
         return interpreting_success
 
-    def _run_tps_generation(self, case_id: str, case_path: Path, beam_count: int, case_repo: CaseRepository):
+    def _run_tps_generation(
+        self, case_id: str, case_path: Path, beam_count: int, case_repo: CaseRepository
+    ):
         """Generates TPS file with GPU assignments.
 
         Args:
@@ -327,13 +356,12 @@ class MQIApplication:
             Optional[List[Dict[str, Any]]]: List of GPU assignments, or None if generation failed.
         """
         case_repo.update_case_and_beams_status(
-            case_id,
-            CaseStatus.PROCESSING,
-            BeamStatus.TPS_GENERATION,
-            progress=30.0
+            case_id, CaseStatus.PROCESSING, BeamStatus.TPS_GENERATION, progress=30.0
         )
         self.logger.info(f"Starting case-level TPS generation for {case_id}")
-        gpu_assignments = run_case_level_tps_generation(case_id, case_path, beam_count, self.settings)
+        gpu_assignments = run_case_level_tps_generation(
+            case_id, case_path, beam_count, self.settings
+        )
 
         if gpu_assignments is None:
             self.logger.error(f"TPS generation failed for case {case_id}")
@@ -342,9 +370,13 @@ class MQIApplication:
 
         # Handle partial GPU allocation
         if len(gpu_assignments) < beam_count:
-            self.logger.info(f"Partial GPU allocation for {case_id}: {len(gpu_assignments)}/{beam_count} beams can proceed")
+            self.logger.info(
+                f"Partial GPU allocation for {case_id}: {len(gpu_assignments)}/{beam_count} beams can proceed"
+            )
         elif len(gpu_assignments) == 0:
-            self.logger.warning(f"No GPUs available for {case_id}. All beams will remain pending.")
+            self.logger.warning(
+                f"No GPUs available for {case_id}. All beams will remain pending."
+            )
             case_repo.update_beams_status_by_case_id(case_id, BeamStatus.PENDING.value)
 
         return gpu_assignments
@@ -362,7 +394,9 @@ class MQIApplication:
         handler_modes = self.settings.execution_handler.values()
 
         if "remote" not in handler_modes:
-            self.logger.info("No remote handlers configured. Skipping case-level file upload.")
+            self.logger.info(
+                "No remote handlers configured. Skipping case-level file upload."
+            )
             return True
 
         case_repo.update_beams_status_by_case_id(case_id, BeamStatus.UPLOADING.value)
@@ -375,10 +409,17 @@ class MQIApplication:
 
         return upload_success
 
-    def _dispatch_workers(self, case_id: str, case_path: Path, beam_jobs: list,
-                         gpu_assignments: list, case_repo: CaseRepository,
-                         executor: ProcessPoolExecutor, active_futures: Dict,
-                         pending_beams_by_case: Dict) -> None:
+    def _dispatch_workers(
+        self,
+        case_id: str,
+        case_path: Path,
+        beam_jobs: list,
+        gpu_assignments: list,
+        case_repo: CaseRepository,
+        executor: ProcessPoolExecutor,
+        active_futures: Dict,
+        pending_beams_by_case: Dict,
+    ) -> None:
         """Dispatches worker processes for beams with GPU assignments.
 
         Args:
@@ -395,11 +436,19 @@ class MQIApplication:
 
         # W-3 fix: Match beam_jobs with gpu_assignments by beam_id instead of positional slicing
         # Create a set of beam_ids that have GPU assignments
-        assigned_beam_ids = {gpu_assignment.get("beam_id") for gpu_assignment in gpu_assignments if gpu_assignment.get("beam_id")}
+        assigned_beam_ids = {
+            gpu_assignment.get("beam_id")
+            for gpu_assignment in gpu_assignments
+            if gpu_assignment.get("beam_id")
+        }
 
         # Separate jobs into allocated and pending based on beam_id matching
-        allocated_jobs = [job for job in beam_jobs if job["beam_id"] in assigned_beam_ids]
-        pending_jobs = [job for job in beam_jobs if job["beam_id"] not in assigned_beam_ids]
+        allocated_jobs = [
+            job for job in beam_jobs if job["beam_id"] in assigned_beam_ids
+        ]
+        pending_jobs = [
+            job for job in beam_jobs if job["beam_id"] not in assigned_beam_ids
+        ]
 
         # Mark allocated beams as ready for processing
         for job in allocated_jobs:
@@ -414,18 +463,30 @@ class MQIApplication:
         if pending_jobs:
             pending_beams_by_case[case_id] = {
                 "case_path": case_path,
-                "pending_jobs": pending_jobs
+                "pending_jobs": pending_jobs,
             }
 
-        self.logger.info(f"Dispatching workers for case {case_id}: {len(allocated_jobs)} beams with GPU, {len(pending_jobs)} pending")
+        self.logger.info(
+            f"Dispatching workers for case {case_id}: {len(allocated_jobs)} beams with GPU, {len(pending_jobs)} pending"
+        )
 
         for job in allocated_jobs:
-            submit_beam_worker(executor, job["beam_id"], job["beam_path"],
-                             self.settings, active_futures, self.logger)
+            submit_beam_worker(
+                executor,
+                job["beam_id"],
+                job["beam_path"],
+                self.settings,
+                active_futures,
+                self.logger,
+            )
 
-
-    def _process_new_case(self, case_data: dict, executor: ProcessPoolExecutor,
-                         active_futures: Dict, pending_beams_by_case: Dict) -> None:
+    def _process_new_case(
+        self,
+        case_data: dict,
+        executor: ProcessPoolExecutor,
+        active_futures: Dict,
+        pending_beams_by_case: Dict,
+    ) -> None:
         """Processes a new case from the queue.
 
         Args:
@@ -451,7 +512,9 @@ class MQIApplication:
                 return
 
             # Step 3: Generate TPS file with dynamic GPU assignments
-            gpu_assignments = self._run_tps_generation(case_id, case_path, len(beam_jobs), case_repo)
+            gpu_assignments = self._run_tps_generation(
+                case_id, case_path, len(beam_jobs), case_repo
+            )
             if gpu_assignments is None:
                 return
 
@@ -463,14 +526,22 @@ class MQIApplication:
                 return
 
             # Step 5: Dispatch individual workers for simulation
-            self._dispatch_workers(case_id, case_path, beam_jobs, gpu_assignments,
-                                  case_repo, executor, active_futures, pending_beams_by_case)
+            self._dispatch_workers(
+                case_id,
+                case_path,
+                beam_jobs,
+                gpu_assignments,
+                case_repo,
+                executor,
+                active_futures,
+                pending_beams_by_case,
+            )
 
     def run_worker_loop(self) -> None:
         """The main loop for processing cases from the queue.
         Manages a process pool to handle cases concurrently.
         """
-        max_workers = self.settings.get_processing_config().get('max_workers')
+        max_workers = self.settings.get_processing_config().get("max_workers")
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
             self.executor = executor
             self.logger.info(f"Started worker pool with {max_workers} processes")
@@ -485,14 +556,23 @@ class MQIApplication:
                     except mp.queues.Empty:
                         case_data = None
                     except Exception as e:
-                        self.logger.error(f"Error processing case from queue", {"error": str(e)})
+                        self.logger.error(
+                            f"Error processing case from queue", {"error": str(e)}
+                        )
 
                     if case_data is not None:
-                        self._process_new_case(case_data, executor, active_futures, pending_beams_by_case)
+                        self._process_new_case(
+                            case_data, executor, active_futures, pending_beams_by_case
+                        )
 
                     # Monitor completed workers
-                    monitor_completed_workers(active_futures, pending_beams_by_case,
-                                            executor, self.settings, self.logger)
+                    monitor_completed_workers(
+                        active_futures,
+                        pending_beams_by_case,
+                        executor,
+                        self.settings,
+                        self.logger,
+                    )
 
                     # Periodically try to allocate GPUs for pending beams even if
                     # no worker completed during this iteration.
@@ -519,8 +599,14 @@ class MQIApplication:
         while not self.shutdown_event.is_set():
             try:
                 # Monitor the dashboard UI process
-                if self.ui_process_manager and self.settings.get_ui_config().get("auto_start", False) and not self.ui_process_manager.is_running():
-                    self.logger.warning("Dashboard UI process is not running. Attempting to restart.")
+                if (
+                    self.ui_process_manager
+                    and self.settings.get_ui_config().get("auto_start", False)
+                    and not self.ui_process_manager.is_running()
+                ):
+                    self.logger.warning(
+                        "Dashboard UI process is not running. Attempting to restart."
+                    )
                     if not self.ui_process_manager.restart():
                         self.logger.error("Failed to restart the dashboard UI process.")
 
@@ -530,14 +616,18 @@ class MQIApplication:
                         with get_db_session(self.settings, self.logger) as case_repo:
                             self.gpu_monitor.reconcile_stale_assignments(case_repo)
                     except Exception as e:
-                        self.logger.error("Error reconciling stale GPU assignments", {"error": str(e)})
+                        self.logger.error(
+                            "Error reconciling stale GPU assignments", {"error": str(e)}
+                        )
 
             except Exception as e:
-                self.logger.error("Error in service monitoring thread", {"error": str(e)})
+                self.logger.error(
+                    "Error in service monitoring thread", {"error": str(e)}
+                )
 
             # Use a configurable interval for service monitoring
             processing_config = self.settings.get_processing_config()
-            monitor_interval = processing_config.get('hpc_poll_interval_seconds', 30)
+            monitor_interval = processing_config.get("hpc_poll_interval_seconds", 30)
             self.shutdown_event.wait(timeout=monitor_interval)
 
     def initialize_ssh_client(self) -> None:
@@ -602,7 +692,9 @@ class MQIApplication:
             self.start_gpu_monitor()
 
             # Start a background thread to monitor services
-            self.service_monitor_thread = threading.Thread(target=self._monitor_services, daemon=True)
+            self.service_monitor_thread = threading.Thread(
+                target=self._monitor_services, daemon=True
+            )
             self.service_monitor_thread.start()
             # Run main processing loop
             self.run_worker_loop()
@@ -622,6 +714,7 @@ def setup_signal_handlers(app: MQIApplication) -> None:
     Args:
         app (MQIApplication): The application instance to shut down on signal.
     """
+
     def signal_handler(signum, frame):
         # Using print() here can corrupt the rich display during shutdown.
         # It's better to use the logger if it's available.
@@ -633,6 +726,7 @@ def setup_signal_handlers(app: MQIApplication) -> None:
         # Set shutdown event to trigger graceful shutdown in run() finally block
         # This avoids double shutdown (W-1 fix)
         app.shutdown_event.set()
+
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 

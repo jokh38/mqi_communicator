@@ -59,3 +59,31 @@ class ProcessingMode(Enum):
     LOCAL = "local"
     REMOTE = "remote"
     HYBRID = "hybrid"
+
+
+# Stage mappings for progress display (1-indexed)
+# Each distinct pipeline phase gets its own stage number
+BEAM_STAGE_MAPPING = {
+    BeamStatus.PENDING: 0,
+    BeamStatus.CSV_INTERPRETING: 1,
+    BeamStatus.UPLOADING: 2,
+    BeamStatus.TPS_GENERATION: 3,
+    BeamStatus.HPC_QUEUED: 4,
+    BeamStatus.HPC_RUNNING: 4,      # Same stage: queued→running is sub-state
+    BeamStatus.DOWNLOADING: 5,
+    BeamStatus.POSTPROCESSING: 6,
+    BeamStatus.COMPLETED: 6,
+    BeamStatus.FAILED: 6,
+}
+
+CASE_STAGE_MAPPING = {
+    CaseStatus.PENDING: 0,
+    CaseStatus.CSV_INTERPRETING: 1,
+    CaseStatus.PROCESSING: 4,       # Cases in PROCESSING have beams in HPC stages
+    CaseStatus.POSTPROCESSING: 6,
+    CaseStatus.COMPLETED: 6,
+    CaseStatus.FAILED: 6,
+    CaseStatus.CANCELLED: 6,
+}
+
+TOTAL_STAGES = 6
