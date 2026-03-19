@@ -145,6 +145,7 @@ cython_debug/
 
 # Project-specific ignores
 .omc/
+.sisyphus/
 *.db
 dummy.db
 test_main.pid

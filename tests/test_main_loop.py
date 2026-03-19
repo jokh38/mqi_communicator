@@ -1,4 +1,5 @@
 import multiprocessing as mp
+import tempfile
 from pathlib import Path
 import unittest
 from unittest.mock import MagicMock, patch
@@ -6,10 +7,19 @@ from unittest.mock import MagicMock, patch
 from main import MQIApplication
 
 
+def _mock_settings(**overrides):
+    """Create a MagicMock settings with get_database_path returning a safe temp path."""
+    settings = MagicMock()
+    settings.get_database_path.return_value = Path(tempfile.gettempdir()) / "test_mqi.db"
+    for key, value in overrides.items():
+        setattr(settings, key, value)
+    return settings
+
+
 def test_run_worker_loop_processes_completed_workers_when_queue_is_empty():
     app = MQIApplication(config_path=Path("mqi_communicator/config/config.yaml"))
     app.logger = MagicMock()
-    app.settings = MagicMock()
+    app.settings = _mock_settings()
     app.settings.get_processing_config.return_value = {"max_workers": 1}
     app.case_queue = MagicMock()
     app.case_queue.get.side_effect = [mp.queues.Empty(), KeyboardInterrupt()]
@@ -32,7 +42,7 @@ def test_run_worker_loop_processes_completed_workers_when_queue_is_empty():
 def test_run_worker_loop_attempts_pending_beam_allocation_when_queue_is_empty():
     app = MQIApplication(config_path=Path("mqi_communicator/config/config.yaml"))
     app.logger = MagicMock()
-    app.settings = MagicMock()
+    app.settings = _mock_settings()
     app.settings.get_processing_config.return_value = {"max_workers": 1}
     app.case_queue = MagicMock()
     app.case_queue.get.side_effect = [mp.queues.Empty(), KeyboardInterrupt()]
@@ -64,7 +74,7 @@ def test_run_worker_loop_attempts_pending_beam_allocation_when_queue_is_empty():
 def test_start_gpu_monitor_reconciles_stale_assignments_with_case_repo_session():
     app = MQIApplication(config_path=Path("mqi_communicator/config/config.yaml"))
     app.logger = MagicMock()
-    app.settings = MagicMock()
+    app.settings = _mock_settings()
     app.settings.execution_handler = {"GpuMonitor": "local"}
     app.settings.get_gpu_config.return_value = {
         "monitor_interval": 10,
@@ -114,8 +124,7 @@ def test_run_reclaims_and_registers_matching_previous_process_before_startup():
     app.start_gpu_monitor = MagicMock(side_effect=lambda: mark("gpu"))
     app.run_worker_loop = MagicMock(side_effect=lambda: mark("worker_loop"))
     app.shutdown = MagicMock(side_effect=lambda: mark("shutdown"))
-    app.settings = MagicMock()
-    app.settings.execution_handler = {"GpuMonitor": "local"}
+    app.settings = _mock_settings(execution_handler={"GpuMonitor": "local"})
 
     registry.reclaim_previous_instance.side_effect = lambda current_pid: mark("reclaim")
     registry.register_current_process.side_effect = lambda current_pid: mark("register")
