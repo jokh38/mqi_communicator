@@ -177,6 +177,8 @@ class GpuConfig(BaseModel):
 
     Attributes:
         enabled: Whether GPU processing is enabled
+        gpu_monitor_command: Shell command to query GPU status (e.g. nvidia-smi)
+        monitor_interval: Interval in seconds between GPU status polls
         memory_threshold_mb: Minimum free memory required (MB)
         utilization_threshold_percent: Maximum utilization threshold (%)
         polling_interval_seconds: GPU status polling interval
@@ -184,6 +186,16 @@ class GpuConfig(BaseModel):
     enabled: bool = Field(
         default=True,
         description="Whether GPU processing is enabled"
+    )
+    gpu_monitor_command: Optional[str] = Field(
+        default=None,
+        description="Shell command to query GPU status"
+    )
+    monitor_interval: int = Field(
+        default=60,
+        ge=1,
+        le=300,
+        description="Interval in seconds between GPU status polls"
     )
     memory_threshold_mb: int = Field(
         default=1000,
@@ -205,13 +217,69 @@ class GpuConfig(BaseModel):
     )
 
 
+class WebConfig(BaseModel):
+    """Web dashboard (ttyd) configuration.
+
+    Attributes:
+        enabled: Whether the ttyd web interface is enabled
+        port: Port for the web dashboard
+        ttyd_path: Path to the ttyd executable
+        bind_address: Network interface to bind to
+        permit_write: Allow keyboard input through the web interface
+        reconnect: Auto-reconnect on disconnect
+    """
+    enabled: bool = Field(
+        default=False,
+        description="Whether the ttyd web interface is enabled"
+    )
+    port: int = Field(
+        default=8080,
+        ge=1,
+        le=65535,
+        description="Port for the web dashboard"
+    )
+    ttyd_path: str = Field(
+        default="ttyd",
+        description="Path to the ttyd executable"
+    )
+    bind_address: str = Field(
+        default="0.0.0.0",
+        description="Network interface to bind to"
+    )
+    permit_write: bool = Field(
+        default=False,
+        description="Allow keyboard input through the web interface"
+    )
+    reconnect: bool = Field(
+        default=True,
+        description="Auto-reconnect on disconnect"
+    )
+
+
 class UIConfig(BaseModel):
     """UI configuration with validation.
 
     Attributes:
+        auto_start: Whether to auto-start the dashboard on app launch
+        port: Port for the UI server
+        web: Web dashboard (ttyd) sub-configuration
         refresh_interval_seconds: UI refresh interval
         max_cases_display: Maximum number of cases to display
     """
+    auto_start: bool = Field(
+        default=False,
+        description="Whether to auto-start the dashboard on app launch"
+    )
+    port: int = Field(
+        default=8501,
+        ge=1,
+        le=65535,
+        description="Port for the UI server"
+    )
+    web: WebConfig = Field(
+        default_factory=WebConfig,
+        description="Web dashboard (ttyd) sub-configuration"
+    )
     refresh_interval_seconds: int = Field(
         default=1,
         ge=1,

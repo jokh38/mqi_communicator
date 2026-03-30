@@ -48,7 +48,7 @@ class DisplayManager:
         self._update_thread: Optional[threading.Thread] = None
 
         ui_config = settings.get_ui_config()
-        self._refresh_rate = ui_config.get("refresh_interval", 2)
+        self._refresh_rate = ui_config.get("refresh_interval_seconds", 2)
 
         self._local_tz = timezone(timedelta(hours=timezone_hours))
         self._resize_needed = False
