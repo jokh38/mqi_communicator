@@ -15,6 +15,7 @@ from src.config.pydantic_models import (
     ProgressTrackingConfig,
     LoggingConfig,
     GpuConfig,
+    WebConfig,
     UIConfig,
     AppConfig,
 )
@@ -213,9 +214,22 @@ class TestGpuConfig:
         config = GpuConfig()
 
         assert config.enabled is True
+        assert config.gpu_monitor_command is None
+        assert config.monitor_interval == 60
         assert config.memory_threshold_mb == 1000
         assert config.utilization_threshold_percent == 80
         assert config.polling_interval_seconds == 10
+
+    def test_gpu_config_with_monitor_command(self):
+        """Test GpuConfig accepts gpu_monitor_command and monitor_interval from YAML"""
+        nvidia_cmd = (
+            "nvidia-smi --query-gpu=index,uuid,name,memory.total,memory.used,"
+            "memory.free,temperature.gpu,utilization.gpu --format=csv,noheader,nounits"
+        )
+        config = GpuConfig(gpu_monitor_command=nvidia_cmd, monitor_interval=10)
+
+        assert config.gpu_monitor_command == nvidia_cmd
+        assert config.monitor_interval == 10
 
     def test_gpu_config_validates_thresholds(self):
         """Test GpuConfig validates threshold values"""
@@ -223,6 +237,43 @@ class TestGpuConfig:
             GpuConfig(utilization_threshold_percent=150)
 
         assert "utilization_threshold_percent" in str(exc_info.value)
+
+    def test_gpu_config_validates_monitor_interval(self):
+        """Test GpuConfig rejects monitor_interval below minimum"""
+        with pytest.raises(ValidationError) as exc_info:
+            GpuConfig(monitor_interval=0)
+
+        assert "monitor_interval" in str(exc_info.value)
+
+
+class TestWebConfig:
+    """Test WebConfig Pydantic model validation"""
+
+    def test_web_config_with_defaults(self):
+        """Test WebConfig uses sensible defaults"""
+        config = WebConfig()
+
+        assert config.enabled is False
+        assert config.port == 8080
+        assert config.ttyd_path == "ttyd"
+        assert config.bind_address == "0.0.0.0"
+        assert config.permit_write is False
+        assert config.reconnect is True
+
+    def test_web_config_with_custom_values(self):
+        """Test WebConfig accepts custom values"""
+        config = WebConfig(enabled=True, port=9090, ttyd_path="/usr/local/bin/ttyd")
+
+        assert config.enabled is True
+        assert config.port == 9090
+        assert config.ttyd_path == "/usr/local/bin/ttyd"
+
+    def test_web_config_validates_port(self):
+        """Test WebConfig rejects invalid port"""
+        with pytest.raises(ValidationError) as exc_info:
+            WebConfig(port=0)
+
+        assert "port" in str(exc_info.value)
 
 
 class TestUIConfig:
@@ -232,8 +283,42 @@ class TestUIConfig:
         """Test UIConfig uses sensible defaults"""
         config = UIConfig()
 
+        assert config.auto_start is False
+        assert config.port == 8501
+        assert isinstance(config.web, WebConfig)
+        assert config.web.enabled is False
         assert config.refresh_interval_seconds == 1
         assert config.max_cases_display == 50
+
+    def test_ui_config_with_yaml_values(self):
+        """Test UIConfig accepts all fields present in config.yaml"""
+        config = UIConfig(
+            auto_start=True,
+            port=8501,
+            web=WebConfig(
+                enabled=True,
+                port=8080,
+                ttyd_path="ttyd",
+                bind_address="0.0.0.0",
+                permit_write=False,
+                reconnect=True,
+            ),
+            refresh_interval_seconds=1,
+            max_cases_display=50,
+        )
+
+        assert config.auto_start is True
+        assert config.web.enabled is True
+        assert config.web.port == 8080
+
+    def test_ui_config_model_dump_includes_web(self):
+        """Test UIConfig.model_dump() includes the nested web dict"""
+        config = UIConfig(auto_start=True, web=WebConfig(enabled=True))
+        dumped = config.model_dump()
+
+        assert dumped["auto_start"] is True
+        assert isinstance(dumped["web"], dict)
+        assert dumped["web"]["enabled"] is True
 
     def test_ui_config_validates_values(self):
         """Test UIConfig validates configuration values"""
