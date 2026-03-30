@@ -388,7 +388,7 @@ class UIProcessManager:
             return False
 
     def _ensure_web_port_ready(self, port: int) -> bool:
-        """Ensure the configured UI port is free, reclaiming stale dashboard processes when safe."""
+        """Ensure the configured UI port is free, killing any occupying process."""
         if self._check_port_available(port):
             return True
 
@@ -400,17 +400,8 @@ class UIProcessManager:
                 })
             return False
 
-        if not self._is_stale_dashboard_process(owner_info):
-            if self.logger:
-                self.logger.error("UI port is occupied by a non-dashboard process", {
-                    "port": port,
-                    "pid": owner_info.get("pid"),
-                    "command": owner_info.get("command"),
-                })
-            return False
-
         if self.logger:
-            self.logger.warning("UI port is occupied by a stale MOQUI dashboard process. Reclaiming port.", {
+            self.logger.warning("UI port is occupied. Killing the occupying process to reclaim port.", {
                 "port": port,
                 "pid": owner_info.get("pid"),
                 "command": owner_info.get("command"),
@@ -418,7 +409,7 @@ class UIProcessManager:
 
         if not self._terminate_process_tree(owner_info["pid"]):
             if self.logger:
-                self.logger.error("Failed to terminate stale dashboard process", {
+                self.logger.error("Failed to terminate process occupying UI port", {
                     "port": port,
                     "pid": owner_info.get("pid"),
                 })
@@ -426,14 +417,14 @@ class UIProcessManager:
 
         if not self._wait_for_port_available(port):
             if self.logger:
-                self.logger.error("Dashboard port did not clear after terminating stale process", {
+                self.logger.error("UI port did not clear after terminating occupying process", {
                     "port": port,
                     "pid": owner_info.get("pid"),
                 })
             return False
 
         if self.logger:
-            self.logger.info("Successfully reclaimed UI port from stale dashboard process", {
+            self.logger.info("Successfully reclaimed UI port", {
                 "port": port,
                 "pid": owner_info.get("pid"),
             })
@@ -493,11 +484,6 @@ class UIProcessManager:
         except Exception:
             pass
         return ""
-
-    def _is_stale_dashboard_process(self, owner_info: Dict[str, Any]) -> bool:
-        """Recognize a stale MOQUI dashboard listener that is safe to reclaim."""
-        command = (owner_info.get("command") or "").lower()
-        return "src.ui.dashboard" in command or ("ttyd" in command and "moqui communicator dashboard" in command)
 
     def _wait_for_port_available(self, port: int, timeout: float = 5.0) -> bool:
         """Wait for a TCP port to become available."""
