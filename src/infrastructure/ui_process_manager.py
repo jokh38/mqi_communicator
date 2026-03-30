@@ -287,13 +287,15 @@ class UIProcessManager:
         ]
 
         # Optional ttyd flags
-        if not web_config.get("permit_write", False):
+        if web_config.get("permit_write", False):
             ttyd_cmd.append("-W")
 
-        if web_config.get("reconnect", True):
+        if not web_config.get("reconnect", True):
             ttyd_cmd.append("-o")
 
         # Combine: ttyd [options] -- python -m src.ui.dashboard [args]
+        # '--' is required so ttyd treats everything after it as the command to run
+        ttyd_cmd.append("--")
         ttyd_cmd.extend(base_command)
 
         return ttyd_cmd
