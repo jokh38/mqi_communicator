@@ -166,6 +166,12 @@ class LoggingConfig(BaseModel):
         le=100,
         description="Number of backup log files to keep"
     )
+    tz_hours: int = Field(
+        default=9,
+        ge=-12,
+        le=14,
+        description="Timezone offset in hours for log timestamps"
+    )
 
     model_config = {
         "use_enum_values": True
