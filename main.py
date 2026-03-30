@@ -236,11 +236,23 @@ class MQIApplication:
                 interval = 60
             command = gpu_config.get('gpu_monitor_command')
 
+            def _reconnect_gpu_handler() -> Optional[ExecutionHandler]:
+                new_ssh = create_ssh_client(self.settings, self.logger)
+                if not new_ssh:
+                    return None
+                self.ssh_client = new_ssh
+                return ExecutionHandler(settings=self.settings,
+                                        mode=handler_mode,
+                                        ssh_client=new_ssh)
+
+            reconnect_fn = _reconnect_gpu_handler if handler_mode == "remote" else None
+
             self.gpu_monitor = GpuMonitor(logger=self.logger,
                                           execution_handler=execution_handler,
                                           gpu_repository=gpu_repo,
                                           command=command,
-                                          update_interval=interval)
+                                          update_interval=interval,
+                                          reconnect_handler=reconnect_fn)
             self.gpu_monitor.start()
             self.logger.info("GPU monitoring service started.")
         except Exception as e:

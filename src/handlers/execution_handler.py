@@ -240,8 +240,14 @@ class ExecutionHandler:
         else:  # remote
             if not self._ssh_client:
                 raise ConnectionError("SSH client not available for remote execution.")
+            transport = self._ssh_client.get_transport()
+            if transport is None or not transport.is_active():
+                raise ConnectionError("SSH connection is not active. The session may have dropped.")
             full_command = f"cd {cwd} && {command}" if cwd else command
-            stdin, stdout, stderr = self._ssh_client.exec_command(full_command)
+            result = self._ssh_client.exec_command(full_command)
+            if result is None:
+                raise ConnectionError("SSH exec_command returned None. The connection may have dropped.")
+            stdin, stdout, stderr = result
             exit_code = stdout.channel.recv_exit_status()
             return ExecutionResult(success=exit_code == 0,
                                    output=stdout.read().decode("utf-8"),

@@ -4,7 +4,7 @@ import csv
 import time
 import threading
 from io import StringIO
-from typing import List, Dict, Any, Optional
+from typing import Callable, List, Dict, Any, Optional
 from datetime import datetime
 
 from src.infrastructure.logging_handler import StructuredLogger
@@ -20,13 +20,14 @@ class GpuMonitor:
     acquisition (via ExecutionHandler) and parsing from data
     persistence (via GpuRepository).
     """
-    
+
     def __init__(self,
                  logger: StructuredLogger,
                  execution_handler: ExecutionHandler,
                  gpu_repository: GpuRepository,
                  command: str,
-                 update_interval: int):
+                 update_interval: int,
+                 reconnect_handler: Optional[Callable[[], Optional[ExecutionHandler]]] = None):
         """Initialize the GpuMonitor service.
 
         Args:
@@ -35,12 +36,16 @@ class GpuMonitor:
             gpu_repository (GpuRepository): Repository for persisting GPU data.
             command (str): The nvidia-smi command to execute for fetching GPU data.
             update_interval (int): Interval in seconds between GPU data fetches.
+            reconnect_handler (Callable, optional): A callable that returns a new
+                ExecutionHandler with a fresh SSH connection. Called automatically
+                when a ConnectionError is detected.
         """
         self.logger = logger
         self.execution_handler = execution_handler
         self.gpu_repository = gpu_repository
         self.command = command
         self.update_interval = update_interval
+        self._reconnect_handler = reconnect_handler
 
         self._shutdown_event = threading.Event()
         self._monitor_thread: Optional[threading.Thread] = None
@@ -114,6 +119,18 @@ class GpuMonitor:
             # Persist the new data to the repository
             self.gpu_repository.update_resources(gpu_data)
 
+        except ConnectionError as e:
+            self.logger.error("SSH connection lost while fetching GPU data.", {
+                "error": str(e)
+            })
+            if self._reconnect_handler:
+                self.logger.info("Attempting to reconnect SSH session for GPU monitor.")
+                new_handler = self._reconnect_handler()
+                if new_handler:
+                    self.execution_handler = new_handler
+                    self.logger.info("SSH reconnection successful.")
+                else:
+                    self.logger.error("SSH reconnection failed. Will retry on next interval.")
         except Exception as e:
             self.logger.error("An unexpected error occurred while fetching GPU data.", {
                 "error": str(e)
