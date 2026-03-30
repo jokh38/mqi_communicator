@@ -2,18 +2,18 @@
 
 ## TL;DR
 
-> **Quick Summary**: Integrate ptn_checker to process new .ptn files for completed cases. First-time cases run MC simulation; subsequent runs (when case is COMPLETED and new .ptn files arrive) execute ptn_checker instead.
-> 
+> **Quick Summary**: Integrate `ptn_checker` as a case-level follow-up path for already `COMPLETED` cases when new, stable `.ptn` files arrive. Do not force PTN analysis through the existing beam state machine.
+>
 > **Deliverables**:
-> - Database schema extension for ptn_checker tracking
-> - New `PtnCheckerState` workflow state
-> - Modified file watcher for .ptn file detection
-> - ptn_checker module integration
-> - Unit and integration tests (TDD)
-> 
+> - Database schema extension for PTN run tracking
+> - Case-level PTN analysis runner
+> - Structured `ptn_checker` integration wrapper
+> - Dispatcher and watcher changes for completed-case PTN reprocessing
+> - Unit and integration tests using `python -m pytest`
+>
 > **Estimated Effort**: Medium
-> **Parallel Execution**: YES - 4 waves
-> **Critical Path**: Schema → PtnCheckerState → Integration → File Watcher → Tests
+> **Parallel Execution**: YES - 3 waves
+> **Critical Path**: Schema -> Repository -> PTN runner -> Integration wrapper -> Dispatcher/watcher -> Tests
 
 ---
 
@@ -21,149 +21,129 @@
 
 ### Original Request
 Integrate `~/MOQUI_SMC/ptn_checker` into the workflow so that:
-- First time a case is processed → MC simulation runs (existing behavior)
-- Subsequent times (when case is COMPLETED and new .ptn files arrive) → ptn_checker runs instead
+- First time a case is processed -> MC simulation runs
+- Subsequent times, when the case is already `COMPLETED` and new `.ptn` files arrive -> `ptn_checker` runs instead
 
-### Interview Summary
-**Key Discussions**:
-- **Trigger logic**: Case status check - COMPLETED cases with new .ptn files trigger ptn_checker
-- **Output handling**: Store results in `{case_path}/ptn_analysis/`
-- **PTN detection**: File watcher monitors case directory for new `.ptn` files
-- **DICOM location**: DICOM RTPLAN file is in case directory (`{case_path}/*.dcm`)
-- **Beam handling**: Run ptn_checker once per case (processes all beams together)
-- **Test strategy**: TDD - write tests first
-- **Post-PTN status**: Stay COMPLETED + track runs in database
-- **Error handling**: New PTN-failed status field
+### Architecture Constraints
+- The current worker path is beam-oriented: dispatcher creates beam jobs, workers construct `WorkflowManager`, and states execute per beam
+- PTN analysis is case-level, not beam-level
+- Reprocessing a completed case therefore must happen in dispatcher/case-entry logic, not by adding a new beam `WorkflowState`
+- Existing RTPLAN discovery should be reused instead of selecting an arbitrary `.dcm` file
 
-**Research Findings**:
-- mqi_communicator uses SQLite database with `cases` table (`case_id`, `status`, `retry_count`)
-- MC simulation triggered in `HpcExecutionState.execute()` in `src/domain/states.py`
-- File watcher in `src/core/workflow_manager.py` monitors scan_directory
-- ptn_checker at `/home/jokh38/MOQUI_SMC/ptn_checker` can be imported as module via `from main import run_analysis`
-- ptn_checker needs: `log_dir` (.ptn files), `dcm_file` (DICOM RTPLAN), `output_dir`
+### Research Findings
+- Database schema is initialized in `src/database/connection.py` via `init_db()`
+- Case routing and startup scans are handled in `src/core/dispatcher.py` and `src/core/workflow_manager.py`
+- Beam workflow states live in `src/domain/states.py` and should remain dedicated to MC execution
+- `ptn_checker` exposes `run_analysis(log_dir, dcm_file, output_dir)` from `/home/jokh38/MOQUI_SMC/ptn_checker/main.py`
+- The repo uses a flat `tests/` layout, not `tests/unit/` and `tests/integration/`
+- Settings live in `src/config/settings.py`
 
-### Metis Review
-**Identified Gaps** (addressed):
-- **Concurrency policy**: Priority by case status - COMPLETED → ptn_checker, else → MC simulation
-- **PTN file batching**: Process all .ptn files in case directory
-- **Output management**: Overwrite `ptn_analysis/` directory (single output per run)
-- **Error recovery**: Log error, set `ptn_checker_status` to FAILED, no auto-retry
-- **Timeout**: Use existing workflow timeout configuration
-- **Multiple DICOM files**: Use first `.dcm` file found alphabetically
-- **Partial file detection**: File watcher uses creation events (files must be complete)
+### Design Decisions
+- **Execution boundary**: PTN analysis runs as a case-level path
+- **Case status policy**: case stays `COMPLETED`; PTN outcome is tracked in dedicated PTN columns
+- **RTPLAN discovery**: use existing validator/discovery logic
+- **PTN readiness**: only process files after debounce and file stability checks
+- **Failure reporting**: use structured PTN result codes, not a boolean-only wrapper
+- **Output handling**: write current run outputs to `{case_path}/ptn_analysis/`
 
 ---
 
 ## Work Objectives
 
 ### Core Objective
-Enable ptn_checker execution for completed cases when new .ptn files arrive, providing an alternative workflow path to MC simulation for treatment verification.
+Enable safe case-level PTN analysis for completed cases when new `.ptn` files arrive, without regressing the existing MC beam workflow.
 
 ### Concrete Deliverables
-- Database schema: New columns `ptn_checker_run_count`, `ptn_checker_last_run_at`, `ptn_checker_status`
-- New state: `PtnCheckerState` in `src/domain/states.py`
-- Modified file watcher: Detect .ptn files and re-queue COMPLETED cases
-- Integration: ptn_checker module import and execution logic
-- Output: PDF reports stored in `{case_path}/ptn_analysis/`
-- Tests: Unit tests for all components, integration test for full workflow
+- Database columns:
+  - `ptn_checker_run_count INTEGER DEFAULT 0`
+  - `ptn_checker_last_run_at TIMESTAMP`
+  - `ptn_checker_status TEXT`
+- Repository support for PTN tracking on cases
+- Case-level PTN analysis runner in dispatcher/case-handling code
+- `src/integrations/ptn_checker.py` wrapper returning a structured result
+- Watcher support for `.ptn` arrivals on completed cases
+- Tests covering schema, repository, routing, integration, watcher behavior, and regression
 
 ### Definition of Done
-- [ ] TDD: All tests pass before implementation
-- [ ] Database migration: Schema changes apply without data loss
-- [ ] Workflow: COMPLETED case + new .ptn files → ptn_checker runs
-- [ ] Workflow: Non-COMPLETED case → MC simulation runs (no regression)
-- [ ] Output: PDF report generated in correct location
-- [ ] Error handling: Failures logged with appropriate status
+- [ ] Database migration applies without data loss
+- [ ] `COMPLETED` case + stable new `.ptn` files -> PTN analysis runs
+- [ ] Non-`COMPLETED` cases keep existing MC behavior
+- [ ] RTPLAN discovery uses existing validator flow
+- [ ] PTN failures are recorded with distinct PTN status codes
+- [ ] Verification uses `python -m pytest`
 
 ### Must Have
-- Database fields for tracking ptn_checker runs
-- Conditional workflow routing based on case status
-- ptn_checker module integration
-- File watcher detection for .ptn files
-- Error handling with distinct PTN-failed status
+- PTN tracking columns on `cases`
+- Case-level routing for completed-case PTN analysis
+- Structured PTN integration result with status codes
+- File stability/debounce handling for watcher-triggered PTN runs
+- Regression coverage for existing MC workflow
 
-### Must NOT Have (Guardrails)
-- NO modifications to ptn_checker itself (use as-is)
-- NO caching layer for ptn_checker results
-- NO web UI for viewing results
-- NO notification system
-- NO real-time progress tracking
-- NO distributed/parallel execution
-- NO removal of existing MC simulation workflow
-- NO storing ptn_checker output in database (filesystem only)
+### Must NOT Have
+- NO modifications to `ptn_checker`
+- NO beam-state-machine PTN path
+- NO caching layer
+- NO UI changes
+- NO notifications
+- NO distributed execution
+- NO storing PTN analysis artifacts in the database
 
 ---
 
-## Verification Strategy (MANDATORY)
+## Verification Strategy
 
-> **ZERO HUMAN INTERVENTION** — ALL verification is agent-executed. No exceptions.
+### Validation Scope
+- Label repo/test-only evidence as `component validated`
+- Only label results `end-to-end validated` if the full completed-case watcher -> queue -> PTN flow is executed in one integrated test harness
 
 ### Test Decision
-- **Infrastructure exists**: YES (project has pytest)
-- **Automated tests**: TDD (write tests first, then implement)
-- **Framework**: pytest
-- **TDD Flow**: Each task follows RED (failing test) → GREEN (minimal impl) → REFACTOR
+- **Infrastructure exists**: YES
+- **Framework**: `pytest`
+- **Command style**: `python -m pytest`
+- **Flow**: RED -> GREEN -> REFACTOR
 
 ### QA Policy
-Every task MUST include agent-executed QA scenarios.
-Evidence saved to `.sisyphus/evidence/task-{N}-{scenario-slug}.{ext}`.
-
-- **Backend/Python**: Use Bash (pytest) — Run tests, assert pass/fail
-- **Database**: Use Bash (sqlite3) — Query schema, verify columns exist
-- **File operations**: Use Bash — Create test files, verify outputs
+- Every task must include agent-executed verification
+- Record exact commands used
+- Save evidence under `.sisyphus/evidence/`
+- Separate component validation from end-to-end validation in reporting
 
 ---
 
 ## Execution Strategy
 
-### Parallel Execution Waves
+### Parallel Waves
 
-```
-Wave 1 (Start Immediately — database + state foundation):
-├── Task 1: Database schema extension [quick]
-├── Task 2: Repository methods for PTN tracking [quick]
-└── Task 3: PtnCheckerState implementation [quick]
+```text
+Wave 1:
+- Task 1: Database schema extension
+- Task 2: Repository methods and model mapping
 
-Wave 2 (After Wave 1 — integration):
-├── Task 4: ptn_checker module integration [quick]
-├── Task 5: Workflow routing logic [quick]
-└── Task 6: File watcher PTN detection [quick]
+Wave 2:
+- Task 3: Structured ptn_checker integration wrapper
+- Task 4: Case-level PTN analysis runner
 
-Wave 3 (After Wave 2 — error handling + config):
-├── Task 7: Error handling implementation [quick]
-├── Task 8: Configuration additions [quick]
-└── Task 9: Integration tests [unspecified-high]
+Wave 3:
+- Task 5: Dispatcher routing for completed-case PTN analysis
+- Task 6: Watcher PTN detection with debounce/stability checks
+- Task 7: Configuration additions
+- Task 8: Integration and regression tests
 
-Wave FINAL (After ALL tasks — verification):
-├── Task F1: Plan compliance audit (oracle)
-├── Task F2: Code quality review (unspecified-high)
-├── Task F3: Real manual QA (unspecified-high)
-└── Task F4: Scope fidelity check (deep)
--> Present results -> Get explicit user okay
-
-Critical Path: Task 1 → Task 2 → Task 4 → Task 5 → Task 9 → F1-F4 → user okay
-Parallel Speedup: ~50% faster than sequential
-Max Concurrent: 3 (Waves 1 & 2)
+Final Wave:
+- F1: Plan compliance audit
+- F2: Code quality review
+- F3: QA execution summary
 ```
 
 ### Dependency Matrix
-
-- **1**: — — 2, 3
-- **2**: 1 — 4, 5
-- **3**: — 5, 6
-- **4**: 2 — 5, 7
-- **5**: 2, 3 — 7, 9
-- **6**: 3 — 9
-- **7**: 4, 5 — 9
-- **8**: — 9
-- **9**: 5, 6, 7, 8 — F1-F4
-
-### Agent Dispatch Summary
-
-- **Wave 1**: 3 agents — T1-T2 → `quick`, T3 → `quick`
-- **Wave 2**: 3 agents — T4-T6 → `quick`
-- **Wave 3**: 3 agents — T7-T8 → `quick`, T9 → `unspecified-high`
-- **FINAL**: 4 agents — F1 → `oracle`, F2-F3 → `unspecified-high`, F4 → `deep`
+- **1** -> 2, 4
+- **2** -> 4, 5
+- **3** -> 4
+- **4** -> 5, 8
+- **5** -> 6, 8
+- **6** -> 8
+- **7** -> 4, 5, 6, 8
+- **8** -> F1, F2, F3
 
 ---
 
@@ -172,563 +152,225 @@ Max Concurrent: 3 (Waves 1 & 2)
 - [ ] 1. **Database Schema Extension**
 
   **What to do**:
-  - Add new columns to `cases` table in `src/database/connection.py`:
+  - Update `src/database/connection.py` `init_db()` to add:
     - `ptn_checker_run_count INTEGER DEFAULT 0`
     - `ptn_checker_last_run_at TIMESTAMP`
-    - `ptn_checker_status TEXT` (values: NULL, 'SUCCESS', 'FAILED', 'FAILED_NO_DICOM', 'FAILED_NO_PTN', 'FAILED_EXCEPTION')
-  - Write migration logic in `_init_db()` to handle existing databases (ALTER TABLE)
-  - Write test: `tests/unit/test_database.py::test_ptn_checker_columns_exist`
-
-  **Must NOT do**:
-  - Do NOT add indexes (not needed for initial implementation)
-  - Do NOT modify existing columns
-  - Do NOT add foreign key constraints
-
-  **Recommended Agent Profile**:
-  - **Category**: `quick`
-    - Reason: Single file modification, well-defined schema change
-  - **Skills**: []
-
-  **Parallelization**:
-  - **Can Run In Parallel**: NO (foundation for other tasks)
-  - **Parallel Group**: Wave 1
-  - **Blocks**: Task 2
-  - **Blocked By**: None
-
-  **References**:
-  - `src/database/connection.py:40-80` - Existing schema definition and `_init_db()` pattern
-  - `src/database/connection.py:CASES_TABLE_SQL` - Current cases table schema
+    - `ptn_checker_status TEXT`
+  - Add migration logic for existing databases
+  - Add schema tests in `tests/test_database_connection.py`
 
   **Acceptance Criteria**:
-  - [ ] Test written first: `tests/unit/test_database.py::test_ptn_checker_columns_exist`
-  - [ ] `pytest tests/unit/test_database.py::test_ptn_checker_columns_exist` → PASS
-  - [ ] New columns added to CREATE TABLE statement
-  - [ ] ALTER TABLE logic handles existing databases
+  - [ ] New columns exist in fresh DB
+  - [ ] Migration adds columns to existing DB
+  - [ ] `python -m pytest tests/test_database_connection.py -k ptn_checker`
 
-  **QA Scenarios**:
-  ```
-  Scenario: Database schema has ptn_checker columns
-    Tool: Bash (sqlite3)
-    Preconditions: Fresh database created
-    Steps:
-      1. sqlite3 data/mqi_communicator.db ".schema cases"
-      2. grep for "ptn_checker_run_count"
-      3. grep for "ptn_checker_last_run_at"
-      4. grep for "ptn_checker_status"
-    Expected Result: All three columns present in schema
-    Evidence: .sisyphus/evidence/task-1-schema-verification.txt
-
-  Scenario: Migration works on existing database
-    Tool: Bash (sqlite3)
-    Preconditions: Database exists without new columns
-    Steps:
-      1. sqlite3 data/mqi_communicator.db "SELECT ptn_checker_run_count FROM cases LIMIT 1"
-    Expected Result: Column exists (may be empty table)
-    Evidence: .sisyphus/evidence/task-1-migration-test.txt
+  **QA Scenario**:
+  ```bash
+  python -m pytest tests/test_database_connection.py -k ptn_checker -v
   ```
 
-  **Commit**: YES
-  - Message: `feat(db): add ptn_checker tracking columns to cases table`
-  - Files: `src/database/connection.py`, `tests/unit/test_database.py`
-
----
-
-- [ ] 2. **Repository Methods for PTN Tracking**
+- [ ] 2. **Repository Methods and Model Mapping**
 
   **What to do**:
-  - Add methods to `CaseRepository` in `src/repositories/case_repo.py`:
-    - `increment_ptn_checker_run_count(case_id: str) -> None`
-    - `update_ptn_checker_status(case_id: str, status: str) -> None`
-    - `update_ptn_checker_last_run(case_id: str, timestamp: datetime) -> None`
-    - `get_ptn_checker_info(case_id: str) -> dict` (returns run_count, last_run, status)
-  - Write tests in `tests/unit/test_case_repo.py`
-
-  **Must NOT do**:
-  - Do NOT modify existing repository methods
-  - Do NOT add complex queries or joins
-
-  **Recommended Agent Profile**:
-  - **Category**: `quick`
-    - Reason: Straightforward CRUD operations
-  - **Skills**: []
-
-  **Parallelization**:
-  - **Can Run In Parallel**: NO (depends on Task 1)
-  - **Parallel Group**: Wave 1 (after Task 1)
-  - **Blocks**: Task 4
-  - **Blocked By**: Task 1
-
-  **References**:
-  - `src/repositories/case_repo.py:50-150` - Existing repository method patterns
-  - `src/repositories/case_repo.py:increment_retry_count()` - Similar pattern to follow
+  - Add PTN helper methods to `src/repositories/case_repo.py`
+  - Extend `src/domain/models.py` if needed so PTN metadata maps cleanly from `CaseData`
+  - Add tests in `tests/test_case_repo_mapping.py`
 
   **Acceptance Criteria**:
-  - [ ] Test: `tests/unit/test_case_repo.py::test_increment_ptn_checker_run_count`
-  - [ ] Test: `tests/unit/test_case_repo.py::test_update_ptn_checker_status`
-  - [ ] Test: `tests/unit/test_case_repo.py::test_get_ptn_checker_info`
-  - [ ] `pytest tests/unit/test_case_repo.py` → PASS
+  - [ ] Can increment PTN run count
+  - [ ] Can update PTN status and last-run timestamp
+  - [ ] Can fetch PTN metadata without raw dict-only fallbacks
+  - [ ] `python -m pytest tests/test_case_repo_mapping.py -k ptn_checker`
 
-  **QA Scenarios**:
-  ```
-  Scenario: Repository methods work correctly
-    Tool: Bash (pytest)
-    Preconditions: Test database with sample case
-    Steps:
-      1. pytest tests/unit/test_case_repo.py::test_increment_ptn_checker_run_count -v
-      2. pytest tests/unit/test_case_repo.py::test_update_ptn_checker_status -v
-      3. pytest tests/unit/test_case_repo.py::test_get_ptn_checker_info -v
-    Expected Result: All tests pass
-    Evidence: .sisyphus/evidence/task-2-repo-tests.txt
+  **QA Scenario**:
+  ```bash
+  python -m pytest tests/test_case_repo_mapping.py -k ptn_checker -v
   ```
 
-  **Commit**: YES
-  - Message: `feat(repo): add ptn_checker repository methods`
-  - Files: `src/repositories/case_repo.py`, `tests/unit/test_case_repo.py`
-
----
-
-- [ ] 3. **PtnCheckerState Implementation**
+- [ ] 3. **Structured ptn_checker Integration Wrapper**
 
   **What to do**:
-  - Create new `PtnCheckerState` class in `src/domain/states.py`:
-    - Inherit from `WorkflowState` base class
-    - Implement `execute(handler, beam, case_repo, settings)` method
-    - Find DICOM RTPLAN file in case directory (first .dcm file)
-    - Find all .ptn files in case directory
-    - Call ptn_checker integration module
-    - Store output in `{case_path}/ptn_analysis/`
-    - Update database via repository methods
-    - Handle errors (no DICOM, no PTN files, exceptions)
-  - Write tests in `tests/unit/test_states.py`
+  - Create `src/integrations/ptn_checker.py`
+  - Add a structured return type, for example:
+    - `success: bool`
+    - `status_code: str`
+    - `error_message: Optional[str]`
+  - Import `ptn_checker` via its repo path and call `run_analysis`
+  - Map failures to codes such as:
+    - `SUCCESS`
+    - `FAILED_NO_DICOM`
+    - `FAILED_NO_PTN`
+    - `FAILED_EXCEPTION`
 
   **Must NOT do**:
-  - Do NOT modify existing state classes
-  - Do NOT add caching or optimization
-  - Do NOT implement progress tracking
-
-  **Recommended Agent Profile**:
-  - **Category**: `quick`
-    - Reason: Following existing state pattern
-  - **Skills**: []
-
-  **Parallelization**:
-  - **Can Run In Parallel**: YES (with Tasks 1, 2)
-  - **Parallel Group**: Wave 1
-  - **Blocks**: Task 5
-  - **Blocked By**: None (but needs Task 2 for full integration)
-
-  **References**:
-  - `src/domain/states.py:179-313` - `HpcExecutionState.execute()` pattern to follow
-  - `src/domain/states.py:1-50` - `WorkflowState` base class and state patterns
-  - `src/domain/states.py:CompletedState` - Success completion pattern
-  - `src/domain/states.py:FailedState` - Failure handling pattern
+  - Do NOT return only `True/False`
+  - Do NOT shell out to a subprocess unless module import proves impossible
 
   **Acceptance Criteria**:
-  - [ ] Test: `tests/unit/test_states.py::test_ptn_checker_state_execute_success`
-  - [ ] Test: `tests/unit/test_states.py::test_ptn_checker_state_no_dicom`
-  - [ ] Test: `tests/unit/test_states.py::test_ptn_checker_state_no_ptn_files`
-  - [ ] `pytest tests/unit/test_states.py` → PASS
+  - [ ] Success path returns structured success
+  - [ ] Missing DICOM and missing PTN are distinguishable
+  - [ ] Unexpected exceptions map to `FAILED_EXCEPTION`
+  - [ ] `python -m pytest tests/test_ptn_checker_integration.py`
 
-  **QA Scenarios**:
-  ```
-  Scenario: PtnCheckerState executes successfully
-    Tool: Bash (pytest)
-    Preconditions: Mock ptn_checker module, test case with DICOM and PTN files
-    Steps:
-      1. pytest tests/unit/test_states.py::test_ptn_checker_state_execute_success -v
-    Expected Result: Test passes, output directory created
-    Evidence: .sisyphus/evidence/task-3-state-success.txt
-
-  Scenario: PtnCheckerState handles missing DICOM
-    Tool: Bash (pytest)
-    Preconditions: Test case without DICOM file
-    Steps:
-      1. pytest tests/unit/test_states.py::test_ptn_checker_state_no_dicom -v
-    Expected Result: Test passes, status set to FAILED_NO_DICOM
-    Evidence: .sisyphus/evidence/task-3-state-no-dicom.txt
+  **QA Scenario**:
+  ```bash
+  python -m pytest tests/test_ptn_checker_integration.py -v
   ```
 
-  **Commit**: YES
-  - Message: `feat(workflow): add PtnCheckerState for PTN analysis`
-  - Files: `src/domain/states.py`, `tests/unit/test_states.py`
-
----
-
-- [ ] 4. **ptn_checker Module Integration**
+- [ ] 4. **Case-Level PTN Analysis Runner**
 
   **What to do**:
-  - Create new file `src/integrations/ptn_checker.py`:
-    - Function `run_ptn_checker(log_dir: str, dcm_file: str, output_dir: str) -> bool`
-    - Import ptn_checker: `sys.path.insert(0, '/home/jokh38/MOQUI_SMC/ptn_checker')`
-    - Call `from main import run_analysis`
-    - Wrap in try/except to catch FileNotFoundError, ValueError
-    - Return True on success, False on failure
-    - Log errors appropriately
-  - Write tests with mock ptn_checker in `tests/unit/test_ptn_checker_integration.py`
+  - Implement a case-level PTN runner in `src/core/dispatcher.py` or adjacent case-handling module
+  - Inputs:
+    - `case_id`
+    - `case_path`
+    - `case_repo`
+    - `settings`
+    - `logger`
+  - Resolve RTPLAN using existing validator/discovery logic
+  - Discover `.ptn` files for the case
+  - Call the structured integration wrapper
+  - Update PTN tracking fields on the case
+  - Keep the case itself `COMPLETED`
 
   **Must NOT do**:
-  - Do NOT modify ptn_checker itself
-  - Do NOT add subprocess execution (use module import)
-  - Do NOT add caching
-
-  **Recommended Agent Profile**:
-  - **Category**: `quick`
-    - Reason: Simple wrapper/integration code
-  - **Skills**: []
-
-  **Parallelization**:
-  - **Can Run In Parallel**: NO (depends on Task 2)
-  - **Parallel Group**: Wave 2
-  - **Blocks**: Task 5
-  - **Blocked By**: Task 2
-
-  **References**:
-  - `/home/jokh38/MOQUI_SMC/ptn_checker/main.py:run_analysis()` - Function to call
-  - `/home/jokh38/MOQUI_SMC/ptn_checker/main.py:1-50` - Entry point and CLI structure
+  - Do NOT add `PtnCheckerState` to `src/domain/states.py`
+  - Do NOT mark the parent case `FAILED` for PTN-only analysis failures
 
   **Acceptance Criteria**:
-  - [ ] Test: `tests/unit/test_ptn_checker_integration.py::test_run_ptn_checker_success`
-  - [ ] Test: `tests/unit/test_ptn_checker_integration.py::test_run_ptn_checker_missing_dicom`
-  - [ ] Test: `tests/unit/test_ptn_checker_integration.py::test_run_ptn_checker_missing_ptn`
-  - [ ] `pytest tests/unit/test_ptn_checker_integration.py` → PASS
+  - [ ] Successful PTN run updates PTN metadata
+  - [ ] Missing RTPLAN records `FAILED_NO_DICOM`
+  - [ ] Missing `.ptn` files records `FAILED_NO_PTN`
+  - [ ] `python -m pytest tests/test_dispatcher.py -k ptn_checker`
 
-  **QA Scenarios**:
-  ```
-  Scenario: ptn_checker integration works
-    Tool: Bash (pytest)
-    Preconditions: Mock ptn_checker module
-    Steps:
-      1. pytest tests/unit/test_ptn_checker_integration.py -v
-    Expected Result: All tests pass
-    Evidence: .sisyphus/evidence/task-4-integration-tests.txt
+  **QA Scenario**:
+  ```bash
+  python -m pytest tests/test_dispatcher.py -k ptn_checker -v
   ```
 
-  **Commit**: YES
-  - Message: `feat(integration): integrate ptn_checker module`
-  - Files: `src/integrations/ptn_checker.py`, `tests/unit/test_ptn_checker_integration.py`
-
----
-
-- [ ] 5. **Workflow Routing Logic**
+- [ ] 5. **Dispatcher Routing for Completed-Case PTN Analysis**
 
   **What to do**:
-  - Modify `WorkflowManager` in `src/core/workflow_manager.py`:
-    - Add logic to determine which state to use based on case status
-    - If case status is COMPLETED and has .ptn files → use `PtnCheckerState`
-    - Otherwise → use `HpcExecutionState` (existing behavior)
-  - Add method `should_use_ptn_checker(case_id: str) -> bool`
-  - Check for .ptn files in case directory
-  - Write tests in `tests/unit/test_workflow_manager.py`
-
-  **Must NOT do**:
-  - Do NOT remove existing MC simulation logic
-  - Do NOT change behavior for non-COMPLETED cases
-
-  **Recommended Agent Profile**:
-  - **Category**: `quick`
-    - Reason: Conditional logic addition
-  - **Skills**: []
-
-  **Parallelization**:
-  - **Can Run In Parallel**: NO (depends on Tasks 2, 3)
-  - **Parallel Group**: Wave 2
-  - **Blocks**: Task 7
-  - **Blocked By**: Task 2, Task 3
-
-  **References**:
-  - `src/core/workflow_manager.py:run_workflow()` - Where routing decision happens
-  - `src/domain/states.py:InitialState` - Where to add routing logic
+  - Add completed-case PTN routing in dispatcher/case-entry logic
+  - Introduce a helper such as `should_use_ptn_checker(case_id, case_path)`
+  - Route to PTN analysis only when:
+    - case status is `COMPLETED`
+    - stable `.ptn` files are present
+  - Preserve existing MC flow for all other cases
 
   **Acceptance Criteria**:
-  - [ ] Test: `tests/unit/test_workflow_manager.py::test_routing_uses_ptn_checker_for_completed_case`
-  - [ ] Test: `tests/unit/test_workflow_manager.py::test_routing_uses_mc_for_new_case`
-  - [ ] Test: `tests/unit/test_workflow_manager.py::test_routing_uses_mc_for_non_completed_case`
-  - [ ] `pytest tests/unit/test_workflow_manager.py` → PASS
+  - [ ] Completed cases with stable `.ptn` files route to PTN analysis
+  - [ ] New cases still route to MC workflow
+  - [ ] Non-completed existing cases do not route to PTN analysis
+  - [ ] `python -m pytest tests/test_dispatcher.py -k routing`
 
-  **QA Scenarios**:
-  ```
-  Scenario: Routing chooses ptn_checker for completed case
-    Tool: Bash (pytest)
-    Preconditions: Test case with COMPLETED status and .ptn files
-    Steps:
-      1. pytest tests/unit/test_workflow_manager.py::test_routing_uses_ptn_checker_for_completed_case -v
-    Expected Result: Test passes, PtnCheckerState selected
-    Evidence: .sisyphus/evidence/task-5-routing-ptn.txt
-
-  Scenario: Routing chooses MC for new case
-    Tool: Bash (pytest)
-    Preconditions: Test case with NEW status
-    Steps:
-      1. pytest tests/unit/test_workflow_manager.py::test_routing_uses_mc_for_new_case -v
-    Expected Result: Test passes, HpcExecutionState selected
-    Evidence: .sisyphus/evidence/task-5-routing-mc.txt
+  **QA Scenario**:
+  ```bash
+  python -m pytest tests/test_dispatcher.py -k routing -v
   ```
 
-  **Commit**: YES
-  - Message: `feat(workflow): add conditional routing for MC vs PTN`
-  - Files: `src/core/workflow_manager.py`, `tests/unit/test_workflow_manager.py`
-
----
-
-- [ ] 6. **File Watcher PTN Detection**
+- [ ] 6. **Watcher PTN Detection with Debounce and Stability Checks**
 
   **What to do**:
-  - Modify `CaseDetectionHandler` in `src/core/workflow_manager.py`:
-    - Add detection for `.ptn` file creation events
-    - When .ptn file detected in COMPLETED case directory → re-queue case
-    - Add debouncing to prevent multiple queue events for same case
-    - Use case_id extraction from file path
-  - Write tests in `tests/unit/test_file_watcher.py`
+  - Extend `src/core/workflow_manager.py` watcher behavior for `.ptn` file events
+  - Re-queue only completed cases
+  - Add debounce to suppress duplicate queue events
+  - Add stability checks before queueing, for example:
+    - minimum file age
+    - repeated same-size observations
 
   **Must NOT do**:
-  - Do NOT change detection for new cases (directories)
-  - Do NOT add real-time progress tracking
-  - Do NOT monitor subdirectories
-
-  **Recommended Agent Profile**:
-  - **Category**: `quick`
-    - Reason: Adding event type to existing watcher
-  - **Skills**: []
-
-  **Parallelization**:
-  - **Can Run In Parallel**: YES (with Tasks 4, 5)
-  - **Parallel Group**: Wave 2
-  - **Blocks**: Task 9
-  - **Blocked By**: Task 3
-
-  **References**:
-  - `src/core/workflow_manager.py:CaseDetectionHandler` - Existing file watcher pattern
-  - `src/core/workflow_manager.py:on_created()` - Event handler to extend
+  - Do NOT assume file creation means file write completion
+  - Do NOT break existing new-case directory detection
 
   **Acceptance Criteria**:
-  - [ ] Test: `tests/unit/test_file_watcher.py::test_ptn_file_detection`
-  - [ ] Test: `tests/unit/test_file_watcher.py::test_ptn_file_requeues_completed_case`
-  - [ ] Test: `tests/unit/test_file_watcher.py::test_ptn_file_ignored_for_non_completed_case`
-  - [ ] `pytest tests/unit/test_file_watcher.py` → PASS
+  - [ ] `.ptn` file detection works
+  - [ ] Completed case is re-queued only after file stability criteria pass
+  - [ ] Non-completed cases are ignored
+  - [ ] `python -m pytest tests/test_workflow_manager.py -k ptn`
 
-  **QA Scenarios**:
-  ```
-  Scenario: File watcher detects .ptn file
-    Tool: Bash (pytest)
-    Preconditions: Mock file system with .ptn file creation event
-    Steps:
-      1. pytest tests/unit/test_file_watcher.py::test_ptn_file_detection -v
-    Expected Result: Test passes, event detected
-    Evidence: .sisyphus/evidence/task-6-watcher-detection.txt
-
-  Scenario: Completed case re-queued on .ptn arrival
-    Tool: Bash (pytest)
-    Preconditions: COMPLETED case in database
-    Steps:
-      1. pytest tests/unit/test_file_watcher.py::test_ptn_file_requeues_completed_case -v
-    Expected Result: Test passes, case added to queue
-    Evidence: .sisyphus/evidence/task-6-watcher-requeue.txt
+  **QA Scenario**:
+  ```bash
+  python -m pytest tests/test_workflow_manager.py -k ptn -v
   ```
 
-  **Commit**: YES
-  - Message: `feat(watcher): add .ptn file detection for completed cases`
-  - Files: `src/core/workflow_manager.py`, `tests/unit/test_file_watcher.py`
-
----
-
-- [ ] 7. **Error Handling Implementation**
+- [ ] 7. **Configuration Additions**
 
   **What to do**:
-  - Add comprehensive error handling in `PtnCheckerState`:
-    - `FAILED_NO_DICOM`: No .dcm file found in case directory
-    - `FAILED_NO_PTN`: No .ptn files found in case directory
-    - `FAILED_EXCEPTION`: ptn_checker raised exception (log traceback)
-    - `FAILED_LOCKED`: Case directory locked by another process (optional)
-  - Ensure errors are logged with structured logging
-  - Write tests for each error scenario
-
-  **Must NOT do**:
-  - Do NOT add automatic retry logic
-  - Do NOT add notification system
-  - Do NOT clean up partial outputs on failure (keep for debugging)
-
-  **Recommended Agent Profile**:
-  - **Category**: `quick`
-    - Reason: Adding error cases to existing state
-  - **Skills**: []
-
-  **Parallelization**:
-  - **Can Run In Parallel**: NO (depends on Tasks 4, 5)
-  - **Parallel Group**: Wave 3
-  - **Blocks**: Task 9
-  - **Blocked By**: Task 4, Task 5
-
-  **References**:
-  - `src/domain/states.py:FailedState` - Error handling pattern
-  - `src/domain/states.py:HpcExecutionState` - Error handling examples
+  - Update `config/config.yaml` with:
+    - `ptn_checker.path`
+    - `ptn_checker.output_subdir`
+    - `ptn_checker.timeout`
+    - `ptn_checker.stability_window_seconds`
+  - Load config in `src/config/settings.py`
+  - Add tests in `tests/test_settings.py`
 
   **Acceptance Criteria**:
-  - [ ] Test: `tests/unit/test_states.py::test_ptn_checker_error_no_dicom`
-  - [ ] Test: `tests/unit/test_states.py::test_ptn_checker_error_no_ptn`
-  - [ ] Test: `tests/unit/test_states.py::test_ptn_checker_error_exception`
-  - [ ] `pytest tests/unit/test_states.py` → PASS
+  - [ ] PTN config loads from settings
+  - [ ] Stability/timing config is accessible to routing and watcher logic
+  - [ ] `python -m pytest tests/test_settings.py -k ptn_checker`
 
-  **QA Scenarios**:
-  ```
-  Scenario: Error handling sets correct status
-    Tool: Bash (pytest)
-    Preconditions: Various error conditions mocked
-    Steps:
-      1. pytest tests/unit/test_states.py::test_ptn_checker_error_no_dicom -v
-      2. pytest tests/unit/test_states.py::test_ptn_checker_error_no_ptn -v
-      3. pytest tests/unit/test_states.py::test_ptn_checker_error_exception -v
-    Expected Result: All tests pass, correct status set
-    Evidence: .sisyphus/evidence/task-7-error-handling.txt
+  **QA Scenario**:
+  ```bash
+  python -m pytest tests/test_settings.py -k ptn_checker -v
   ```
 
-  **Commit**: YES
-  - Message: `feat(error): add PTN-specific error handling`
-  - Files: `src/domain/states.py`, `tests/unit/test_states.py`
-
----
-
-- [ ] 8. **Configuration Additions**
+- [ ] 8. **Integration and Regression Tests**
 
   **What to do**:
-  - Add ptn_checker configuration to `config/config.yaml`:
-    - `ptn_checker.path`: Path to ptn_checker directory
-    - `ptn_checker.output_subdir`: Output subdirectory name (default: "ptn_analysis")
-    - `ptn_checker.timeout`: Timeout in seconds (optional)
-  - Update `src/core/settings.py` to load new configuration
-  - Write tests for configuration loading
-
-  **Must NOT do**:
-  - Do NOT add complex validation
-  - Do NOT add default value overrides
-
-  **Recommended Agent Profile**:
-  - **Category**: `quick`
-    - Reason: Simple configuration addition
-  - **Skills**: []
-
-  **Parallelization**:
-  - **Can Run In Parallel**: YES (with Tasks 7)
-  - **Parallel Group**: Wave 3
-  - **Blocks**: Task 9
-  - **Blocked By**: None
-
-  **References**:
-  - `config/config.yaml` - Existing configuration structure
-  - `src/core/settings.py` - Settings loading pattern
+  - Add a flat integration-style module such as `tests/test_ptn_checker_workflow.py`
+  - Cover:
+    - completed case + stable `.ptn` files -> PTN analysis path
+    - new case -> MC workflow unchanged
+    - PTN metadata updates on case
+    - output generation to `{case_path}/ptn_analysis/`
+  - Use mocks/fixtures instead of real medical data or real MC runs
 
   **Acceptance Criteria**:
-  - [ ] Test: `tests/unit/test_settings.py::test_ptn_checker_config_loaded`
-  - [ ] Configuration file has ptn_checker section
-  - [ ] Settings class exposes ptn_checker config
+  - [ ] PTN case-level path is component validated
+  - [ ] Existing MC path is component validated for regression
+  - [ ] If a full watcher -> queue -> PTN path is executed, label it end-to-end validated
+  - [ ] `python -m pytest tests/test_ptn_checker_workflow.py`
 
-  **QA Scenarios**:
+  **QA Scenario**:
+  ```bash
+  python -m pytest tests/test_ptn_checker_workflow.py -v
   ```
-  Scenario: Configuration loaded correctly
-    Tool: Bash (pytest)
-    Preconditions: config.yaml with ptn_checker section
-    Steps:
-      1. pytest tests/unit/test_settings.py::test_ptn_checker_config_loaded -v
-    Expected Result: Test passes, config values accessible
-    Evidence: .sisyphus/evidence/task-8-config.txt
-  ```
-
-  **Commit**: YES
-  - Message: `feat(config): add ptn_checker configuration`
-  - Files: `config/config.yaml`, `src/core/settings.py`, `tests/unit/test_settings.py`
 
 ---
 
-- [ ] 9. **Integration Tests**
+## Final Verification Wave
 
-  **What to do**:
-  - Create integration test file `tests/integration/test_ptn_checker_workflow.py`:
-    - Test full workflow: COMPLETED case + new .ptn files → ptn_checker runs
-    - Test full workflow: NEW case → MC simulation runs (no regression)
-    - Test database updates after ptn_checker execution
-    - Test output file generation in correct location
-  - Use test fixtures for mock ptn_checker and sample files
+- [ ] F1. **Plan Compliance Audit**
+  - Verify every Must Have is implemented
+  - Verify every Must NOT Have is absent
+  - Verify invalid old assumptions are gone:
+    - no `PtnCheckerState`
+    - no bare `pytest`
+    - no `src/core/settings.py` reference
+    - no `tests/unit/` or `tests/integration/` assumptions
 
-  **Must NOT do**:
-  - Do NOT test with real MC simulation (too slow)
-  - Do NOT use real medical data
+- [ ] F2. **Code Quality Review**
+  - Run targeted PTN tests plus relevant surrounding tests
+  - Review changed files for dead code, broad exception handling, and logging quality
 
-  **Recommended Agent Profile**:
-  - **Category**: `unspecified-high`
-    - Reason: Integration testing requires understanding full system
-  - **Skills**: []
-
-  **Parallelization**:
-  - **Can Run In Parallel**: NO (depends on all previous tasks)
-  - **Parallel Group**: Wave 3 (after all implementation)
-  - **Blocks**: F1-F4
-  - **Blocked By**: Task 5, Task 6, Task 7, Task 8
-
-  **References**:
-  - `tests/` - Existing test patterns
-  - `src/core/workflow_manager.py` - Full workflow to test
-
-  **Acceptance Criteria**:
-  - [ ] Test: `tests/integration/test_ptn_checker_workflow.py::test_full_ptn_workflow`
-  - [ ] Test: `tests/integration/test_ptn_checker_workflow.py::test_mc_workflow_unchanged`
-  - [ ] `pytest tests/integration/test_ptn_checker_workflow.py` → PASS
-  - [ ] All tests complete in < 10 seconds
-
-  **QA Scenarios**:
-  ```
-  Scenario: Full integration test passes
-    Tool: Bash (pytest)
-    Preconditions: All components implemented
-    Steps:
-      1. pytest tests/integration/test_ptn_checker_workflow.py -v
-    Expected Result: All tests pass
-    Evidence: .sisyphus/evidence/task-9-integration.txt
-
-  Scenario: MC workflow unchanged (regression test)
-    Tool: Bash (pytest)
-    Preconditions: NEW case without .ptn files
-    Steps:
-      1. pytest tests/integration/test_ptn_checker_workflow.py::test_mc_workflow_unchanged -v
-    Expected Result: Test passes, HpcExecutionState used
-    Evidence: .sisyphus/evidence/task-9-regression.txt
-  ```
-
-  **Commit**: YES
-  - Message: `test: add integration tests for ptn_checker workflow`
-  - Files: `tests/integration/test_ptn_checker_workflow.py`
-
----
-
-## Final Verification Wave (MANDATORY)
-
-- [ ] F1. **Plan Compliance Audit** — `oracle`
-  Read the plan end-to-end. For each "Must Have": verify implementation exists. For each "Must NOT Have": search codebase for forbidden patterns. Check evidence files exist. Compare deliverables against plan.
-  Output: `Must Have [N/N] | Must NOT Have [N/N] | Tasks [N/N] | VERDICT: APPROVE/REJECT`
-
-- [ ] F2. **Code Quality Review** — `unspecified-high`
-  Run `pytest` + linter. Review all changed files for: `as any`/`@ts-ignore`, empty catches, unused imports. Check AI slop: excessive comments, over-abstraction, generic names.
-  Output: `Tests [N pass/N fail] | Lint [PASS/FAIL] | Files [N clean/N issues] | VERDICT`
-
-- [ ] F3. **Real Manual QA** — `unspecified-high`
-  Execute EVERY QA scenario from EVERY task. Test cross-task integration. Test edge cases. Save to `.sisyphus/evidence/final-qa/`.
-  Output: `Scenarios [N/N pass] | Integration [N/N] | Edge Cases [N tested] | VERDICT`
-
-- [ ] F4. **Scope Fidelity Check** — `deep`
-  For each task: read "What to do", read actual diff. Verify 1:1 — everything in spec was built, nothing beyond spec. Check "Must NOT do" compliance.
-  Output: `Tasks [N/N compliant] | Unaccounted [CLEAN/N files] | VERDICT`
+- [ ] F3. **QA Execution Summary**
+  - Report commands used
+  - Label each result `component validated` or `end-to-end validated`
+  - State known gaps explicitly
 
 ---
 
 ## Commit Strategy
 
-- **1**: `feat(db): add ptn_checker tracking columns to cases table` — src/database/connection.py
-- **2**: `feat(repo): add ptn_checker repository methods` — src/repositories/case_repo.py
-- **3**: `feat(workflow): add PtnCheckerState for PTN analysis` — src/domain/states.py
-- **4**: `feat(integration): integrate ptn_checker module` — src/integrations/ptn_checker.py
-- **5**: `feat(workflow): add conditional routing for MC vs PTN` — src/domain/states.py
-- **6**: `feat(watcher): add .ptn file detection for completed cases` — src/core/workflow_manager.py
-- **7**: `feat(error): add PTN-specific error handling` — src/domain/states.py
-- **8**: `feat(config): add ptn_checker configuration` — config/config.yaml
-- **9**: `test: add integration tests for ptn_checker workflow` — tests/
+- **1**: `feat(db): add ptn_checker tracking columns to cases table`
+- **2**: `feat(repo): add ptn_checker repository methods`
+- **3**: `feat(integration): add structured ptn_checker wrapper`
+- **4**: `feat(dispatcher): add case-level PTN analysis runner`
+- **5**: `feat(dispatcher): add completed-case PTN routing`
+- **6**: `feat(watcher): add stable .ptn detection for completed cases`
+- **7**: `feat(config): add ptn_checker configuration`
+- **8**: `test: add ptn_checker workflow and regression coverage`
 
 ---
 
@@ -736,19 +378,24 @@ Max Concurrent: 3 (Waves 1 & 2)
 
 ### Verification Commands
 ```bash
-# Database schema verification
-sqlite3 data/mqi_communicator.db ".schema cases" | grep ptn_checker
+# Schema and repository
+python -m pytest tests/test_database_connection.py -k ptn_checker -v
+python -m pytest tests/test_case_repo_mapping.py -k ptn_checker -v
 
-# Test execution
-pytest tests/ -v
+# Integration wrapper and routing
+python -m pytest tests/test_ptn_checker_integration.py -v
+python -m pytest tests/test_dispatcher.py -k "ptn_checker or routing" -v
+python -m pytest tests/test_workflow_manager.py -k ptn -v
 
-# Integration test
-pytest tests/integration/test_ptn_checker_workflow.py -v
+# Regression/integration-style coverage
+python -m pytest tests/test_ptn_checker_workflow.py -v
 ```
 
 ### Final Checklist
-- [ ] All "Must Have" present
-- [ ] All "Must NOT Have" absent
-- [ ] All tests pass
-- [ ] COMPLETED case + .ptn files → ptn_checker runs
-- [ ] Non-COMPLETED case → MC simulation runs (no regression)
+- [ ] All Must Have items are present
+- [ ] All Must NOT Have items are absent
+- [ ] PTN analysis is case-level, not beam-state-level
+- [ ] RTPLAN discovery reuses existing validator flow
+- [ ] Stable `.ptn` arrival on a completed case triggers PTN analysis
+- [ ] Non-completed cases retain MC behavior
+- [ ] Results are reported with correct validation scope labels
