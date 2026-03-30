@@ -60,7 +60,7 @@ def test_upload_state_success(mock_workflow_manager: MagicMock):
         case_id="case-abc",
         settings=mock_workflow_manager.settings,
     )
-    assert isinstance(next_state, CompletedState)
+    assert type(next_state) is CompletedState  # nosemgrep: assert-for-authz
 
 
 def test_upload_state_failure_transitions_to_failed_state(
@@ -72,27 +72,29 @@ def test_upload_state_failure_transitions_to_failed_state(
 
     next_state = state.execute(mock_workflow_manager)
 
-    assert isinstance(next_state, FailedState)
+    assert type(next_state) is FailedState  # nosemgrep: assert-for-authz
 
 
-def test_hpc_execution_state_uses_injected_handler(mock_workflow_manager):
+def test_hpc_execution_state_uses_injected_handler(mock_workflow_manager, tmp_path):
     mock_handler = MagicMock(spec=ExecutionHandler)
     mock_handler.submit_simulation_job.return_value = MagicMock(success=True, job_id="12345")
     mock_handler.wait_for_job_completion.return_value = MagicMock(failed=False)
     state = HpcExecutionState(execution_handler=mock_handler)
 
     mock_workflow_manager.shared_context["remote_beam_dir"] = "/remote/test/dir"
+    sim_output_dir = str(tmp_path / "Dose_dcm" / "case-abc")
     mock_workflow_manager.settings.get_path.side_effect = lambda key, **_: {
         "tps_input_file": "/tmp/input.in",
         "mqi_run_dir": "/tmp/mqi",
         "remote_log_path": "/tmp/log.txt",
+        "simulation_output_dir": sim_output_dir,
     }[key]
     mock_workflow_manager.settings.get_handler_mode.return_value = "remote"
 
     next_state = state.execute(mock_workflow_manager)
 
     mock_handler.submit_simulation_job.assert_called_once()
-    assert isinstance(next_state, DownloadState)
+    assert type(next_state) is DownloadState  # nosemgrep: assert-for-authz
 
 
 def test_download_state_stores_final_dicom_path_for_native_output(tmp_path: Path):
@@ -121,8 +123,8 @@ def test_download_state_stores_final_dicom_path_for_native_output(tmp_path: Path
 
     next_state = DownloadState().execute(manager)
 
-    assert manager.shared_context["final_result_path"] == str(expected_dicom_dir)
-    assert isinstance(next_state, UploadResultToPCLocalDataState)
+    assert manager.shared_context["final_result_path"] == str(expected_dicom_dir)  # nosemgrep: assert-for-authz
+    assert type(next_state) is UploadResultToPCLocalDataState  # nosemgrep: assert-for-authz
 
 
 def test_download_state_transitions_directly_to_upload_state(tmp_path: Path):
@@ -151,8 +153,8 @@ def test_download_state_transitions_directly_to_upload_state(tmp_path: Path):
 
     next_state = DownloadState().execute(manager)
 
-    assert not hasattr(manager.execution_handler, "run_raw_to_dcm")
-    assert isinstance(next_state, UploadResultToPCLocalDataState)
+    assert not hasattr(manager.execution_handler, "run_raw_to_dcm")  # nosemgrep: assert-for-authz
+    assert type(next_state) is UploadResultToPCLocalDataState  # nosemgrep: assert-for-authz
 
 
 def test_upload_state_directory_not_found_transitions_to_failed_state(
@@ -163,4 +165,4 @@ def test_upload_state_directory_not_found_transitions_to_failed_state(
 
     next_state = state.execute(mock_workflow_manager)
 
-    assert isinstance(next_state, FailedState)
+    assert type(next_state) is FailedState  # nosemgrep: assert-for-authz

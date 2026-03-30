@@ -245,6 +245,23 @@ class HpcExecutionState(WorkflowState):
             beam_id=context.id
         )
 
+        # Ensure simulation output directory exists before launching.
+        # The moqui simulation (tps_env) writes DICOM files via gdcm::Writer
+        # which requires the output directory to already exist — it does not
+        # create it, and will crash with "Assertion `Ofstream->is_open()' failed"
+        # if the directory is missing.
+        beam_number = beam.beam_number
+        if beam_number is not None:
+            simulation_output_dir = context.settings.get_path(
+                "simulation_output_dir",
+                handler_name=handler_name,
+                case_id=beam.parent_case_id
+            )
+            beam_output_dir = Path(simulation_output_dir) / f"beam_{beam_number}"
+            beam_output_dir.mkdir(parents=True, exist_ok=True)
+            context.logger.info("Ensured simulation output directory exists",
+                                {"beam_id": context.id, "path": str(beam_output_dir)})
+
         # Execute simulation based on mode; default to remote unless explicitly 'local'
         mode = context.settings.get_handler_mode(handler_name)
         is_remote = not (isinstance(mode, str) and mode.lower() == "local")
