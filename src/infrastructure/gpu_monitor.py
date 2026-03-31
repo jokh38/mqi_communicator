@@ -5,7 +5,7 @@ import time
 import threading
 from io import StringIO
 from typing import Callable, List, Dict, Any, Optional, Set
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from src.infrastructure.logging_handler import StructuredLogger
 from src.domain.errors import GpuResourceError
@@ -28,6 +28,7 @@ class GpuMonitor:
                  gpu_repository: GpuRepository,
                  command: str,
                  update_interval: int,
+                 assignment_grace_period_seconds: int = 60,
                  reconnect_handler: Optional[Callable[[], Optional[ExecutionHandler]]] = None):
         """Initialize the GpuMonitor service.
 
@@ -37,6 +38,8 @@ class GpuMonitor:
             gpu_repository (GpuRepository): Repository for persisting GPU data.
             command (str): The nvidia-smi command to execute for fetching GPU data.
             update_interval (int): Interval in seconds between GPU data fetches.
+            assignment_grace_period_seconds (int): Minimum age for assigned GPUs before
+                reconciliation may reclaim them if no live compute app is detected.
             reconnect_handler (Callable, optional): A callable that returns a new
                 ExecutionHandler with a fresh SSH connection. Called automatically
                 when a ConnectionError is detected.
@@ -46,6 +49,7 @@ class GpuMonitor:
         self.gpu_repository = gpu_repository
         self.command = command
         self.update_interval = update_interval
+        self.assignment_grace_period_seconds = assignment_grace_period_seconds
         self._reconnect_handler = reconnect_handler
 
         self._shutdown_event = threading.Event()
@@ -166,11 +170,14 @@ class GpuMonitor:
         """Release DB-assigned GPUs that have no live compute app."""
         active_gpu_uuids = self.get_active_compute_gpu_uuids()
         reclaimed_gpu_uuids: List[str] = []
+        now = datetime.now()
 
         for gpu in self.gpu_repository.get_all_gpu_resources():
             if gpu.status != GpuStatus.ASSIGNED:
                 continue
             if gpu.uuid in active_gpu_uuids:
+                continue
+            if self._is_within_assignment_grace_period(gpu, now):
                 continue
 
             self.gpu_repository.release_gpu(gpu.uuid)
@@ -185,6 +192,21 @@ class GpuMonitor:
             })
 
         return reclaimed_gpu_uuids
+
+    def _is_within_assignment_grace_period(
+        self,
+        gpu,
+        now: Optional[datetime] = None,
+    ) -> bool:
+        """Return True when a GPU assignment is still too recent to reclaim safely."""
+        if self.assignment_grace_period_seconds <= 0:
+            return False
+        if gpu.last_updated is None:
+            return False
+
+        comparison_time = now or datetime.now()
+        grace_cutoff = comparison_time - timedelta(seconds=self.assignment_grace_period_seconds)
+        return gpu.last_updated >= grace_cutoff
 
     def _get_execution_location(self) -> str:
         """Describe whether GPU polling is happening locally or remotely."""

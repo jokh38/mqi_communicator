@@ -39,8 +39,6 @@ def worker_main(beam_id: str, beam_path: Path, settings: Settings) -> None:
         _validate_beam_path(beam_path, logger)
 
         with get_db_session(settings, logger) as case_repo:
-            # Initialize database schema
-            case_repo.db.init_db()
             gpu_repo = GpuRepository(case_repo.db, logger, settings)
 
             # Create ExecutionHandler based on settings

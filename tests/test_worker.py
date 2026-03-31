@@ -4,7 +4,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 
@@ -147,6 +147,39 @@ def test_worker_imports_without_paramiko_installed(monkeypatch):
 
     if not hasattr(module, "worker_main"):
         raise AssertionError("Worker import should expose worker_main")
+
+
+def test_worker_main_does_not_initialize_database_schema():
+    settings = MagicMock()
+    settings.execution_handler = {"Workflow": "local"}
+    beam_id = "beam-10"
+    beam_path = Path("cases") / "case-1" / beam_id
+
+    case_repo = MagicMock()
+    db = MagicMock()
+    case_repo.db = db
+
+    repo_context = MagicMock()
+    repo_context.__enter__.return_value = case_repo
+    repo_context.__exit__.return_value = False
+
+    workflow_manager = MagicMock()
+
+    with patch.object(worker, "_validate_beam_path"), \
+         patch.object(worker, "get_db_session", return_value=repo_context), \
+         patch.object(worker, "GpuRepository") as gpu_repo_cls, \
+         patch.object(worker, "ExecutionHandler") as execution_handler_cls, \
+         patch.object(worker, "TpsGenerator") as tps_generator_cls, \
+         patch.object(worker, "WorkflowManager", return_value=workflow_manager), \
+         patch.object(worker.LoggerFactory, "configure"), \
+         patch.object(worker.LoggerFactory, "get_logger", return_value=MagicMock()):
+        worker.worker_main(beam_id=beam_id, beam_path=beam_path, settings=settings)
+
+    db.init_db.assert_not_called()
+    gpu_repo_cls.assert_called_once_with(db, ANY, settings)
+    execution_handler_cls.assert_called_once_with(settings=settings, mode="local", ssh_client=None)
+    tps_generator_cls.assert_called_once()
+    workflow_manager.run_workflow.assert_called_once()
 
 
 

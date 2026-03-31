@@ -255,6 +255,7 @@ class MQIApplication:
                     "GPU monitor_interval not found in config, defaulting to 60 seconds."
                 )
                 interval = 60
+            assignment_grace_period = gpu_config.get("assignment_grace_period_seconds", 60)
             command = gpu_config.get("gpu_monitor_command")
 
             def _reconnect_gpu_handler() -> Optional[ExecutionHandler]:
@@ -273,6 +274,7 @@ class MQIApplication:
                                           gpu_repository=gpu_repo,
                                           command=command,
                                           update_interval=interval,
+                                          assignment_grace_period_seconds=assignment_grace_period,
                                           reconnect_handler=reconnect_fn)
             self.gpu_monitor.start()
             with get_db_session(self.settings, self.logger) as case_repo:

@@ -1,5 +1,6 @@
 import pytest
 from unittest.mock import MagicMock, patch
+from datetime import datetime, timedelta
 
 from src.domain.enums import GpuStatus
 from src.domain.models import GpuResource
@@ -154,6 +155,65 @@ def test_reconcile_stale_assignments_releases_only_unbacked_assigned_gpus(
         gpu_repository=mock_gpu_repo,
         command="nvidia-smi-test",
         update_interval=10,
+    )
+
+    reclaimed = monitor.reconcile_stale_assignments(case_repo)
+
+    mock_gpu_repo.release_gpu.assert_called_once_with("GPU-stale")
+    case_repo.clear_assigned_gpu_by_uuid.assert_called_once_with("GPU-stale")
+    if reclaimed != ["GPU-stale"]:
+        raise AssertionError(f"Unexpected reclaimed GPUs: {reclaimed!r}")
+
+
+def test_reconcile_stale_assignments_preserves_recent_assignments_during_grace_period(
+    mock_logger,
+    mock_gpu_repo,
+    mock_execution_handler,
+):
+    mock_execution_handler.execute_command.return_value = MagicMock(
+        success=True,
+        output="",
+        error="",
+        return_code=0,
+    )
+    now = datetime.now()
+    mock_gpu_repo.get_all_gpu_resources.return_value = [
+        GpuResource(
+            uuid="GPU-recent",
+            gpu_index=0,
+            name="RTX 3090",
+            memory_total=24576,
+            memory_used=1024,
+            memory_free=23552,
+            temperature=30,
+            utilization=5,
+            status=GpuStatus.ASSIGNED,
+            assigned_case=None,
+            last_updated=now - timedelta(seconds=15),
+        ),
+        GpuResource(
+            uuid="GPU-stale",
+            gpu_index=1,
+            name="RTX 3090",
+            memory_total=24576,
+            memory_used=14,
+            memory_free=24562,
+            temperature=31,
+            utilization=0,
+            status=GpuStatus.ASSIGNED,
+            assigned_case=None,
+            last_updated=now - timedelta(seconds=120),
+        ),
+    ]
+    case_repo = MagicMock()
+
+    monitor = GpuMonitor(
+        logger=mock_logger,
+        execution_handler=mock_execution_handler,
+        gpu_repository=mock_gpu_repo,
+        command="nvidia-smi-test",
+        update_interval=10,
+        assignment_grace_period_seconds=60,
     )
 
     reclaimed = monitor.reconcile_stale_assignments(case_repo)

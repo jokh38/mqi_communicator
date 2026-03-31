@@ -122,6 +122,7 @@ logging:
 gpu:
   gpu_monitor_command: "nvidia-smi --query-gpu=index,uuid,name,memory.total,memory.used,memory.free,temperature.gpu,utilization.gpu --format=csv,noheader,nounits"
   monitor_interval: 10
+  assignment_grace_period_seconds: 60
 
 # =====================================================================================
 # UI - Dashboard 설정

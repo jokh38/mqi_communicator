@@ -185,6 +185,7 @@ class GpuConfig(BaseModel):
         enabled: Whether GPU processing is enabled
         gpu_monitor_command: Shell command to query GPU status (e.g. nvidia-smi)
         monitor_interval: Interval in seconds between GPU status polls
+        assignment_grace_period_seconds: Grace window before reclaiming an assigned GPU
         memory_threshold_mb: Minimum free memory required (MB)
         utilization_threshold_percent: Maximum utilization threshold (%)
         polling_interval_seconds: GPU status polling interval
@@ -202,6 +203,12 @@ class GpuConfig(BaseModel):
         ge=1,
         le=300,
         description="Interval in seconds between GPU status polls"
+    )
+    assignment_grace_period_seconds: int = Field(
+        default=60,
+        ge=0,
+        le=3600,
+        description="Grace window before reclaiming an assigned GPU with no active compute app"
     )
     memory_threshold_mb: int = Field(
         default=1000,

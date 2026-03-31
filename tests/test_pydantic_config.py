@@ -216,6 +216,7 @@ class TestGpuConfig:
         assert config.enabled is True
         assert config.gpu_monitor_command is None
         assert config.monitor_interval == 60
+        assert config.assignment_grace_period_seconds == 60
         assert config.memory_threshold_mb == 1000
         assert config.utilization_threshold_percent == 80
         assert config.polling_interval_seconds == 10
@@ -226,10 +227,15 @@ class TestGpuConfig:
             "nvidia-smi --query-gpu=index,uuid,name,memory.total,memory.used,"
             "memory.free,temperature.gpu,utilization.gpu --format=csv,noheader,nounits"
         )
-        config = GpuConfig(gpu_monitor_command=nvidia_cmd, monitor_interval=10)
+        config = GpuConfig(
+            gpu_monitor_command=nvidia_cmd,
+            monitor_interval=10,
+            assignment_grace_period_seconds=90,
+        )
 
         assert config.gpu_monitor_command == nvidia_cmd
         assert config.monitor_interval == 10
+        assert config.assignment_grace_period_seconds == 90
 
     def test_gpu_config_validates_thresholds(self):
         """Test GpuConfig validates threshold values"""
@@ -244,6 +250,13 @@ class TestGpuConfig:
             GpuConfig(monitor_interval=0)
 
         assert "monitor_interval" in str(exc_info.value)
+
+    def test_gpu_config_validates_assignment_grace_period(self):
+        """Test GpuConfig rejects negative assignment grace periods"""
+        with pytest.raises(ValidationError) as exc_info:
+            GpuConfig(assignment_grace_period_seconds=-1)
+
+        assert "assignment_grace_period_seconds" in str(exc_info.value)
 
 
 class TestWebConfig:
