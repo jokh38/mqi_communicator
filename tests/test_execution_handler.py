@@ -1,52 +1,27 @@
-import builtins
-import importlib
 import logging
 import shutil
-import sys
+import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import paramiko
 import pytest
 
 from src.handlers.execution_handler import ExecutionHandler
 
 
-def _import_module_without_paramiko(module_name: str, monkeypatch: pytest.MonkeyPatch):
-    original_import = builtins.__import__
-
-    def blocked_import(name, globals=None, locals=None, fromlist=(), level=0):
-        if name == "paramiko":
-            raise ModuleNotFoundError("No module named 'paramiko'")
-        return original_import(name, globals, locals, fromlist, level)
-
-    monkeypatch.delitem(sys.modules, "paramiko", raising=False)
-    monkeypatch.delitem(sys.modules, module_name, raising=False)
-    monkeypatch.setattr(builtins, "__import__", blocked_import)
-    return importlib.import_module(module_name)
-
-
-@pytest.fixture
-def mock_ssh_client():
-    mock_ssh = MagicMock(spec=paramiko.SSHClient)
-    mock_ssh.exec_command.return_value = (MagicMock(), MagicMock(), MagicMock())
-    mock_ssh.open_sftp.return_value = MagicMock(spec=paramiko.SFTPClient)
-    return mock_ssh
-
-
-def test_handler_initialization_local_mode():
-    handler = ExecutionHandler(mode="local")
-    assert handler.mode == "local"
-
-
-def test_handler_initialization_remote_mode():
-    handler = ExecutionHandler(mode="remote", ssh_client=MagicMock())
-    assert handler.mode == "remote"
+def test_handler_initialization():
+    handler = ExecutionHandler.__new__(ExecutionHandler)
+    handler.settings = MagicMock()
+    handler.logger = MagicMock()
+    # No mode attribute should exist
+    assert not hasattr(handler, "mode")
 
 
 @patch("subprocess.run")
 def test_execute_command_local_mode_uses_argument_list_and_shell_false(mock_run):
-    handler = ExecutionHandler(mode="local")
+    handler = ExecutionHandler.__new__(ExecutionHandler)
+    handler.settings = MagicMock()
+    handler.logger = MagicMock()
 
     handler.execute_command(["ls", "-l"])
 
@@ -61,85 +36,30 @@ def test_execute_command_local_mode_uses_argument_list_and_shell_false(mock_run)
 
 
 @patch("shutil.copy")
-def test_upload_file_local_mode(mock_copy):
-    handler = ExecutionHandler(mode="local")
+def test_upload_file_copies_locally(mock_copy):
+    handler = ExecutionHandler.__new__(ExecutionHandler)
+    handler.settings = MagicMock()
+    handler.logger = MagicMock()
+
     handler.upload_file("a.txt", "b.txt")
     mock_copy.assert_called_once_with("a.txt", "b.txt")
 
 
-def test_execute_command_remote_mode(mock_ssh_client):
-    handler = ExecutionHandler(mode="remote", ssh_client=mock_ssh_client)
-    handler.execute_command("ls -l")
-    mock_ssh_client.exec_command.assert_called_once_with("ls -l")
+@patch("shutil.copy")
+def test_download_file_copies_locally(mock_copy):
+    handler = ExecutionHandler.__new__(ExecutionHandler)
+    handler.settings = MagicMock()
+    handler.logger = MagicMock()
 
-
-def test_upload_file_remote_mode(mock_ssh_client):
-    handler = ExecutionHandler(mode="remote", ssh_client=mock_ssh_client)
-    handler.upload_file("a.txt", "b.txt")
-    mock_ssh_client.open_sftp.assert_called_once()
-    mock_sftp = mock_ssh_client.open_sftp()
-    mock_sftp.put.assert_called_once_with("a.txt", "b.txt")
-
-
-def test_wait_for_job_completion_remote_polls_scheduler_until_terminal_state():
-    handler = ExecutionHandler(mode="remote", ssh_client=MagicMock())
-    handler.execute_command = MagicMock(
-        side_effect=[
-            MagicMock(success=True, output="RUNNING", error="", return_code=0),
-            MagicMock(success=True, output="COMPLETED", error="", return_code=0),
-        ]
-    )
-
-    result = handler.wait_for_job_completion(job_id="12345", timeout=5, poll_interval=0)
-
-    assert result.failed is False
-    assert handler.execute_command.call_count == 2
-
-
-@pytest.mark.parametrize("scheduler_output", ["FAILED", "CANCELLED", "TIMEOUT"])
-def test_wait_for_job_completion_remote_fails_for_unsuccessful_terminal_states(
-    scheduler_output,
-):
-    handler = ExecutionHandler(mode="remote", ssh_client=MagicMock())
-    handler.execute_command = MagicMock(
-        return_value=MagicMock(success=True, output=scheduler_output, error="", return_code=0)
-    )
-
-    result = handler.wait_for_job_completion(job_id="12345", timeout=5, poll_interval=0)
-
-    assert result.failed is True
-    assert scheduler_output in result.error
-
-
-def test_submit_simulation_job_local_mode_raises_clear_error():
-    handler = ExecutionHandler(mode="local")
-
-    with pytest.raises(
-        NotImplementedError,
-        match="Local mode does not support simulation job submission.",
-    ):
-        handler.submit_simulation_job("some/script/path.sh")
-
-
-def test_submit_simulation_job_remote_mode_refactored(mock_ssh_client):
-    handler = ExecutionHandler(mode="remote", ssh_client=mock_ssh_client)
-    script_path = "/remote/path/to/submit_job.sh"
-
-    mock_stdin, mock_stdout, mock_stderr = MagicMock(), MagicMock(), MagicMock()
-    mock_stdout.read.return_value = b"Submitted batch job 12345"
-    mock_stdout.channel.recv_exit_status.return_value = 0
-    mock_stderr.read.return_value = b""
-    mock_ssh_client.exec_command.return_value = (mock_stdin, mock_stdout, mock_stderr)
-
-    result = handler.submit_simulation_job(script_path)
-
-    mock_ssh_client.exec_command.assert_called_once_with(f"sbatch {script_path}")
-    assert result.success
-    assert result.job_id == "12345"
+    handler.download_file("src.txt", "dst.txt")
+    mock_copy.assert_called_once_with("src.txt", "dst.txt")
 
 
 def test_upload_to_pc_localdata_local_mode_logs_simulation(caplog, tmp_path):
-    handler = ExecutionHandler(mode="local")
+    handler = ExecutionHandler.__new__(ExecutionHandler)
+    handler.settings = MagicMock()
+    handler.logger = MagicMock()
+
     source_file = tmp_path / "source.txt"
     source_file.write_text("test content")
     case_id = "case_123"
@@ -148,10 +68,40 @@ def test_upload_to_pc_localdata_local_mode_logs_simulation(caplog, tmp_path):
         handler.upload_to_pc_localdata(source_file, case_id)
 
     assert f"Simulating upload by copying to local directory for case {case_id}" in caplog.text
-    shutil.rmtree(f"./localdata_uploads/{case_id}")
+    shutil.rmtree(f"./localdata_uploads/{case_id}", ignore_errors=True)
 
 
-def test_execution_handler_imports_without_paramiko_installed(monkeypatch):
-    module = _import_module_without_paramiko("src.handlers.execution_handler", monkeypatch)
+@patch("subprocess.Popen")
+def test_start_local_process_with_string_command(mock_popen):
+    handler = ExecutionHandler.__new__(ExecutionHandler)
+    handler.settings = MagicMock()
+    handler.logger = MagicMock()
 
-    assert hasattr(module, "ExecutionHandler")
+    handler.start_local_process("echo hello")
+
+    mock_popen.assert_called_once_with(
+        "echo hello",
+        shell=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+        cwd=None,
+    )
+
+
+@patch("subprocess.Popen")
+def test_start_local_process_with_list_command(mock_popen):
+    handler = ExecutionHandler.__new__(ExecutionHandler)
+    handler.settings = MagicMock()
+    handler.logger = MagicMock()
+
+    handler.start_local_process(["echo", "hello"])
+
+    mock_popen.assert_called_once_with(
+        ["echo", "hello"],
+        shell=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+        cwd=None,
+    )

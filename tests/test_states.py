@@ -7,15 +7,11 @@ import pytest
 from src.core.workflow_manager import WorkflowManager
 from src.domain.states import (
     CompletedState,
-    DownloadState,
+    ResultValidationState,
+    SimulationState,
     FailedState,
-    HpcExecutionState,
-    UploadResultToPCLocalDataState,
 )
 from src.handlers.execution_handler import ExecutionHandler
-
-
-UploadResult = MagicMock()
 
 
 @pytest.fixture
@@ -46,42 +42,13 @@ def mock_workflow_manager(tmp_path: Path) -> MagicMock:
     return manager
 
 
-def test_upload_state_success(mock_workflow_manager: MagicMock):
-    state = UploadResultToPCLocalDataState()
-    mock_workflow_manager.execution_handler.upload_to_pc_localdata.return_value = UploadResult(
-        success=True
-    )
-
-    next_state = state.execute(mock_workflow_manager)
-
-    final_dir_path = Path(mock_workflow_manager.shared_context["final_result_path"])
-    mock_workflow_manager.execution_handler.upload_to_pc_localdata.assert_called_once_with(
-        local_path=final_dir_path,
-        case_id="case-abc",
-        settings=mock_workflow_manager.settings,
-    )
-    assert type(next_state) is CompletedState  # nosemgrep: assert-for-authz
-
-
-def test_upload_state_failure_transitions_to_failed_state(
-    mock_workflow_manager: MagicMock,
-):
-    state = UploadResultToPCLocalDataState()
-    mock_upload_result = MagicMock(success=False, error="Connection timed out")
-    mock_workflow_manager.execution_handler.upload_to_pc_localdata.return_value = mock_upload_result
-
-    next_state = state.execute(mock_workflow_manager)
-
-    assert type(next_state) is FailedState  # nosemgrep: assert-for-authz
-
-
-def test_hpc_execution_state_uses_injected_handler(mock_workflow_manager, tmp_path):
+def test_simulation_state_uses_injected_handler(mock_workflow_manager, tmp_path):
     mock_handler = MagicMock(spec=ExecutionHandler)
-    mock_handler.submit_simulation_job.return_value = MagicMock(success=True, job_id="12345")
+    mock_handler.start_local_process.return_value = MagicMock(poll=lambda: None)
     mock_handler.wait_for_job_completion.return_value = MagicMock(failed=False)
-    state = HpcExecutionState(execution_handler=mock_handler)
+    mock_workflow_manager.execution_handler = mock_handler
+    state = SimulationState()
 
-    mock_workflow_manager.shared_context["remote_beam_dir"] = "/remote/test/dir"
     sim_output_dir = str(tmp_path / "Dose_dcm" / "case-abc")
     mock_workflow_manager.settings.get_path.side_effect = lambda key, **_: {
         "tps_input_file": "/tmp/input.in",
@@ -89,15 +56,41 @@ def test_hpc_execution_state_uses_injected_handler(mock_workflow_manager, tmp_pa
         "remote_log_path": "/tmp/log.txt",
         "simulation_output_dir": sim_output_dir,
     }[key]
-    mock_workflow_manager.settings.get_handler_mode.return_value = "remote"
+    mock_workflow_manager.settings.get_command.return_value = "sim_command"
+    mock_workflow_manager.settings.get_handler_mode.return_value = "local"
 
     next_state = state.execute(mock_workflow_manager)
 
-    mock_handler.submit_simulation_job.assert_called_once()
-    assert type(next_state) is DownloadState  # nosemgrep: assert-for-authz
+    mock_handler.start_local_process.assert_called_once()
+    mock_handler.wait_for_job_completion.assert_called_once()
+    assert type(next_state) is ResultValidationState
 
 
-def test_download_state_stores_final_dicom_path_for_native_output(tmp_path: Path):
+def test_simulation_state_failure_transitions_to_failed_state(mock_workflow_manager, tmp_path):
+    mock_handler = MagicMock(spec=ExecutionHandler)
+    mock_handler.start_local_process.return_value = MagicMock(poll=lambda: None)
+    mock_handler.wait_for_job_completion.return_value = MagicMock(
+        failed=True, error="Simulation failed"
+    )
+    mock_workflow_manager.execution_handler = mock_handler
+    state = SimulationState()
+
+    sim_output_dir = str(tmp_path / "Dose_dcm" / "case-abc")
+    mock_workflow_manager.settings.get_path.side_effect = lambda key, **_: {
+        "tps_input_file": "/tmp/input.in",
+        "mqi_run_dir": "/tmp/mqi",
+        "remote_log_path": "/tmp/log.txt",
+        "simulation_output_dir": sim_output_dir,
+    }[key]
+    mock_workflow_manager.settings.get_command.return_value = "sim_command"
+    mock_workflow_manager.settings.get_handler_mode.return_value = "local"
+
+    next_state = state.execute(mock_workflow_manager)
+
+    assert type(next_state) is FailedState
+
+
+def test_result_validation_state_stores_final_dicom_path(tmp_path: Path):
     manager = MagicMock(spec=WorkflowManager)
     manager.logger = MagicMock()
     manager.case_repo = MagicMock()
@@ -119,19 +112,18 @@ def test_download_state_stores_final_dicom_path_for_native_output(tmp_path: Path
     }[key]
     manager.execution_handler = SimpleNamespace()
 
-    next_state = DownloadState().execute(manager)
+    next_state = ResultValidationState().execute(manager)
 
-    assert manager.shared_context["final_result_path"] == str(simulation_output_dir)  # nosemgrep: assert-for-authz
-    assert type(next_state) is UploadResultToPCLocalDataState  # nosemgrep: assert-for-authz
+    assert manager.shared_context["final_result_path"] == str(simulation_output_dir)
+    assert type(next_state) is CompletedState
 
 
-def test_download_state_transitions_directly_to_upload_state(tmp_path: Path):
+def test_result_validation_state_missing_dir_transitions_to_failed(tmp_path: Path):
     manager = MagicMock(spec=WorkflowManager)
     manager.logger = MagicMock()
     manager.case_repo = MagicMock()
     manager.settings = MagicMock()
     manager.settings.get_progress_tracking_config.return_value = {"coarse_phase_progress": {}}
-    manager.settings.get_handler_mode.return_value = "local"
     manager.id = "beam-01"
     manager.shared_context = {}
 
@@ -139,28 +131,12 @@ def test_download_state_transitions_directly_to_upload_state(tmp_path: Path):
     manager.case_repo.get_beam.return_value = beam
     manager.case_repo.get_beams_for_case.return_value = [beam]
 
-    simulation_output_dir = tmp_path / "native-output"
-    simulation_output_dir.mkdir()
-    expected_dicom_dir = simulation_output_dir / "beam_10"
-    expected_dicom_dir.mkdir()
-    (expected_dicom_dir / "dose.dcm").touch()
+    nonexistent_dir = tmp_path / "nonexistent"
     manager.settings.get_path.side_effect = lambda key, **_: {
-        "simulation_output_dir": str(simulation_output_dir),
+        "simulation_output_dir": str(nonexistent_dir),
     }[key]
     manager.execution_handler = SimpleNamespace()
 
-    next_state = DownloadState().execute(manager)
+    next_state = ResultValidationState().execute(manager)
 
-    assert not hasattr(manager.execution_handler, "run_raw_to_dcm")  # nosemgrep: assert-for-authz
-    assert type(next_state) is UploadResultToPCLocalDataState  # nosemgrep: assert-for-authz
-
-
-def test_upload_state_directory_not_found_transitions_to_failed_state(
-    mock_workflow_manager: MagicMock,
-):
-    state = UploadResultToPCLocalDataState()
-    mock_workflow_manager.shared_context["final_result_path"] = "/path/to/nonexistent/dir"
-
-    next_state = state.execute(mock_workflow_manager)
-
-    assert type(next_state) is FailedState  # nosemgrep: assert-for-authz
+    assert type(next_state) is FailedState

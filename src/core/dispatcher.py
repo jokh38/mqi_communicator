@@ -120,7 +120,7 @@ def run_case_level_csv_interpreting(case_id: str, case_path: Path,
     logger = _ensure_logger(f"dispatcher_{case_id}", settings)
 
     try:
-        execution_handler = ExecutionHandler(settings=settings, mode="local")
+        execution_handler = ExecutionHandler(settings=settings)
 
         with get_db_session(settings, logger, handler_name="CsvInterpreter") as case_repo:
             logger.info(f"Starting case-level CSV interpreting for: {case_id}")
@@ -231,74 +231,6 @@ def run_case_level_csv_interpreting(case_id: str, case_path: Path,
         return False
 
 
-
-def run_case_level_upload(case_id: str, settings: Settings,
-                          ssh_client: Any) -> bool:
-    """
-    Uploads all generated CSV files to each beam's remote directory.
-    """
-    logger = _ensure_logger(f"dispatcher_{case_id}", settings)
-    remote_handler_name = "HpcJobSubmitter"
-
-    try:
-        if not ssh_client:
-            raise ProcessingError("SSH client is not available for upload.")
-
-        execution_handler = ExecutionHandler(settings=settings,
-                                             mode="remote",
-                                             ssh_client=ssh_client)
-
-        with get_db_session(settings, logger, handler_name="CsvInterpreter") as case_repo:
-            logger.info(f"Starting case-level file upload for: {case_id}")
-            case_repo.record_workflow_step(case_id=case_id,
-                                           step=WorkflowStep.UPLOADING,
-                                           status="started")
-
-            csv_output_base = settings.get_path("csv_output_dir", handler_name="CsvInterpreter")
-            csv_dir = Path(csv_output_base) / case_id
-            csv_files = list(csv_dir.glob("**/*.csv"))
-
-            if not csv_files:
-                logger.warning(f"No CSV files found to upload for case {case_id}",
-                               {"directory": csv_dir})
-                return True
-
-            beams = case_repo.get_beams_for_case(case_id)
-            if not beams:
-                raise ProcessingError(
-                    f"No beams found in database for case {case_id} during upload.")
-
-            for beam in beams:
-                remote_case_root = settings.get_hpc_paths().get(
-                    "remote_case_path_template",
-                    "remote/cases",
-                )
-                remote_beam_dir = f"{remote_case_root}/{case_id}/{beam.beam_id}"
-                logger.info(
-                    f"Uploading {len(csv_files)} CSVs to remote dir for beam {beam.beam_id}",
-                    {"remote_dir": remote_beam_dir})
-                for csv_file in csv_files:
-                    remote_path = f"{remote_beam_dir}/{csv_file.name}"
-                    result = execution_handler.upload_file(
-                        local_path=str(csv_file), remote_path=remote_path)
-                    if not result.success:
-                        raise ProcessingError(
-                            f"Failed to upload {csv_file.name}: {result.error}")
-
-            case_repo.record_workflow_step(case_id=case_id,
-                                           step=WorkflowStep.UPLOADING,
-                                           status="completed")
-            return True
-    except Exception as e:
-        _handle_dispatcher_error(
-            case_id=case_id,
-            error=e,
-            workflow_step=WorkflowStep.UPLOADING,
-            settings=settings,
-            logger=logger,
-            handler_name="CsvInterpreter"
-        )
-        return False
 
 def run_case_level_tps_generation(
     case_id: str, case_path: Path, beam_count: int, settings: Settings

@@ -4,7 +4,7 @@ import csv
 import time
 import threading
 from io import StringIO
-from typing import Callable, List, Dict, Any, Optional, Set
+from typing import List, Dict, Any, Optional, Set
 from datetime import datetime, timedelta
 
 from src.infrastructure.logging_handler import StructuredLogger
@@ -14,8 +14,8 @@ from src.repositories.gpu_repo import GpuRepository
 from src.domain.enums import GpuStatus
 
 class GpuMonitor:
-    """A long-running service that periodically fetches GPU resource data from a remote
-    host and updates a local repository.
+    """A long-running service that periodically fetches GPU resource data
+    and updates a local repository.
 
     This class is a stateful service that separates data
     acquisition (via ExecutionHandler) and parsing from data
@@ -28,8 +28,7 @@ class GpuMonitor:
                  gpu_repository: GpuRepository,
                  command: str,
                  update_interval: int,
-                 assignment_grace_period_seconds: int = 60,
-                 reconnect_handler: Optional[Callable[[], Optional[ExecutionHandler]]] = None):
+                 assignment_grace_period_seconds: int = 60):
         """Initialize the GpuMonitor service.
 
         Args:
@@ -40,9 +39,6 @@ class GpuMonitor:
             update_interval (int): Interval in seconds between GPU data fetches.
             assignment_grace_period_seconds (int): Minimum age for assigned GPUs before
                 reconciliation may reclaim them if no live compute app is detected.
-            reconnect_handler (Callable, optional): A callable that returns a new
-                ExecutionHandler with a fresh SSH connection. Called automatically
-                when a ConnectionError is detected.
         """
         self.logger = logger
         self.execution_handler = execution_handler
@@ -50,7 +46,6 @@ class GpuMonitor:
         self.command = command
         self.update_interval = update_interval
         self.assignment_grace_period_seconds = assignment_grace_period_seconds
-        self._reconnect_handler = reconnect_handler
 
         self._shutdown_event = threading.Event()
         self._monitor_thread: Optional[threading.Thread] = None
@@ -94,18 +89,17 @@ class GpuMonitor:
         self.logger.info("GPU monitor loop has shut down.")
 
     def _fetch_and_update_gpus(self) -> None:
-        """Fetches GPU data from the remote host, parses it, and updates the repository."""
-        execution_location = self._get_execution_location()
-        self.logger.debug(f"Attempting to fetch {execution_location} GPU data.")
-        
+        """Fetches GPU data locally, parses it, and updates the repository."""
+        self.logger.debug("Attempting to fetch local GPU data.")
+
         try:
-            # Execute nvidia-smi command remotely
+            # Execute nvidia-smi command
             result = self.execution_handler.execute_command(
                 command=self.command
             )
 
             if not result.success:
-                self.logger.error("Remote nvidia-smi command failed", {
+                self.logger.error("nvidia-smi command failed", {
                     "return_code": result.return_code,
                     "error": result.error
                 })
@@ -113,30 +107,18 @@ class GpuMonitor:
 
             # Parse the CSV output
             gpu_data = self._parse_nvidia_smi_output(result.output)
-            
+
             if not gpu_data:
                 self.logger.warning("Nvidia-smi command succeeded but parsing yielded no GPU data.")
                 return
 
-            self.logger.info(f"Successfully fetched and parsed {execution_location} GPU data.", {
+            self.logger.info("Successfully fetched and parsed local GPU data.", {
                 "gpu_count": len(gpu_data)
             })
 
             # Persist the new data to the repository
             self.gpu_repository.update_resources(gpu_data)
 
-        except ConnectionError as e:
-            self.logger.error("SSH connection lost while fetching GPU data.", {
-                "error": str(e)
-            })
-            if self._reconnect_handler:
-                self.logger.info("Attempting to reconnect SSH session for GPU monitor.")
-                new_handler = self._reconnect_handler()
-                if new_handler:
-                    self.execution_handler = new_handler
-                    self.logger.info("SSH reconnection successful.")
-                else:
-                    self.logger.error("SSH reconnection failed. Will retry on next interval.")
         except Exception as e:
             self.logger.error("An unexpected error occurred while fetching GPU data.", {
                 "error": str(e)
@@ -208,11 +190,6 @@ class GpuMonitor:
         grace_cutoff = comparison_time - timedelta(seconds=self.assignment_grace_period_seconds)
         return gpu.last_updated >= grace_cutoff
 
-    def _get_execution_location(self) -> str:
-        """Describe whether GPU polling is happening locally or remotely."""
-        mode = getattr(self.execution_handler, "mode", None)
-        return "remote" if mode == "remote" else "local"
-    
     def _parse_nvidia_smi_output(self, raw_output: str) -> List[Dict[str, Any]]:
         """Parse the CSV output from nvidia-smi into structured data.
 

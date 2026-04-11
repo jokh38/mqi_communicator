@@ -19,7 +19,6 @@ import signal
 import time
 import os
 import multiprocessing as mp
-import paramiko
 from pathlib import Path
 from typing import Optional, NoReturn, Dict
 import threading
@@ -43,14 +42,12 @@ from src.core.worker import (
 )
 from src.core.dispatcher import (
     run_case_level_csv_interpreting,
-    run_case_level_upload,
     run_case_level_tps_generation,
 )
 from src.core.case_aggregator import prepare_beam_jobs
 from src.core.workflow_manager import scan_existing_cases, CaseDetectionHandler
 from src.domain.enums import CaseStatus, BeamStatus
 from src.utils.db_context import get_db_session
-from src.utils.ssh_helper import create_ssh_client
 
 
 class MQIApplication:
@@ -78,7 +75,6 @@ class MQIApplication:
         self.gpu_monitor: Optional[GpuMonitor] = None
         self.process_registry: Optional[ProcessRegistry] = None
         self.monitor_db_connection: Optional[DatabaseConnection] = None
-        self.ssh_client: Optional[paramiko.SSHClient] = None
         self.shutdown_event = threading.Event()
         self.service_monitor_thread: Optional[threading.Thread] = None
 
@@ -230,22 +226,7 @@ class MQIApplication:
                 self.monitor_db_connection, self.logger, self.settings
             )
 
-            # GpuMonitor의 실행 모드를 먼저 확인
-            handler_mode = self.settings.execution_handler.get("GpuMonitor", "local")
-
-            # remote 모드일 경우에만 ssh_client를 확인
-            if handler_mode == "remote" and not self.ssh_client:
-                self.logger.error(
-                    "SSH client not available. Cannot start remote GPU monitor."
-                )
-                return
-
-            # ExecutionHandler 생성 시 ssh_client를 조건부로 전달
-            execution_handler = ExecutionHandler(
-                settings=self.settings,
-                mode=handler_mode,
-                ssh_client=self.ssh_client if handler_mode == "remote" else None,
-            )
+            execution_handler = ExecutionHandler(settings=self.settings)
 
             # Get interval from settings
             gpu_config = self.settings.get_gpu_config()
@@ -258,24 +239,12 @@ class MQIApplication:
             assignment_grace_period = gpu_config.get("assignment_grace_period_seconds", 60)
             command = gpu_config.get("gpu_monitor_command")
 
-            def _reconnect_gpu_handler() -> Optional[ExecutionHandler]:
-                new_ssh = create_ssh_client(self.settings, self.logger)
-                if not new_ssh:
-                    return None
-                self.ssh_client = new_ssh
-                return ExecutionHandler(settings=self.settings,
-                                        mode=handler_mode,
-                                        ssh_client=new_ssh)
-
-            reconnect_fn = _reconnect_gpu_handler if handler_mode == "remote" else None
-
             self.gpu_monitor = GpuMonitor(logger=self.logger,
                                           execution_handler=execution_handler,
                                           gpu_repository=gpu_repo,
                                           command=command,
                                           update_interval=interval,
-                                          assignment_grace_period_seconds=assignment_grace_period,
-                                          reconnect_handler=reconnect_fn)
+                                          assignment_grace_period_seconds=assignment_grace_period)
             self.gpu_monitor.start()
             with get_db_session(self.settings, self.logger) as case_repo:
                 self.gpu_monitor.reconcile_stale_assignments(case_repo)
@@ -382,34 +351,6 @@ class MQIApplication:
             case_repo.update_beams_status_by_case_id(case_id, BeamStatus.PENDING.value)
 
         return gpu_assignments
-
-    def _run_file_upload(self, case_id: str, case_repo: CaseRepository) -> bool:
-        """Uploads files to HPC if needed.
-
-        Args:
-            case_id (str): The case ID.
-            case_repo (CaseRepository): The case repository.
-
-        Returns:
-            bool: True if file upload succeeded or was skipped, False otherwise.
-        """
-        handler_modes = self.settings.execution_handler.values()
-
-        if "remote" not in handler_modes:
-            self.logger.info(
-                "No remote handlers configured. Skipping case-level file upload."
-            )
-            return True
-
-        case_repo.update_beams_status_by_case_id(case_id, BeamStatus.UPLOADING.value)
-        self.logger.info(f"Starting case-level file upload for {case_id}")
-        upload_success = run_case_level_upload(case_id, self.settings, self.ssh_client)
-
-        if not upload_success:
-            self.logger.error(f"File upload failed for case {case_id}")
-            case_repo.fail_case(case_id, "File upload failed")
-
-        return upload_success
 
     def _dispatch_workers(
         self,
@@ -523,11 +464,7 @@ class MQIApplication:
             if len(gpu_assignments) == 0:
                 return
 
-            # Step 4: Run case-level file upload to HPC if any handler is remote
-            if not self._run_file_upload(case_id, case_repo):
-                return
-
-            # Step 5: Dispatch individual workers for simulation
+            # Step 4: Dispatch individual workers for simulation
             self._dispatch_workers(
                 case_id,
                 case_path,
@@ -632,10 +569,6 @@ class MQIApplication:
             monitor_interval = processing_config.get("hpc_poll_interval_seconds", 30)
             self.shutdown_event.wait(timeout=monitor_interval)
 
-    def initialize_ssh_client(self) -> None:
-        """Initializes the SSH client for remote connections."""
-        self.ssh_client = create_ssh_client(self.settings, self.logger)
-
     def shutdown(self) -> None:
         """Performs a graceful shutdown of all application components."""
         self.logger.info("Shutting down MQI Communicator")
@@ -654,10 +587,6 @@ class MQIApplication:
             self.gpu_monitor.stop()
         if self.monitor_db_connection:
             self.monitor_db_connection.close()
-        # Close SSH connection
-        if self.ssh_client:
-            self.logger.info("Closing HPC connection.")
-            self.ssh_client.close()
         # Stop dashboard UI process
         if self.ui_process_manager:
             self.ui_process_manager.stop()
@@ -681,10 +610,6 @@ class MQIApplication:
             self.process_registry.reclaim_previous_instance(os.getpid())
             self.process_registry.register_current_process(os.getpid())
             self.initialize_database()
-            # Conditionally initialize SSH if any handler is remote
-            handler_modes = self.settings.execution_handler.values()
-            if "remote" in handler_modes:
-                self.initialize_ssh_client()
             # Scan for existing cases that haven't been processed yet
             self.logger.info("Scanning for existing cases at startup")
             scan_existing_cases(self.case_queue, self.settings, self.logger)

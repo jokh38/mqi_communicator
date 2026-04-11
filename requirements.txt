@@ -12,9 +12,6 @@ watchdog>=3.0.0
 # Rich terminal UI for the dashboard display
 rich>=13.0.0
 
-# SSH/SFTP client for HPC communication
-paramiko>=3.0.0
-
 # YAML configuration file parsing
 PyYAML>=6.0.0
 

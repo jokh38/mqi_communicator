@@ -7,14 +7,13 @@ ExecutionHandler:
   HpcFileHandler: "local"
   HpcJobSubmitter: "local"
   PostProcessor: "local"
-  ResultUploader: "local" # ResultUploader는 로컬에서 scp 명령을 실행해야 함
+  ResultUploader: "local"
 
 # =====================================================================================
 # Paths - 환경별 경로 설정
 # =====================================================================================
 paths:
   base_directory: "/home/jokh38/MOQUI_SMC"
-  pc_localdata_remote_base_dir: "D:/MOQUI_RESULTS/{case_id}" # ResultUploader용 원격 경로
   local:
     scan_directory: "{base_directory}/data/SHI_log"
     csv_output_dir: "{base_directory}/data/Outputs_csv"
@@ -26,13 +25,6 @@ paths:
     raw_to_dicom_dir: "{base_directory}/RawToDCM"
     tps_input_file: "{base_directory}/data/Outputs_csv/{case_id}/moqui_tps_{beam_id}.in"  # Generated per-beam TPS files
     remote_log_path: "{base_directory}/mqi_communicator/logs/sim_{beam_id}.log"
-  remote:
-    remote_case_path: "placeholder/remote/path/cases/{case_id}"
-    remote_beam_path: "{remote_case_path}/{beam_id}"
-    remote_beam_result_path: "{remote_beam_path}/beam_{beam_number}"
-    remote_script_path: "placeholder/remote/scripts"
-    tps_input_file: "{base_directory}/data/Outputs_csv/{case_id}/moqui_tps_{beam_id}.in"  # Generated per-beam TPS files
-    remote_log_path: "{base_directory}/mqi_communicator/logs/sim_{beam_id}.log"
 
 # =====================================================================================
 # Executables - 환경별 실행 파일 경로 설정
@@ -42,22 +34,6 @@ executables:
     python: "/home/jokh38/miniconda3/bin/python"
     mqi_interpreter_script: "{base_directory}/mqi_interpreter/main_cli.py"
     raw_to_dicom_script: "{base_directory}/RawToDCM/moqui_raw2dicom.py"
-  remote:
-    python: "/path/on/hpc/to/python"
-
-# =====================================================================================
-# Connections - 외부 서비스 연결 정보
-# =====================================================================================
-connections:
-  pc_localdata:
-    ip: "192.168.1.100" # placeholder IP
-    user: "moqui_user"    # placeholder user
-  hpc:
-    host: "hpc.example.com"
-    user: "hpc_user"
-    ssh_key_path: "/path/to/ssh/key"
-    port: 22
-    connection_timeout_seconds: 30
 
 # =====================================================================================
 # Command Templates - 실행 명령어 템플릿
@@ -68,15 +44,8 @@ command_templates:
       cd {mqi_interpreter_dir} && {python} {mqi_interpreter_script} --logdir {input_path} --outputdir {csv_output_dir}
     post_process: >-
       cd {raw_to_dicom_dir} && {python} {raw_to_dicom_script} --input {input_file} --output {output_dir} --dosetype 2d
-    upload_result: "scp -r {local_path} {pc_user}@{pc_ip}:{pc_localdata_remote_base_dir}"
     # W-7 fix: Remove trailing & to allow proper process tracking
     remote_submit_simulation: "cd {mqi_run_dir} && ./tps_env/tps_env {tps_input_file} > {remote_log_path} 2>&1"
-    check_job_status: "squeue -j {job_id} -h -o \"%T\""
-    check_job_history: "sacct -j {job_id} --noheader --format='State' | head -n 1"
-    cleanup: "rm -rf {remote_path}"
-  remote:
-    # W-7 fix: For remote, keep background process but use proper PID tracking
-    remote_submit_simulation: "cd {mqi_run_dir} && ./tps_env/tps_env {tps_input_file} > {remote_log_path} 2>&1 & echo $!"
     cleanup: "rm -rf {remote_path}"
 
 # =====================================================================================

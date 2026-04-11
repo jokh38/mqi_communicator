@@ -16,7 +16,6 @@ from src.core.workflow_manager import WorkflowManager
 from src.core.tps_generator import TpsGenerator
 from src.config.settings import Settings
 from src.utils.db_context import get_db_session
-from src.utils.ssh_helper import create_ssh_client
 from src.domain.enums import BeamStatus
 
 
@@ -41,16 +40,7 @@ def worker_main(beam_id: str, beam_path: Path, settings: Settings) -> None:
         with get_db_session(settings, logger) as case_repo:
             gpu_repo = GpuRepository(case_repo.db, logger, settings)
 
-            # Create ExecutionHandler based on settings
-            workflow_mode = settings.execution_handler.get("Workflow", "local")
-
-            ssh_client = None
-            if workflow_mode == "remote":
-                ssh_client = create_ssh_client(settings, logger)
-                if not ssh_client:
-                    raise ConnectionError("HPC connection settings not configured.")
-
-            execution_handler = ExecutionHandler(settings=settings, mode=workflow_mode, ssh_client=ssh_client)
+            execution_handler = ExecutionHandler(settings=settings)
 
             # Create TPS generator
             tps_generator = TpsGenerator(settings, logger)

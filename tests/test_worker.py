@@ -1,4 +1,3 @@
-import builtins
 import importlib
 import sys
 from datetime import datetime
@@ -11,22 +10,6 @@ import pytest
 from src.core import worker
 from src.domain.enums import BeamStatus
 from src.domain.enums import GpuStatus
-
-
-def _import_module_without_paramiko(module_name: str, monkeypatch: pytest.MonkeyPatch):
-    original_import = builtins.__import__
-
-    def blocked_import(name, globals=None, locals=None, fromlist=(), level=0):
-        if name == "paramiko":
-            raise ModuleNotFoundError("No module named 'paramiko'")
-        return original_import(name, globals, locals, fromlist, level)
-
-    monkeypatch.delitem(sys.modules, "paramiko", raising=False)
-    monkeypatch.delitem(sys.modules, module_name, raising=False)
-    monkeypatch.delitem(sys.modules, "src.handlers.execution_handler", raising=False)
-    monkeypatch.delitem(sys.modules, "src.utils.ssh_helper", raising=False)
-    monkeypatch.setattr(builtins, "__import__", blocked_import)
-    return importlib.import_module(module_name)
 
 
 @patch("src.core.worker.allocate_gpus_for_pending_beams")
@@ -142,13 +125,6 @@ def test_try_allocate_pending_beams_uses_case_repo_db_for_gpu_updates():
         )
 
 
-def test_worker_imports_without_paramiko_installed(monkeypatch):
-    module = _import_module_without_paramiko("src.core.worker", monkeypatch)
-
-    if not hasattr(module, "worker_main"):
-        raise AssertionError("Worker import should expose worker_main")
-
-
 def test_worker_main_does_not_initialize_database_schema():
     settings = MagicMock()
     settings.execution_handler = {"Workflow": "local"}
@@ -177,11 +153,9 @@ def test_worker_main_does_not_initialize_database_schema():
 
     db.init_db.assert_not_called()
     gpu_repo_cls.assert_called_once_with(db, ANY, settings)
-    execution_handler_cls.assert_called_once_with(settings=settings, mode="local", ssh_client=None)
+    execution_handler_cls.assert_called_once_with(settings=settings)
     tps_generator_cls.assert_called_once()
     workflow_manager.run_workflow.assert_called_once()
-
-
 
 
 def test_monitor_completed_workers_releases_gpu_and_retries_pending_beams():

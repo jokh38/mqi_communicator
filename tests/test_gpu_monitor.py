@@ -62,20 +62,17 @@ def test_fetch_and_update_gpus_uses_execution_handler(mock_thread, mock_logger, 
 
 
 @pytest.mark.parametrize(
-    ("mode", "expected_phrase"),
+    ("expected_phrase",),
     [
-        ("local", "local GPU data"),
-        ("remote", "remote GPU data"),
+        ("local GPU data",),
     ],
 )
 def test_fetch_and_update_gpus_logs_execution_mode(
-    mode,
     expected_phrase,
     mock_logger,
     mock_gpu_repo,
     mock_execution_handler,
 ):
-    mock_execution_handler.mode = mode
     monitor = GpuMonitor(
         logger=mock_logger,
         execution_handler=mock_execution_handler,

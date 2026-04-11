@@ -115,11 +115,8 @@ class ProgressTrackingConfig(BaseModel):
     coarse_phase_progress: Dict[str, float] = Field(
         default_factory=lambda: {
             "CSV_INTERPRETING": 10.0,
-            "UPLOADING": 20.0,
-            "HPC_QUEUED": 30.0,
-            "HPC_RUNNING": 70.0,
-            "DOWNLOADING": 85.0,
-            "POSTPROCESSING": 95.0,
+            "HPC_RUNNING": 40.0,
+            "POSTPROCESSING": 80.0,
             "COMPLETED": 100.0,
         },
         description="Mapping of phase names to progress percentages"

@@ -118,7 +118,6 @@ def test_run_reclaims_and_registers_matching_previous_process_before_startup():
 
     app.initialize_logging = MagicMock(side_effect=init_logging)
     app.initialize_database = MagicMock(side_effect=lambda: mark("database"))
-    app.initialize_ssh_client = MagicMock(side_effect=lambda: mark("ssh"))
     app.start_file_watcher = MagicMock(side_effect=lambda: mark("watcher"))
     app.start_dashboard = MagicMock(side_effect=lambda: mark("dashboard"))
     app.start_gpu_monitor = MagicMock(side_effect=lambda: mark("gpu"))

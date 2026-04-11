@@ -32,11 +32,8 @@ GPU_STATUS_COLORS = {
 BEAM_STATUS_COLORS = {
     BeamStatus.PENDING: "yellow",
     BeamStatus.CSV_INTERPRETING: "cyan",
-    BeamStatus.UPLOADING: "magenta",
     BeamStatus.TPS_GENERATION: "blue",
-    BeamStatus.HPC_QUEUED: "bold yellow",
-    BeamStatus.HPC_RUNNING: "bold blue",
-    BeamStatus.DOWNLOADING: "bold cyan",
+    BeamStatus.SIMULATION_RUNNING: "bold blue",
     BeamStatus.POSTPROCESSING: "bold magenta",
     BeamStatus.COMPLETED: "bold green",
     BeamStatus.FAILED: "bold red",
@@ -191,8 +188,8 @@ def format_stage_display(
 
     stage_text = Text(f"{current_stage}/{total_stages}", style=color)
 
-    # Show intra-stage progress bar only during HPC_RUNNING (MC calculation)
-    if status == BeamStatus.HPC_RUNNING and progress > 0:
+    # Show intra-stage progress bar only during SIMULATION_RUNNING (MC calculation)
+    if status == BeamStatus.SIMULATION_RUNNING and progress > 0:
         intra = _intra_stage_progress(progress, stage_start=30.0, stage_end=90.0)
         filled = int(intra / 100 * 10)
         bar = "\u2588" * filled + "\u2500" * (10 - filled)

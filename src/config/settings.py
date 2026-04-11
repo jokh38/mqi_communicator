@@ -248,15 +248,6 @@ class Settings:
             except KeyError:
                 format_context.pop(p, None)
 
-            # Resolve connection details
-            connections = self.get_connection_config()
-            if p == "pc_ip" and "pc_localdata" in connections:
-                format_context["pc_ip"] = connections["pc_localdata"].get("ip")
-                continue
-            if p == "pc_user" and "pc_localdata" in connections:
-                format_context["pc_user"] = connections["pc_localdata"].get("user")
-                continue
-
             if p not in format_context:
                  raise ValueError(f"Could not resolve placeholder '{{{p}}}' for command '{command_key}'.")
 
@@ -335,30 +326,6 @@ class Settings:
             return self._validated_config.gpu.model_dump()
         return self._yaml_config.get("gpu", {})
 
-    def get_connection_config(self) -> Dict[str, Any]:
-        """
-        Gets the connections configuration dictionary from the YAML file.
-        """
-        return self._yaml_config.get("connections", {})
-
-    def get_pc_localdata_connection(self) -> Dict[str, Any]:
-        """Compatibility helper to fetch legacy pc_localdata connection info.
-
-        Some tests/configs expect a top-level key `pc_localdata_connection` rather than
-        the newer nested structure under `connections`. This method checks both and
-        returns the first match, or an empty dict if none.
-        """
-        # Newer nested structure
-        connections = self.get_connection_config()
-        if "pc_localdata" in connections and isinstance(connections["pc_localdata"], dict):
-            return connections["pc_localdata"]
-        # Legacy top-level structure
-        legacy = self._yaml_config.get("pc_localdata_connection", {})
-        if isinstance(legacy, dict):
-            return legacy
-        return {}
-
-
     def get_default_handler(self) -> str:
         """Returns the default handler name from config or a safe fallback."""
         # Support either nested "settings.default_handler" or top-level "default_handler"
@@ -388,26 +355,11 @@ class Settings:
             raise RuntimeError(f"Could not resolve scan directory path: {e}") from e
 
 
-    def get_hpc_connection(self) -> Optional[Dict[str, Any]]:
-        """
-        Returns HPC connection information.
-        """
-        return self._yaml_config.get("hpc", None)
-
     def get_moqui_tps_parameters(self) -> Dict[str, Any]:
         """
         Gets the moqui_tps_parameters configuration dictionary from the YAML file.
         """
         return self._yaml_config.get("moqui_tps_parameters", {})
-
-    def get_hpc_paths(self) -> Dict[str, Any]:
-        """
-        Gets the HPC paths configuration dictionary from the YAML file.
-        """
-        hpc_config = self.get_hpc_connection()
-        if hpc_config:
-            return hpc_config.get("paths", {})
-        return {}
 
     def get_tps_generator_config(self) -> Dict[str, Any]:
         """
@@ -437,11 +389,8 @@ class Settings:
         # Safe defaults
         coarse_defaults = {
             "CSV_INTERPRETING": 10.0,
-            "UPLOADING": 20.0,
-            "HPC_QUEUED": 30.0,
-            "HPC_RUNNING": 70.0,
-            "DOWNLOADING": 85.0,
-            "POSTPROCESSING": 95.0,
+            "HPC_RUNNING": 40.0,
+            "POSTPROCESSING": 80.0,
             "COMPLETED": 100.0,
         }
         cfg.setdefault("polling_interval_seconds", 5)

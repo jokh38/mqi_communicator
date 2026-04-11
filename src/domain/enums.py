@@ -25,11 +25,8 @@ class BeamStatus(Enum):
     """
     PENDING = "pending"
     CSV_INTERPRETING = "csv_interpreting"
-    UPLOADING = "uploading"
     TPS_GENERATION = "tps_generation"
-    HPC_QUEUED = "hpc_queued"
-    HPC_RUNNING = "hpc_running"
-    DOWNLOADING = "downloading"
+    SIMULATION_RUNNING = "simulation_running"
     POSTPROCESSING = "postprocessing"
     COMPLETED = "completed"
     FAILED = "failed"
@@ -40,8 +37,6 @@ class WorkflowStep(Enum):
     PENDING = "pending"
     CSV_INTERPRETING = "csv_interpreting"
     TPS_GENERATION = "tps_generation"
-    UPLOADING = "uploading"
-    HPC_SUBMISSION = "hpc_submission"
     SIMULATION_RUNNING = "simulation_running"
     POSTPROCESSING = "postprocessing"
     COMPLETED = "completed"
@@ -54,36 +49,26 @@ class GpuStatus(Enum):
     ASSIGNED = "assigned"
 
 
-class ProcessingMode(Enum):
-    """Enumeration of processing modes."""
-    LOCAL = "local"
-    REMOTE = "remote"
-    HYBRID = "hybrid"
-
-
 # Stage mappings for progress display (1-indexed)
 # Each distinct pipeline phase gets its own stage number
 BEAM_STAGE_MAPPING = {
     BeamStatus.PENDING: 0,
     BeamStatus.CSV_INTERPRETING: 1,
-    BeamStatus.UPLOADING: 2,
-    BeamStatus.TPS_GENERATION: 3,
-    BeamStatus.HPC_QUEUED: 4,
-    BeamStatus.HPC_RUNNING: 4,      # Same stage: queued→running is sub-state
-    BeamStatus.DOWNLOADING: 5,
-    BeamStatus.POSTPROCESSING: 6,
-    BeamStatus.COMPLETED: 6,
-    BeamStatus.FAILED: 6,
+    BeamStatus.TPS_GENERATION: 2,
+    BeamStatus.SIMULATION_RUNNING: 3,
+    BeamStatus.POSTPROCESSING: 4,
+    BeamStatus.COMPLETED: 4,
+    BeamStatus.FAILED: 4,
 }
 
 CASE_STAGE_MAPPING = {
     CaseStatus.PENDING: 0,
     CaseStatus.CSV_INTERPRETING: 1,
-    CaseStatus.PROCESSING: 4,       # Cases in PROCESSING have beams in HPC stages
-    CaseStatus.POSTPROCESSING: 6,
-    CaseStatus.COMPLETED: 6,
-    CaseStatus.FAILED: 6,
-    CaseStatus.CANCELLED: 6,
+    CaseStatus.PROCESSING: 3,
+    CaseStatus.POSTPROCESSING: 4,
+    CaseStatus.COMPLETED: 4,
+    CaseStatus.FAILED: 4,
+    CaseStatus.CANCELLED: 4,
 }
 
-TOTAL_STAGES = 6
+TOTAL_STAGES = 4

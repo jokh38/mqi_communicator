@@ -1,4 +1,3 @@
-import builtins
 import importlib
 import sys
 from pathlib import Path
@@ -8,22 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.config.settings import Settings
-from src.handlers.execution_handler import ExecutionHandler, ExecutionResult, UploadResult
-
-
-def _import_module_without_paramiko(module_name: str, monkeypatch: pytest.MonkeyPatch):
-    original_import = builtins.__import__
-
-    def blocked_import(name, globals=None, locals=None, fromlist=(), level=0):
-        if name == "paramiko":
-            raise ModuleNotFoundError("No module named 'paramiko'")
-        return original_import(name, globals, locals, fromlist, level)
-
-    monkeypatch.delitem(sys.modules, "paramiko", raising=False)
-    monkeypatch.delitem(sys.modules, module_name, raising=False)
-    monkeypatch.delitem(sys.modules, "src.handlers.execution_handler", raising=False)
-    monkeypatch.setattr(builtins, "__import__", blocked_import)
-    return importlib.import_module(module_name)
+from src.handlers.execution_handler import ExecutionHandler, ExecutionResult
 
 
 @pytest.fixture
@@ -35,7 +19,6 @@ def mock_settings():
     mqi_interpreter_dir = Path("opt") / "mqi_interpreter"
     python_executable = Path("usr") / "bin" / "python3"
     interpreter_script = Path("opt") / "main_cli.py"
-    remote_case_root = Path("remote") / "cases"
     settings.get_path.side_effect = lambda key, **_: {
         "database_path": "dummy.db",
         "csv_output_dir": str(csv_output_dir),
@@ -45,7 +28,6 @@ def mock_settings():
         "python": str(python_executable),
         "mqi_interpreter_script": str(interpreter_script),
     }[key]
-    settings.get_hpc_paths.return_value = {"remote_case_path_template": str(remote_case_root)}
     settings.get_handler_mode.return_value = "local"
     mock_logging_config = MagicMock()
     mock_logging_config.log_level = "INFO"
@@ -86,43 +68,6 @@ def test_run_case_level_csv_interpreting_success(
         f"cd {Path('opt') / 'mqi_interpreter'} && {Path('usr') / 'bin' / 'python3'} {Path('opt') / 'main_cli.py'} "
         f"--logdir {case_path} --outputdir {Path('tmp') / 'csv_output' / case_id}",
         cwd=case_path,
-    )
-
-
-@patch("src.core.dispatcher.get_db_session")
-@patch("src.core.dispatcher.ExecutionHandler")
-def test_run_case_level_upload_success(
-    mock_exec_handler_cls,
-    mock_get_db_session,
-    mock_settings,
-):
-    dispatcher = importlib.import_module("src.core.dispatcher")
-    mock_exec_handler_instance = MagicMock(spec=ExecutionHandler)
-    mock_exec_handler_instance.upload_file.return_value = UploadResult(success=True)
-    mock_exec_handler_cls.return_value = mock_exec_handler_instance
-    mock_case_repo = MagicMock()
-    mock_case_repo.get_beams_for_case.return_value = [
-        SimpleNamespace(parent_case_id="test_case_01", beam_id="beam_01")
-    ]
-    context_manager = MagicMock()
-    context_manager.__enter__.return_value = mock_case_repo
-    context_manager.__exit__.return_value = False
-    mock_get_db_session.return_value = context_manager
-
-    mock_ssh_client = MagicMock()
-
-    case_id = "test_case_01"
-    with patch("src.core.dispatcher.Path.glob") as mock_glob:
-        mock_csv_file = Path("tmp") / "csv_output" / case_id / "test.csv"
-        mock_glob.return_value = [mock_csv_file]
-
-        success = dispatcher.run_case_level_upload(case_id, mock_settings, mock_ssh_client)
-
-    if success is not True:
-        raise AssertionError("Upload should succeed")
-    mock_exec_handler_instance.upload_file.assert_called_once_with(
-        local_path=str(mock_csv_file),
-        remote_path=f"{Path('remote') / 'cases'}/{case_id}/beam_01/{mock_csv_file.name}",
     )
 
 
@@ -190,13 +135,6 @@ def test_run_case_level_tps_generation_persists_treatment_beam_indices(
         raise AssertionError(f"Unexpected GPU assignment result: {result!r}")
     case_repo.update_beam_number.assert_any_call("case-1_beam-b", 1)
     case_repo.update_beam_number.assert_any_call("case-1_beam-a", 2)
-
-
-def test_dispatcher_module_import_does_not_require_paramiko_for_local_operations(monkeypatch):
-    module = _import_module_without_paramiko("src.core.dispatcher", monkeypatch)
-
-    if not hasattr(module, "run_case_level_csv_interpreting"):
-        raise AssertionError("Dispatcher import should expose run_case_level_csv_interpreting")
 
 
 def test_run_case_level_tps_generation_releases_gpu_by_uuid_on_generation_failure(

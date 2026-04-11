@@ -12,15 +12,9 @@ def temp_config_file(tmp_path: Path) -> Path:
                 "scan_directory": "{base_directory}/Outputs_csv",
             },
         },
-        "pc_localdata_connection": {
-            "host": "PC_LOCALDATA_IP_ADDRESS",
-            "user": "WINDOWS_USERNAME",
-            "ssh_key_path": "/home/jokh38/.ssh/id_rsa_for_localdata",
-            "remote_base_dir": "D:/MOQUI_RESULTS",
-        },
         "ExecutionHandler": {
             "GpuMonitor": "local",
-            "Workflow": "remote"
+            "Workflow": "local"
         }
     }
     config_file = tmp_path / "config.yaml"
@@ -39,28 +33,8 @@ def test_load_execution_handler_settings(temp_config_file: Path):
         raise AssertionError("Settings should expose execution_handler")
     if settings.execution_handler["GpuMonitor"] != "local":
         raise AssertionError("GpuMonitor handler mode should be local")
-    if settings.execution_handler["Workflow"] != "remote":
-        raise AssertionError("Workflow handler mode should be remote")
-
-def test_get_pc_localdata_connection(temp_config_file: Path):
-    """
-    Tests that the get_pc_localdata_connection method correctly retrieves
-    the connection details from the config file.
-    """
-    settings = Settings(config_path=temp_config_file)
-
-    # This method doesn't exist yet, so this test should fail.
-    connection_info = settings.get_pc_localdata_connection()
-
-    expected_info = {
-        "host": "PC_LOCALDATA_IP_ADDRESS",
-        "user": "WINDOWS_USERNAME",
-        "ssh_key_path": "/home/jokh38/.ssh/id_rsa_for_localdata",
-        "remote_base_dir": "D:/MOQUI_RESULTS",
-    }
-
-    if connection_info != expected_info:
-        raise AssertionError(f"Unexpected connection info: {connection_info!r}")
+    if settings.execution_handler["Workflow"] != "local":
+        raise AssertionError("Workflow handler mode should be local")
 
 
 def test_repo_config_uses_built_moqui_runtime_dir() -> None:

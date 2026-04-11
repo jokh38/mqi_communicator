@@ -35,7 +35,7 @@ class TestSettingsPydanticIntegration:
                 "polling_interval_seconds": 5,
                 "coarse_phase_progress": {
                     "CSV_INTERPRETING": 10.0,
-                    "UPLOADING": 20.0,
+                    "SIMULATION_RUNNING": 40.0,
                     "COMPLETED": 100.0
                 }
             },

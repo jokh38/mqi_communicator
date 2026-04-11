@@ -10,10 +10,8 @@ from pathlib import Path
 
 from src.domain.states import (
     InitialState,
-    FileUploadState,
-    HpcExecutionState,
-    DownloadState,
-    PostprocessingState,
+    SimulationState,
+    ResultValidationState,
     CompletedState,
     FailedState,
     handle_state_exceptions,
@@ -57,7 +55,7 @@ class TestErrorHandlingPattern:
 
         @handle_state_exceptions
         def normal_execute(state, context):
-            return FileUploadState()
+            return SimulationState()
 
         mock_state = Mock()
         mock_context = Mock()
@@ -65,7 +63,7 @@ class TestErrorHandlingPattern:
         result = normal_execute(mock_state, mock_context)
 
         # Pattern verification: Normal return value should be preserved
-        assert isinstance(result, FileUploadState)
+        assert isinstance(result, SimulationState)
 
 
 class TestProgressTrackingPattern:
@@ -107,7 +105,7 @@ class TestProgressTrackingPattern:
             result = state.execute(mock_context)
 
             # Pattern verification: Workflow should continue normally
-            assert isinstance(result, FileUploadState)
+            assert isinstance(result, SimulationState)
             # Pattern verification: update_beam_progress should NOT be called due to error
             mock_context.case_repo.update_beam_progress.assert_not_called()
         finally:
@@ -152,7 +150,7 @@ class TestProgressTrackingPattern:
             result = state.execute(mock_context)
 
             # Pattern verification: Workflow should continue normally
-            assert isinstance(result, FileUploadState)
+            assert isinstance(result, SimulationState)
             # Pattern verification: update_beam_progress should NOT be called (p is None)
             mock_context.case_repo.update_beam_progress.assert_not_called()
         finally:
@@ -221,26 +219,17 @@ class TestStateTransitionPattern:
         """Pattern: States transition in a predictable order"""
 
         # This test documents the expected state transition sequence
-        # InitialState -> FileUploadState -> HpcExecutionState ->
-        # DownloadState -> PostprocessingState -> UploadResultToPCLocalDataState -> CompletedState
-
-        # We verify transitions by checking return types
-        # (Actual state execution is tested in other files)
-
-        from src.domain.states import UploadResultToPCLocalDataState
+        # InitialState -> SimulationState -> ResultValidationState -> CompletedState
 
         # Pattern verification: Document the state sequence
         expected_sequence = [
-            (InitialState, FileUploadState),
-            (FileUploadState, HpcExecutionState),
-            (HpcExecutionState, DownloadState),
-            (DownloadState, PostprocessingState),
-            (PostprocessingState, UploadResultToPCLocalDataState),
-            (UploadResultToPCLocalDataState, CompletedState),
+            (InitialState, SimulationState),
+            (SimulationState, ResultValidationState),
+            (ResultValidationState, CompletedState),
             (CompletedState, type(None)),  # Terminal state returns None
         ]
 
         # This test serves as documentation of the expected workflow
-        assert len(expected_sequence) == 7
+        assert len(expected_sequence) == 4
         assert expected_sequence[0][0] == InitialState
         assert expected_sequence[-1][1] == type(None)

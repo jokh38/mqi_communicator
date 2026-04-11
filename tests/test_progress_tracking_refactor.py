@@ -10,10 +10,8 @@ from pathlib import Path
 
 from src.domain.states import (
     InitialState,
-    FileUploadState,
-    HpcExecutionState,
-    DownloadState,
-    PostprocessingState,
+    SimulationState,
+    ResultValidationState,
     CompletedState,
 )
 
@@ -63,7 +61,7 @@ class TestProgressTrackingBaseline:
                 result = state.execute(mock_context)
 
                 # Should continue to next state
-                assert isinstance(result, FileUploadState)
+                assert isinstance(result, SimulationState)
 
                 # Should NOT update progress due to error
                 mock_context.case_repo.update_beam_progress.assert_not_called()
@@ -79,8 +77,8 @@ class TestProgressTrackingBaseline:
             # Reset mock for next test case
             mock_context.case_repo.update_beam_progress.reset_mock()
 
-    def test_initial_state_updates_progress_when_config_valid(self):
-        """Baseline: InitialState should update progress when config is valid"""
+    def test_initial_state_does_not_update_progress(self):
+        """InitialState is a validation-only step and does not update progress"""
         state = InitialState()
         mock_context = Mock()
         mock_context.id = "test_beam_456"
@@ -113,16 +111,13 @@ class TestProgressTrackingBaseline:
         tps_file.touch()
 
         try:
-            # Baseline verification: Should update progress
             result = state.execute(mock_context)
 
             # Should continue to next state
-            assert isinstance(result, FileUploadState)
+            assert isinstance(result, SimulationState)
 
-            # Should update progress with value from config
-            mock_context.case_repo.update_beam_progress.assert_called_once_with(
-                "test_beam_456", 10.0
-            )
+            # InitialState does not update progress
+            mock_context.case_repo.update_beam_progress.assert_not_called()
         finally:
             # Cleanup
             if tps_file.exists():
@@ -131,57 +126,6 @@ class TestProgressTrackingBaseline:
                 tps_dir.rmdir()
             if tps_dir.parent.exists():
                 tps_dir.parent.rmdir()
-
-    def test_file_upload_state_updates_progress_in_remote_mode(self):
-        """Baseline: FileUploadState should update progress in remote mode"""
-        state = FileUploadState()
-        mock_context = Mock()
-        mock_context.id = "test_beam_789"
-        mock_context.logger = Mock()
-        mock_context.case_repo = Mock()
-        mock_context.shared_context = {"tps_file_path": Path("/tmp/test.in")}
-        mock_context.execution_handler = Mock()
-
-        # Create mock TPS file
-        Path("/tmp/test.in").touch()
-
-        # Remote mode + valid config
-        mock_context.settings = Mock()
-        mock_context.settings.get_handler_mode = Mock(return_value='remote')
-        mock_context.settings.get_progress_tracking_config = Mock(
-            return_value={
-                "coarse_phase_progress": {
-                    "UPLOADING": 20.0
-                }
-            }
-        )
-        mock_context.settings.get_path = Mock(return_value="/remote/beam/path")
-
-        # Mock beam data
-        mock_beam = Mock()
-        mock_beam.parent_case_id = "case_789"
-        mock_context.case_repo.get_beam = Mock(return_value=mock_beam)
-
-        # Mock successful upload
-        mock_result = Mock()
-        mock_result.success = True
-        mock_context.execution_handler.upload_file = Mock(return_value=mock_result)
-
-        try:
-            # Baseline verification: Should update progress
-            result = state.execute(mock_context)
-
-            # Should continue to next state
-            assert isinstance(result, HpcExecutionState)
-
-            # Should update progress with value from config
-            mock_context.case_repo.update_beam_progress.assert_called_once_with(
-                "test_beam_789", 20.0
-            )
-        finally:
-            # Cleanup
-            if Path("/tmp/test.in").exists():
-                Path("/tmp/test.in").unlink()
 
     def test_completed_state_uses_default_progress_value(self):
         """Baseline: CompletedState should use default 100.0 if config missing"""

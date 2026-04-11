@@ -95,7 +95,7 @@ class TestCaseRepositoryMapping(unittest.TestCase):
             "beam_id": "BEAM001",
             "parent_case_id": "TEST001",
             "beam_path": "/path/to/beam",
-            "status": "hpc_running",
+            "status": "simulation_running",
             "progress": 42.0,
             "created_at": "2025-01-01T10:00:00",
             "updated_at": "2025-01-01T11:00:00",
@@ -109,7 +109,7 @@ class TestCaseRepositoryMapping(unittest.TestCase):
         self.assertEqual(result.beam_id, "BEAM001")
         self.assertEqual(result.parent_case_id, "TEST001")
         self.assertEqual(result.beam_path, Path("/path/to/beam"))
-        self.assertEqual(result.status, BeamStatus.HPC_RUNNING)
+        self.assertEqual(result.status, BeamStatus.SIMULATION_RUNNING)
         self.assertEqual(result.progress, 42.0)
         self.assertEqual(result.created_at, datetime(2025, 1, 1, 10, 0, 0))
         self.assertEqual(result.updated_at, datetime(2025, 1, 1, 11, 0, 0))
@@ -141,11 +141,8 @@ class TestCaseRepositoryMapping(unittest.TestCase):
         statuses = [
             ("pending", BeamStatus.PENDING),
             ("csv_interpreting", BeamStatus.CSV_INTERPRETING),
-            ("uploading", BeamStatus.UPLOADING),
             ("tps_generation", BeamStatus.TPS_GENERATION),
-            ("hpc_queued", BeamStatus.HPC_QUEUED),
-            ("hpc_running", BeamStatus.HPC_RUNNING),
-            ("downloading", BeamStatus.DOWNLOADING),
+            ("simulation_running", BeamStatus.SIMULATION_RUNNING),
             ("postprocessing", BeamStatus.POSTPROCESSING),
             ("completed", BeamStatus.COMPLETED),
             ("failed", BeamStatus.FAILED),
