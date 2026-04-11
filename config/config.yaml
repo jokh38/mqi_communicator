@@ -97,15 +97,12 @@ gpu:
 # UI - Dashboard 설정
 # =====================================================================================
 ui:
+  mode: "web"                        # Choose "web" (HTMX) or "terminal" (Rich UI)
   auto_start: true
   port: 8501
   web:
-    enabled: true                    # Enable ttyd web interface
     port: 8080                        # Port for web dashboard
-    ttyd_path: "ttyd"                 # Path to ttyd executable (uses PATH by default)
-    bind_address: "0.0.0.0"          # Interface to bind to
-    permit_write: false               # Allow keyboard input through web
-    reconnect: true                   # Auto-reconnect on disconnect
+    host: "0.0.0.0"                   # Interface to bind to
 
 
 # =====================================================================================

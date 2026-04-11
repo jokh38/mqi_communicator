@@ -227,42 +227,28 @@ class GpuConfig(BaseModel):
     )
 
 
+class UIMode(str, Enum):
+    """Valid UI modes"""
+    TERMINAL = "terminal"
+    WEB = "web"
+
+
 class WebConfig(BaseModel):
-    """Web dashboard (ttyd) configuration.
+    """Web dashboard configuration.
 
     Attributes:
-        enabled: Whether the ttyd web interface is enabled
         port: Port for the web dashboard
-        ttyd_path: Path to the ttyd executable
-        bind_address: Network interface to bind to
-        permit_write: Allow keyboard input through the web interface
-        reconnect: Auto-reconnect on disconnect
+        host: Network interface to bind to
     """
-    enabled: bool = Field(
-        default=False,
-        description="Whether the ttyd web interface is enabled"
-    )
     port: int = Field(
         default=8080,
         ge=1,
         le=65535,
         description="Port for the web dashboard"
     )
-    ttyd_path: str = Field(
-        default="ttyd",
-        description="Path to the ttyd executable"
-    )
-    bind_address: str = Field(
+    host: str = Field(
         default="0.0.0.0",
         description="Network interface to bind to"
-    )
-    permit_write: bool = Field(
-        default=False,
-        description="Allow keyboard input through the web interface"
-    )
-    reconnect: bool = Field(
-        default=True,
-        description="Auto-reconnect on disconnect"
     )
 
 
@@ -270,12 +256,17 @@ class UIConfig(BaseModel):
     """UI configuration with validation.
 
     Attributes:
+        mode: UI execution mode (terminal or web)
         auto_start: Whether to auto-start the dashboard on app launch
         port: Port for the UI server
-        web: Web dashboard (ttyd) sub-configuration
+        web: Web dashboard sub-configuration
         refresh_interval_seconds: UI refresh interval
         max_cases_display: Maximum number of cases to display
     """
+    mode: UIMode = Field(
+        default=UIMode.WEB,
+        description="UI execution mode (terminal or web)"
+    )
     auto_start: bool = Field(
         default=False,
         description="Whether to auto-start the dashboard on app launch"
@@ -288,7 +279,7 @@ class UIConfig(BaseModel):
     )
     web: WebConfig = Field(
         default_factory=WebConfig,
-        description="Web dashboard (ttyd) sub-configuration"
+        description="Web dashboard sub-configuration"
     )
     refresh_interval_seconds: int = Field(
         default=1,

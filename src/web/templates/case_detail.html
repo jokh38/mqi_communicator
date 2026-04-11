@@ -1,0 +1,101 @@
+{% if case %}
+<div class="h-full flex flex-col items-start w-full text-left">
+    <div class="border-b w-full pb-4 mb-6">
+        <h2 class="text-2xl font-bold text-gray-800">📄 Case: {{ case.case_display.case_id }}</h2>
+        <p class="text-sm text-gray-500 mt-1">Elapsed Time: {{ case.case_display.elapsed_time | round(1) }}s</p>
+    </div>
+
+    <!-- 1. Process Status -->
+    <div class="w-full mb-8">
+        <h3 class="text-lg font-semibold text-gray-700 mb-4 border-b pb-2">1️⃣ Process Status</h3>
+        <ul class="space-y-3">
+            <li class="flex items-center text-sm">
+                {% if case.case_display.interpreter_done %}
+                    <span class="text-green-500 mr-2 text-xl">✅</span>
+                    <span class="font-medium">DICOM Import:</span> <span class="ml-2 text-gray-600">Successful (Parsed RTPlan, RTStruct)</span>
+                {% else %}
+                    <span class="text-gray-400 mr-2 text-xl">⏳</span>
+                    <span class="font-medium text-gray-500">DICOM Import:</span> <span class="ml-2 text-gray-400">Pending or Failed</span>
+                {% endif %}
+            </li>
+
+            <li class="flex items-center text-sm">
+                {% if case.case_display.progress >= 50.0 %}
+                    <span class="text-green-500 mr-2 text-xl">✅</span>
+                    <span class="font-medium">TPS Generation:</span> <span class="ml-2 text-gray-600">Completed for {{ case.case_display.beam_count }} beam(s)</span>
+                {% elif case.case_display.progress > 10.0 %}
+                    <span class="text-blue-500 mr-2 text-xl">⏳</span>
+                    <span class="font-medium text-blue-600">TPS Generation:</span> <span class="ml-2 text-gray-500">Processing...</span>
+                {% else %}
+                    <span class="text-gray-400 mr-2 text-xl">⏳</span>
+                    <span class="font-medium text-gray-500">TPS Generation:</span> <span class="ml-2 text-gray-400">Pending</span>
+                {% endif %}
+            </li>
+            
+            <li class="flex items-center text-sm">
+                {% if case.case_display.status.value == 'COMPLETED' %}
+                    <span class="text-green-500 mr-2 text-xl">✅</span>
+                    <span class="font-medium">PTN Export & Verification:</span> <span class="ml-2 text-gray-600">Successful</span>
+                {% elif case.case_display.status.value == 'FAILED' %}
+                    <span class="text-red-500 mr-2 text-xl">❌</span>
+                    <span class="font-medium">Process Failed:</span> <span class="ml-2 text-red-600">{{ case.case_display.error_message or 'Unknown Error' }}</span>
+                {% else %}
+                    <span class="text-gray-400 mr-2 text-xl">⏳</span>
+                    <span class="font-medium text-gray-500">PTN Export & Verification:</span> <span class="ml-2 text-gray-400">Pending</span>
+                {% endif %}
+            </li>
+        </ul>
+    </div>
+
+    <!-- 2. Gamma Analysis Results (Mocked for Demo based on requirement) -->
+    <div class="w-full bg-gray-50 rounded-lg p-5 border border-gray-200">
+        <h3 class="text-lg font-semibold text-gray-700 mb-4 border-b pb-2">2️⃣ Gamma Analysis Results (PTN vs DCM)</h3>
+        
+        {% if case.case_display.status.value == 'COMPLETED' %}
+            <div class="flex items-center space-x-4 mb-4">
+                <span class="text-sm font-medium text-gray-700">Overall Pass Rate:</span>
+                <span class="px-3 py-1 bg-green-100 text-green-800 font-bold rounded-full text-lg">98.5% 🟢</span>
+            </div>
+            
+            <p class="text-sm text-gray-600 mb-4"><strong>Criteria:</strong> 3% Dose Difference / 2mm Distance to Agreement (DTA)</p>
+            
+            <div class="grid grid-cols-2 gap-4 text-sm text-gray-600 mb-6 bg-white p-3 rounded border">
+                <div>
+                    <strong>Reference (DCM):</strong><br>
+                    <code class="text-xs bg-gray-100 p-1 rounded">plan_dose_reference.dcm</code>
+                </div>
+                <div>
+                    <strong>Calculated (PTN):</strong><br>
+                    <code class="text-xs bg-gray-100 p-1 rounded">tps_output_calculated.ptn</code>
+                </div>
+            </div>
+
+            <h4 class="text-sm font-bold text-gray-700 mb-2">Detailed Metrics:</h4>
+            <ul class="list-disc pl-5 text-sm text-gray-600 space-y-1 mb-6">
+                <li>Max Dose Difference: <span class="font-medium">1.2%</span></li>
+                <li>Mean Gamma: <span class="font-medium">0.35</span></li>
+                <li>Points Analyzed: <span class="font-medium">1,250,400</span></li>
+            </ul>
+
+            <div class="flex space-x-4">
+                <button class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded shadow text-sm transition">
+                    📥 Download Full PDF Report
+                </button>
+                <button class="bg-white hover:bg-gray-50 text-indigo-600 border border-indigo-600 font-medium py-2 px-4 rounded shadow text-sm transition">
+                    📥 Download .PTN File
+                </button>
+            </div>
+        {% else %}
+            <div class="text-center text-gray-400 py-8">
+                <span class="text-2xl mb-2 block">🔬</span>
+                <p>Gamma analysis results will be available once the case is completely processed.</p>
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% else %}
+<div class="text-center w-full">
+    <span class="text-4xl block mb-2">⚠️</span>
+    <p class="text-gray-500">Case not found.</p>
+</div>
+{% endif %}

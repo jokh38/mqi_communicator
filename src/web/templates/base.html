@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MQI Communicator Dashboard</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .htmx-indicator{
+            display:none;
+        }
+        .htmx-request .htmx-indicator{
+            display:inline;
+        }
+        .htmx-request.htmx-indicator{
+            display:inline;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800 h-screen flex flex-col font-sans">
+    
+    <!-- Top Navigation Bar -->
+    <header class="bg-indigo-900 text-white shadow-md p-4 flex justify-between items-center">
+        <div class="flex items-center space-x-4">
+            <h1 class="text-xl font-bold">MQI Communicator</h1>
+            <span class="text-sm bg-green-500 text-white px-2 py-1 rounded-full">System: Online</span>
+        </div>
+        
+        <nav class="flex space-x-4">
+            <button 
+                class="px-4 py-2 bg-indigo-800 hover:bg-indigo-700 rounded transition font-medium"
+                hx-get="/ui/workflow" 
+                hx-target="#main-dashboard">
+                🔄 Workflow Monitor
+            </button>
+            <button 
+                class="px-4 py-2 bg-indigo-800 hover:bg-indigo-700 rounded transition font-medium"
+                hx-get="/ui/cases" 
+                hx-target="#main-dashboard">
+                📁 Case & Result Browser
+            </button>
+        </nav>
+    </header>
+
+    <!-- Main Content Area -->
+    <main id="main-dashboard" class="flex-grow p-6 overflow-hidden flex flex-col"
+          hx-get="/ui/workflow" hx-trigger="load">
+        <div class="flex justify-center items-center h-full text-gray-500">
+            <span class="text-xl">Loading Dashboard...</span>
+        </div>
+    </main>
+
+</body>
+</html>

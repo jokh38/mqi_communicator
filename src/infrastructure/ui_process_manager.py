@@ -65,14 +65,11 @@ class UIProcessManager:
         try:
             # Check if web mode is enabled
             ui_config = self.config.get_ui_config()
-            web_config = ui_config.get("web", {})
-            web_enabled = web_config.get("enabled", False)
+            mode = ui_config.get("mode", "web")
+            web_enabled = (mode == "web")
 
-            # Validate ttyd availability and port if web mode
             if web_enabled:
-                if not self._validate_ttyd_available():
-                    raise RuntimeError("ttyd not available")
-
+                web_config = ui_config.get("web", {})
                 port = web_config.get("port", 8080)
                 if not self._ensure_web_port_ready(port):
                     raise RuntimeError(f"Port {port} already in use")
@@ -89,11 +86,15 @@ class UIProcessManager:
 
             # Determine process configuration based on mode
             if web_enabled:
-                # Web mode: Run as background process
+                # Web mode: Run as background process, setting an env var for the db path
+                env = os.environ.copy()
+                env["DB_PATH"] = str(self.database_path)
+                
                 popen_kwargs = {
                     "cwd": self.project_root,
                     "stdout": subprocess.PIPE,
                     "stderr": subprocess.PIPE,
+                    "env": env,
                 }
 
                 if platform.system() == "Windows":
@@ -126,12 +127,6 @@ class UIProcessManager:
             wait_time = 3.0 if web_enabled else 2.0
             time.sleep(wait_time)
 
-            # Verify ttyd startup if web mode
-            if web_enabled:
-                if not self._verify_ttyd_startup():
-                    if self.logger:
-                        self.logger.warning("Could not confirm ttyd startup, but process is running")
-
             # Check if process is still running
             poll_result = self._process.poll()
             if poll_result is None:
@@ -145,8 +140,16 @@ class UIProcessManager:
             else:
                 # Process failed to start
                 if self.logger:
+                    # Capture stdout and stderr for web mode debugging
+                    stdout_str, stderr_str = "", ""
+                    if web_enabled and self._process.stdout and self._process.stderr:
+                        stdout_str = self._process.stdout.read().decode('utf-8', errors='ignore')
+                        stderr_str = self._process.stderr.read().decode('utf-8', errors='ignore')
+                    
                     self.logger.error("UI process failed to start.", {
-                        "return_code": poll_result
+                        "return_code": poll_result,
+                        "stdout": stdout_str,
+                        "stderr": stderr_str
                     })
                 self._process = None
                 return False
@@ -261,12 +264,29 @@ class UIProcessManager:
         return self.start()
     
     def _get_ui_command(self) -> list[str]:
-        """Constructs the command to launch the UI process (optionally via ttyd).
+        """Constructs the command to launch the UI process based on mode.
 
         Returns:
             list[str]: A list of command arguments.
         """
-        # Base dashboard command
+        ui_config = self.config.get_ui_config()
+        mode = ui_config.get("mode", "web")
+
+        if mode == "web":
+            web_config = ui_config.get("web", {})
+            host = web_config.get("host", "0.0.0.0")
+            port = web_config.get("port", 8080)
+            
+            cmd = [
+                sys.executable,
+                "-m", "uvicorn",
+                "src.web.app:app",
+                "--host", str(host),
+                "--port", str(port)
+            ]
+            return cmd
+        
+        # Terminal mode
         base_command = [
             sys.executable,
             "-m", "src.ui.dashboard",
@@ -275,34 +295,7 @@ class UIProcessManager:
         if self.config_path:
             base_command.extend(["--config", str(self.config_path)])
 
-        # Check if web mode is enabled
-        ui_config = self.config.get_ui_config()
-        web_config = ui_config.get("web", {})
-
-        if not web_config.get("enabled", False):
-            return base_command
-
-        # Build ttyd wrapper command
-        ttyd_cmd = [
-            web_config.get("ttyd_path", "ttyd"),
-            "-p", str(web_config.get("port", 8080)),
-            "-i", web_config.get("bind_address", "0.0.0.0"),
-            "-t", "titleFixed=MOQUI Communicator Dashboard",
-        ]
-
-        # Optional ttyd flags
-        if web_config.get("permit_write", False):
-            ttyd_cmd.append("-W")
-
-        if not web_config.get("reconnect", True):
-            ttyd_cmd.append("-o")
-
-        # Combine: ttyd [options] -- python -m src.ui.dashboard [args]
-        # '--' is required so ttyd treats everything after it as the command to run
-        ttyd_cmd.append("--")
-        ttyd_cmd.extend(base_command)
-
-        return ttyd_cmd
+        return base_command
 
     def _verify_ttyd_startup(self, timeout: int = 5) -> bool:
         """
