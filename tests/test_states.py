@@ -53,7 +53,7 @@ def test_simulation_state_uses_injected_handler(mock_workflow_manager, tmp_path)
     mock_workflow_manager.settings.get_path.side_effect = lambda key, **_: {
         "tps_input_file": "/tmp/input.in",
         "mqi_run_dir": "/tmp/mqi",
-        "remote_log_path": "/tmp/log.txt",
+        "log_path": "/tmp/log.txt",
         "simulation_output_dir": sim_output_dir,
     }[key]
     mock_workflow_manager.settings.get_command.return_value = "sim_command"
@@ -79,7 +79,7 @@ def test_simulation_state_failure_transitions_to_failed_state(mock_workflow_mana
     mock_workflow_manager.settings.get_path.side_effect = lambda key, **_: {
         "tps_input_file": "/tmp/input.in",
         "mqi_run_dir": "/tmp/mqi",
-        "remote_log_path": "/tmp/log.txt",
+        "log_path": "/tmp/log.txt",
         "simulation_output_dir": sim_output_dir,
     }[key]
     mock_workflow_manager.settings.get_command.return_value = "sim_command"

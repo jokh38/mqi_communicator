@@ -143,7 +143,7 @@ class Settings:
 
     def get_handler_mode(self, handler_name: str) -> str:
         """
-        Determines the execution mode ('local' or 'remote') for a given handler.
+        Determines the execution mode for a given handler.
         """
         mode = self.execution_handler.get(handler_name)
         if not mode:

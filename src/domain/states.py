@@ -172,10 +172,10 @@ class SimulationState(WorkflowState):
             beam_id=context.id
         )
 
-        # Get mqi_run_dir and remote_log_path for command template
+        # Get mqi_run_dir and log_path for command template
         mqi_run_dir = context.settings.get_path("mqi_run_dir", handler_name=handler_name)
-        remote_log_path = context.settings.get_path(
-            "remote_log_path",
+        log_path = context.settings.get_path(
+            "log_path",
             handler_name=handler_name,
             case_id=beam.parent_case_id,
             beam_id=context.id
@@ -201,10 +201,10 @@ class SimulationState(WorkflowState):
         # Build and execute the simulation command
         command = context.settings.get_command(
             handler_name=handler_name,
-            command_key="remote_submit_simulation",
+            command_key="submit_simulation",
             tps_input_file=tps_input_file,
             mqi_run_dir=mqi_run_dir,
-            remote_log_path=remote_log_path,
+            log_path=log_path,
             case_id=beam.parent_case_id,
             beam_id=context.id,
         )
@@ -215,7 +215,7 @@ class SimulationState(WorkflowState):
         # Monitor log file for progress and completion while process runs
         wait_res = handler.wait_for_job_completion(
             job_id=None,
-            log_file_path=remote_log_path,
+            log_file_path=log_path,
             beam_id=context.id,
             case_repo=context.case_repo,
             process=sim_process

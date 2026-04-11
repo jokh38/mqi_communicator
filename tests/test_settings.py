@@ -48,7 +48,7 @@ def test_repo_config_runs_built_tps_env_from_moqui_root() -> None:
     settings = Settings(config_path=Path("config/config.yaml"))
 
     command = settings.get_command(
-        "remote_submit_simulation",
+        "submit_simulation",
         handler_name="HpcJobSubmitter",
         case_id="55061194",
         beam_id="55061194_2025042401440800",
@@ -65,7 +65,7 @@ def test_repo_config_uses_single_case_prefix_in_sim_log_name() -> None:
     settings = Settings(config_path=Path("config/config.yaml"))
 
     log_path = settings.get_path(
-        "remote_log_path",
+        "log_path",
         handler_name="HpcJobSubmitter",
         case_id="55061194",
         beam_id="55061194_2025042401440800",

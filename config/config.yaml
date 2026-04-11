@@ -1,5 +1,5 @@
 # =====================================================================================
-# Execution Handler - 각 프로세스 및 워크플로우 단계별 실행 모드(local/remote) 설정
+# Execution Handler - 각 프로세스 및 워크플로우 단계별 실행 모드 설정
 # =====================================================================================
 ExecutionHandler:
   GpuMonitor: "local"
@@ -24,7 +24,7 @@ paths:
     mqi_run_dir: "{base_directory}/moqui"
     raw_to_dicom_dir: "{base_directory}/RawToDCM"
     tps_input_file: "{base_directory}/data/Outputs_csv/{case_id}/moqui_tps_{beam_id}.in"  # Generated per-beam TPS files
-    remote_log_path: "{base_directory}/mqi_communicator/logs/sim_{beam_id}.log"
+    log_path: "{base_directory}/mqi_communicator/logs/sim_{beam_id}.log"
 
 # =====================================================================================
 # Executables - 환경별 실행 파일 경로 설정
@@ -45,8 +45,8 @@ command_templates:
     post_process: >-
       cd {raw_to_dicom_dir} && {python} {raw_to_dicom_script} --input {input_file} --output {output_dir} --dosetype 2d
     # W-7 fix: Remove trailing & to allow proper process tracking
-    remote_submit_simulation: "cd {mqi_run_dir} && ./tps_env/tps_env {tps_input_file} > {remote_log_path} 2>&1"
-    cleanup: "rm -rf {remote_path}"
+    submit_simulation: "cd {mqi_run_dir} && ./tps_env/tps_env {tps_input_file} > {log_path} 2>&1"
+    cleanup: "rm -rf {target_path}"
 
 # =====================================================================================
 # Database - SQLite 데이터베이스 설정

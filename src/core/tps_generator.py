@@ -95,7 +95,7 @@ class TpsGenerator:
             case_path (Path): Path to the case directory.
             case_id (str): Unique identifier for the case.
             gpu_assignments (List[Dict[str, Any]]): List of GPU assignments with beam numbers and GPU IDs.
-            execution_mode (str): "local" or "remote" - determines path construction.
+            execution_mode (str): "local" - determines path construction.
             output_dir (Optional[Path]): Directory where the TPS file should be saved. If None, uses case_path.
             beam_name (Optional[str]): Beam name to use in filename. If None, uses default "moqui_tps.in".
             beam_number (Optional[int]): DICOM beam number (1-indexed) for this specific beam.
@@ -218,7 +218,7 @@ class TpsGenerator:
         Args:
             case_path (Path): Path to the case directory.
             case_id (str): Unique identifier for the case.
-            execution_mode (str): "local" or "remote" execution mode.
+            execution_mode (str): "local" execution mode.
 
         Returns:
             Dict[str, Any]: Dictionary containing format context for templates.

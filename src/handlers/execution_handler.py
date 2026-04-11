@@ -259,21 +259,21 @@ class ExecutionHandler:
         cwd = context.get('cwd')
         return self.execute_command(command, cwd=cwd)
 
-    def upload_file(self, local_path: str, remote_path: str) -> UploadResult:
+    def upload_file(self, local_path: str, dest_path: str) -> UploadResult:
         """
         Copies a file to the target path (local operation).
         """
         try:
-            target_dir = os.path.dirname(remote_path)
+            target_dir = os.path.dirname(dest_path)
             if target_dir:
                 os.makedirs(target_dir, exist_ok=True)
-            shutil.copy(local_path, remote_path)
+            shutil.copy(local_path, dest_path)
             return UploadResult(success=True)
         except Exception as e:
             self.logger.error("File copy failed", context={"error": str(e)})
             return UploadResult(success=False, error=str(e))
 
-    def download_file(self, remote_path: str, local_path: str) -> DownloadResult:
+    def download_file(self, src_path: str, local_path: str) -> DownloadResult:
         """
         Copies a file from source to destination (local operation).
         """
@@ -281,18 +281,18 @@ class ExecutionHandler:
             local_dir = os.path.dirname(local_path)
             if local_dir:
                 os.makedirs(local_dir, exist_ok=True)
-            shutil.copy(remote_path, local_path)
+            shutil.copy(src_path, local_path)
             return DownloadResult(success=True)
         except Exception as e:
             self.logger.error("File copy failed", context={"error": str(e)})
             return DownloadResult(success=False, error=str(e))
 
-    def download_directory(self, remote_dir: str, local_dir: str) -> DownloadResult:
+    def download_directory(self, src_dir: str, local_dir: str) -> DownloadResult:
         """Copies a directory tree (local operation)."""
         try:
             local_dir_path = Path(local_dir)
             local_dir_path.mkdir(parents=True, exist_ok=True)
-            shutil.copytree(remote_dir, local_dir, dirs_exist_ok=True)
+            shutil.copytree(src_dir, local_dir, dirs_exist_ok=True)
             return DownloadResult(success=True)
         except Exception as e:
             self.logger.error("Directory copy failed", context={"error": str(e)})
