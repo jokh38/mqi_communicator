@@ -26,10 +26,10 @@
                         hx-trigger="change"
                         hx-target="#main-dashboard"
                         hx-include="closest form">
-                    <option value="All" {% if status == 'All' %}selected{% endif %}>All</option>
-                    <option value="COMPLETED" {% if status == 'COMPLETED' %}selected{% endif %}>Completed</option>
-                    <option value="FAILED" {% if status == 'FAILED' %}selected{% endif %}>Failed</option>
-                    <option value="PROCESSING" {% if status == 'PROCESSING' %}selected{% endif %}>Processing</option>
+                    <option value="all" {% if status == 'all' %}selected{% endif %}>All</option>
+                    <option value="completed" {% if status == 'completed' %}selected{% endif %}>Completed</option>
+                    <option value="failed" {% if status == 'failed' %}selected{% endif %}>Failed</option>
+                    <option value="processing" {% if status == 'processing' %}selected{% endif %}>Processing</option>
                 </select>
             </div>
             
@@ -64,9 +64,9 @@
                                 hx-target="#case-detail-pane">
                                 <td class="px-4 py-4 text-sm text-gray-900 font-medium">{{ case.case_display.case_id }}</td>
                                 <td class="px-4 py-4 text-sm">
-                                    {% if case.case_display.status.value == 'COMPLETED' %}
+                                    {% if case.case_display.status.value == 'completed' %}
                                         <span class="text-green-600 font-semibold">✅ Completed</span>
-                                    {% elif case.case_display.status.value == 'FAILED' %}
+                                    {% elif case.case_display.status.value == 'failed' %}
                                         <span class="text-red-600 font-semibold">❌ Failed</span>
                                     {% else %}
                                         <span class="text-blue-600 font-semibold">⏳ {{ case.case_display.status.value }}</span>

@@ -140,6 +140,18 @@ class Settings:
         except Exception:
             pass  # Silent fallback
 
+    def _emit_error(self, message: str, context: Optional[Dict[str, Any]] = None) -> None:
+        """Emit error-level log message."""
+        try:
+            if self._logger is not None:
+                if hasattr(self._logger, 'error'):
+                    self._logger.error(message, context or None)
+                    return
+            logging.basicConfig(level=logging.INFO, force=False)
+            logging.getLogger(__name__).error(message)
+        except Exception:
+            print(f"Error: {message}")
+
 
     def get_handler_mode(self, handler_name: str) -> str:
         """
@@ -325,6 +337,12 @@ class Settings:
         if self._validated_config:
             return self._validated_config.gpu.model_dump()
         return self._yaml_config.get("gpu", {})
+
+    def get_validated_config(self) -> AppConfig:
+        """Returns the typed validated Pydantic configuration."""
+        if self._validated_config is None:
+            self._validated_config = AppConfig()
+        return self._validated_config
 
     def get_default_handler(self) -> str:
         """Returns the default handler name from config or a safe fallback."""

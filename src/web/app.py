@@ -1,85 +1,161 @@
+"""FastAPI application for the web dashboard."""
+
 import os
 from pathlib import Path
+from typing import Any, Dict, List
+
 from fastapi import FastAPI, Request
-from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
 
 from src.config.settings import Settings
-from src.infrastructure.logging_handler import StructuredLogger
 from src.database.connection import DatabaseConnection
+from src.infrastructure.logging_handler import StructuredLogger
 from src.repositories.case_repo import CaseRepository
 from src.repositories.gpu_repo import GpuRepository
 from src.ui.provider import DashboardDataProvider
 
-app = FastAPI(title="MQI Communicator Dashboard")
 
-# Get path to templates
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
-# Initialize provider
-db_path = os.environ.get("DB_PATH", "mqi_communicator.db")
-settings = Settings()
-logger = StructuredLogger("web_dashboard", settings.get_logging_config())
 
-db_connection = DatabaseConnection(Path(db_path), settings, logger)
-case_repo = CaseRepository(db_connection, logger)
-gpu_repo = GpuRepository(db_connection, logger, settings)
+def _load_settings() -> Settings:
+    """Load dashboard settings from env or default config path."""
+    config_path = os.environ.get("MQI_CONFIG_PATH")
+    return Settings(Path(config_path)) if config_path else Settings()
 
-provider = DashboardDataProvider(case_repo, gpu_repo, logger)
 
-@app.get("/", response_class=HTMLResponse)
-async def root(request: Request):
-    return templates.TemplateResponse("base.html", {"request": request})
+def _build_provider() -> DashboardDataProvider:
+    """Create a dashboard provider bound to the configured database."""
+    settings = _load_settings()
+    logger = StructuredLogger("web_dashboard", settings.get_logging_config())
 
-@app.get("/ui/workflow", response_class=HTMLResponse)
-async def workflow(request: Request):
-    provider.refresh_all_data()
-    stats = provider.get_system_stats()
-    cases = provider.get_cases_with_beams_data()
-    gpus = provider.get_gpu_data()
-    return templates.TemplateResponse("workflow.html", {
-        "request": request, 
-        "stats": stats, 
-        "cases": cases,
-        "gpus": gpus
-    })
+    db_path = Path(os.environ.get("DB_PATH", settings.get_database_path()))
+    db_connection = DatabaseConnection(db_path, settings, logger)
+    case_repo = CaseRepository(db_connection, logger)
+    gpu_repo = GpuRepository(db_connection, logger, settings)
+    return DashboardDataProvider(case_repo, gpu_repo, logger)
 
-@app.get("/ui/cases", response_class=HTMLResponse)
-async def cases_list(request: Request, search: str = "", status: str = "All", date_start: str = "", date_end: str = ""):
-    provider.refresh_all_data()
-    cases = provider.get_cases_with_beams_data()
-    
-    # Filter cases based on search and status
+
+def _get_provider(request: Request) -> DashboardDataProvider:
+    provider = getattr(request.app.state, "provider", None)
+    if provider is None:
+        provider = _build_provider()
+        request.app.state.provider = provider
+    return provider
+
+
+def _filter_cases(
+    cases: List[Dict[str, Any]],
+    search: str,
+    status: str,
+    date_start: str,
+    date_end: str,
+) -> List[Dict[str, Any]]:
+    """Apply lightweight case list filtering."""
+    normalized_search = search.strip().lower()
+    normalized_status = status.strip().lower()
+
     filtered_cases = []
     for case_data in cases:
-        c_status = case_data['case_display']['status'].value
-        c_id = case_data['case_display']['case_id']
-        
-        if status != "All" and c_status != status:
-            continue
-        if search and search.lower() not in c_id.lower():
-            continue
-            
-        # Basic date filtering logic could be added here
-        filtered_cases.append(case_data)
-        
-    return templates.TemplateResponse("cases.html", {
-        "request": request,
-        "cases": filtered_cases,
-        "search": search,
-        "status": status,
-        "date_start": date_start,
-        "date_end": date_end
-    })
+        case = case_data["case_data"]
+        display = case_data["case_display"]
+        case_status = display["status"].value
+        case_id = display["case_id"]
 
-@app.get("/ui/cases/{case_id}/details", response_class=HTMLResponse)
-async def case_details(request: Request, case_id: str):
-    provider.refresh_all_data()
-    cases = provider.get_cases_with_beams_data()
-    case = next((c for c in cases if c['case_display']['case_id'] == case_id), None)
-    
-    return templates.TemplateResponse("case_detail.html", {
-        "request": request,
-        "case": case
-    })
+        if normalized_status and normalized_status != "all" and case_status != normalized_status:
+            continue
+        if normalized_search and normalized_search not in case_id.lower():
+            continue
+        if date_start and case.created_at.date().isoformat() < date_start:
+            continue
+        if date_end and case.created_at.date().isoformat() > date_end:
+            continue
+
+        filtered_cases.append(case_data)
+
+    return filtered_cases
+
+
+def create_app() -> FastAPI:
+    """Create the FastAPI app."""
+    app = FastAPI(title="MQI Communicator Dashboard")
+
+    @app.get("/", response_class=HTMLResponse)
+    async def root(request: Request) -> HTMLResponse:
+        return templates.TemplateResponse("base.html", {"request": request})
+
+    @app.get("/ui/workflow", response_class=HTMLResponse)
+    async def workflow(request: Request) -> HTMLResponse:
+        provider = _get_provider(request)
+        provider.refresh_all_data()
+        return templates.TemplateResponse(
+            "workflow.html",
+            {
+                "request": request,
+                "stats": provider.get_system_stats(),
+                "cases": provider.get_cases_with_beams_data(),
+                "gpus": provider.get_gpu_data(),
+            },
+        )
+
+    @app.get("/ui/cases", response_class=HTMLResponse)
+    async def cases_list(
+        request: Request,
+        search: str = "",
+        status: str = "all",
+        date_start: str = "",
+        date_end: str = "",
+    ) -> HTMLResponse:
+        provider = _get_provider(request)
+        provider.refresh_all_data()
+
+        raw_cases = provider.case_repo.get_all_cases_with_beams()
+        processed_cases = provider._process_cases_with_beams_data(raw_cases)
+        filtered_cases = _filter_cases(
+            processed_cases,
+            search=search,
+            status=status,
+            date_start=date_start,
+            date_end=date_end,
+        )
+
+        return templates.TemplateResponse(
+            "cases.html",
+            {
+                "request": request,
+                "cases": filtered_cases,
+                "search": search,
+                "status": status,
+                "date_start": date_start,
+                "date_end": date_end,
+            },
+        )
+
+    @app.get("/ui/cases/{case_id}/details", response_class=HTMLResponse)
+    async def case_details(request: Request, case_id: str) -> HTMLResponse:
+        provider = _get_provider(request)
+        raw_case = provider.case_repo.get_case(case_id)
+        beams = provider.case_repo.get_beams_for_case(case_id)
+        workflow_steps = provider.case_repo.get_workflow_steps(case_id)
+
+        case_view = None
+        if raw_case is not None:
+            case_view = provider._process_cases_with_beams_data(
+                [{"case_data": raw_case, "beams": [beam.__dict__ for beam in beams]}]
+            )[0]
+
+        return templates.TemplateResponse(
+            "case_detail.html",
+            {
+                "request": request,
+                "case": case_view,
+                "workflow_steps": workflow_steps,
+            },
+        )
+
+    return app
+
+
+app = create_app()

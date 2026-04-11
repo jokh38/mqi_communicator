@@ -652,6 +652,54 @@ class CaseRepository(BaseRepository):
 
         return results
 
+    def get_all_cases_with_beams(self) -> List[Dict[str, Any]]:
+        """Retrieves all cases with their associated beam data."""
+        self._log_operation("get_all_cases_with_beams")
+
+        case_query = """
+            SELECT case_id, case_path, status, progress, created_at,
+                   updated_at, error_message, assigned_gpu, interpreter_completed
+            FROM cases
+            ORDER BY updated_at DESC, created_at DESC, case_id ASC
+        """
+        case_rows = self._execute_query(case_query, fetch_all=True)
+
+        results = []
+        for case_row in case_rows:
+            case_id = case_row["case_id"]
+
+            beam_query = """
+                SELECT beam_id, status, progress, created_at, updated_at, hpc_job_id, error_message
+                FROM beams
+                WHERE parent_case_id = ?
+                ORDER BY
+                    CASE WHEN beam_id IS NULL THEN 1 ELSE 0 END,
+                    beam_id ASC
+            """
+            beam_rows = self._execute_query(beam_query, (case_id,), fetch_all=True)
+
+            beams = []
+            for beam_row in beam_rows:
+                beams.append({
+                    "beam_id": beam_row["beam_id"],
+                    "status": BeamStatus(beam_row["status"]),
+                    "progress": beam_row["progress"],
+                    "created_at": datetime.fromisoformat(beam_row["created_at"]),
+                    "updated_at": (
+                        datetime.fromisoformat(beam_row["updated_at"])
+                        if beam_row["updated_at"] else None
+                    ),
+                    "hpc_job_id": beam_row["hpc_job_id"],
+                    "error_message": beam_row["error_message"],
+                })
+
+            results.append({
+                "case_data": self._map_row_to_case_data(case_row),
+                "beams": beams,
+            })
+
+        return results
+
     # =================================================================================
     # Private DTO Mapping Helpers
     # =================================================================================

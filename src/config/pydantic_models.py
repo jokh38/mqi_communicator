@@ -237,9 +237,18 @@ class WebConfig(BaseModel):
     """Web dashboard configuration.
 
     Attributes:
+        enabled: Deprecated legacy web toggle kept for backward compatibility
         port: Port for the web dashboard
         host: Network interface to bind to
+        ttyd_path: Deprecated legacy ttyd path kept for backward compatibility
+        bind_address: Deprecated legacy bind address alias
+        permit_write: Deprecated legacy ttyd option kept for backward compatibility
+        reconnect: Deprecated legacy ttyd option kept for backward compatibility
     """
+    enabled: bool = Field(
+        default=False,
+        description="Deprecated legacy web toggle kept for backward compatibility"
+    )
     port: int = Field(
         default=8080,
         ge=1,
@@ -250,6 +259,31 @@ class WebConfig(BaseModel):
         default="0.0.0.0",
         description="Network interface to bind to"
     )
+    ttyd_path: str = Field(
+        default="ttyd",
+        description="Deprecated ttyd path kept for backward compatibility"
+    )
+    bind_address: str = Field(
+        default="0.0.0.0",
+        description="Deprecated bind address alias kept for backward compatibility"
+    )
+    permit_write: bool = Field(
+        default=False,
+        description="Deprecated ttyd option kept for backward compatibility"
+    )
+    reconnect: bool = Field(
+        default=True,
+        description="Deprecated ttyd option kept for backward compatibility"
+    )
+
+    @model_validator(mode='after')
+    def normalize_host_fields(self) -> 'WebConfig':
+        """Keep host and bind_address aligned for old and new config readers."""
+        if self.host == "0.0.0.0" and self.bind_address != "0.0.0.0":
+            self.host = self.bind_address
+        else:
+            self.bind_address = self.host
+        return self
 
 
 class UIConfig(BaseModel):
