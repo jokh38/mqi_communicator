@@ -351,10 +351,10 @@ class DatabaseConnection:
             {"current_targets": assigned_case_targets or ["none"], "target": "beams"},
         )
 
+        conn.execute("PRAGMA foreign_keys = OFF")
         conn.execute("DROP INDEX IF EXISTS idx_gpu_status")
-        conn.execute("ALTER TABLE gpu_resources RENAME TO gpu_resources_legacy")
         conn.execute("""
-            CREATE TABLE gpu_resources (
+            CREATE TABLE gpu_resources_new (
                 uuid TEXT PRIMARY KEY,
                 gpu_index INTEGER NOT NULL,
                 name TEXT NOT NULL,
@@ -370,16 +370,18 @@ class DatabaseConnection:
             )
         """)
         conn.execute("""
-            INSERT INTO gpu_resources (
+            INSERT INTO gpu_resources_new (
                 uuid, gpu_index, name, memory_total, memory_used, memory_free,
                 temperature, utilization, status, assigned_case, last_updated
             )
             SELECT
                 uuid, gpu_index, name, memory_total, memory_used, memory_free,
                 temperature, utilization, status, assigned_case, last_updated
-            FROM gpu_resources_legacy
+            FROM gpu_resources
         """)
-        conn.execute("DROP TABLE gpu_resources_legacy")
+        conn.execute("DROP TABLE gpu_resources")
+        conn.execute("ALTER TABLE gpu_resources_new RENAME TO gpu_resources")
+        conn.execute("PRAGMA foreign_keys = ON")
 
     def close(self) -> None:
         """Closes the database connection."""
