@@ -284,6 +284,21 @@ class CompletedState(WorkflowState):
         if beam:
             update_case_status_from_beams(beam.parent_case_id,
                                           context.case_repo)
+            case_data = context.case_repo.get_case(beam.parent_case_id)
+            if case_data and case_data.status == CaseStatus.COMPLETED:
+                try:
+                    from src.core.dispatcher import run_case_level_ptn_analysis
+
+                    run_case_level_ptn_analysis(
+                        case_id=beam.parent_case_id,
+                        case_path=case_data.case_path,
+                        settings=context.settings,
+                    )
+                except Exception as exc:
+                    context.logger.error(
+                        "Automatic PTN checker follow-up failed",
+                        {"case_id": beam.parent_case_id, "error": str(exc)},
+                    )
         return None  # Terminal state
 
     def get_state_name(self) -> str:

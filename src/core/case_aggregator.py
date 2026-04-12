@@ -11,9 +11,11 @@
 
 import re
 import time
+import hashlib
 import multiprocessing as mp
+from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 
 from src.repositories.case_repo import CaseRepository
 from src.repositories.gpu_repo import GpuRepository
@@ -170,6 +172,208 @@ def _resolve_treatment_beam_index(
     return None
 
 
+def _parse_delivery_timestamp(beam_path: Path) -> Optional[datetime]:
+    candidates = [beam_path.name]
+    planinfo_path = beam_path / "PlanInfo.txt"
+    if planinfo_path.exists():
+        try:
+            for raw_line in planinfo_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+                key, separator, value = raw_line.strip().partition(",")
+                if separator and key.strip() == "TCSC_IRRAD_DATETIME":
+                    candidates.insert(0, value.strip())
+                    break
+        except OSError:
+            pass
+
+    for candidate in candidates:
+        try:
+            return datetime.strptime(candidate, "%Y%m%d%H%M%S%f")
+        except ValueError:
+            continue
+    return None
+
+
+def _delivery_id(case_id: str, delivery_path: Path) -> str:
+    digest = hashlib.sha1(str(delivery_path).encode("utf-8")).hexdigest()[:12]
+    return f"{case_id}_delivery_{digest}"
+
+
+def prepare_case_delivery_data(
+    case_id: str, case_path: Path, settings
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Return unique reference beam jobs plus all mapped delivery records for a case."""
+    logger = LoggerFactory.get_logger(f"dispatcher_{case_id}")
+    beam_jobs: List[Dict[str, Any]] = []
+    delivery_records: List[Dict[str, Any]] = []
+
+    logger.info(f"Scanning for beams for case: {case_id}")
+    validator = DataIntegrityValidator(logger)
+
+    rtplan_path = validator.find_rtplan_file(case_path)
+    if not rtplan_path:
+        logger.error(f"No RT Plan file found in case directory: {case_path}")
+        return [], []
+
+    try:
+        expected_beam_count = validator.parse_rtplan_beam_count(rtplan_path)
+        logger.info(f"RT Plan indicates {expected_beam_count} treatment beams for case {case_id}")
+    except ProcessingError as e:
+        logger.error(f"Failed to parse RT Plan file: {str(e)}")
+        return [], []
+
+    if expected_beam_count == 0:
+        logger.warning(f"RT plan indicates 0 beams for case {case_id}")
+        return [], []
+
+    dicom_parent_dir = rtplan_path.parent
+    all_subdirs = [d for d in case_path.iterdir() if d.is_dir()]
+
+    delivery_folders = []
+    for subdir in all_subdirs:
+        if subdir == dicom_parent_dir:
+            continue
+        has_ptn_files = list(subdir.glob("*.ptn"))
+        has_planinfo = (subdir / "PlanInfo.txt").exists()
+        if has_ptn_files or has_planinfo:
+            delivery_folders.append(subdir)
+
+    delivery_folders.sort(key=lambda path: path.name)
+    if not delivery_folders:
+        logger.error(f"No delivery folders found in case directory: {case_path}")
+        return [], []
+
+    beam_info = validator.get_beam_information(case_path)
+    treatment_beams = beam_info.get("beams", [])
+    rtplan_patient_id = str(beam_info.get("patient_id", "")).strip()
+    if len(treatment_beams) != expected_beam_count:
+        logger.error(
+            "Beam metadata count mismatch during delivery preparation",
+            {"expected": expected_beam_count, "metadata_count": len(treatment_beams)},
+        )
+        return [], []
+
+    reference_by_treatment_index: Dict[int, Dict[str, Any]] = {}
+    unresolved_folders = []
+    unique_treatment_indices = set()
+
+    for delivery_path in delivery_folders:
+        planinfo = _parse_required_planinfo(delivery_path)
+        if not planinfo:
+            logger.error(
+                "Missing or invalid required PlanInfo data",
+                {"delivery_folder": delivery_path.name},
+            )
+            return [], []
+
+        if rtplan_patient_id and planinfo["patient_id"] != rtplan_patient_id:
+            logger.error(
+                "PlanInfo patient ID does not match RT plan patient ID",
+                {
+                    "delivery_folder": delivery_path.name,
+                    "planinfo_patient_id": planinfo["patient_id"],
+                    "rtplan_patient_id": rtplan_patient_id,
+                },
+            )
+            return [], []
+
+        raw_beam_number = int(planinfo["beam_number"])
+        matched_metadata = _match_metadata_by_raw_beam_number(raw_beam_number, treatment_beams)
+        if not matched_metadata:
+            matched_metadata = _map_beam_folder_to_metadata(delivery_path, treatment_beams)
+
+        treatment_beam_index = (
+            _resolve_treatment_beam_index(matched_metadata, treatment_beams)
+            if matched_metadata
+            else None
+        )
+        if not matched_metadata or treatment_beam_index is None:
+            unresolved_folders.append(delivery_path.name)
+            continue
+
+        unique_treatment_indices.add(int(treatment_beam_index))
+        delivery_timestamp = _parse_delivery_timestamp(delivery_path)
+        if delivery_timestamp is None:
+            logger.error(
+                "Could not determine delivery timestamp",
+                {"delivery_folder": delivery_path.name},
+            )
+            return [], []
+
+        beam_id = f"{case_id}_beam_{int(treatment_beam_index)}"
+        record = {
+            "delivery_id": _delivery_id(case_id, delivery_path),
+            "beam_id": beam_id,
+            "delivery_path": delivery_path,
+            "delivery_timestamp": delivery_timestamp.isoformat(),
+            "delivery_date": delivery_timestamp.strftime("%Y-%m-%d"),
+            "raw_beam_number": raw_beam_number,
+            "treatment_beam_index": int(treatment_beam_index),
+            "is_reference_delivery": False,
+        }
+        delivery_records.append(record)
+
+        existing = reference_by_treatment_index.get(int(treatment_beam_index))
+        if existing is None or delivery_timestamp < existing["timestamp"]:
+            reference_by_treatment_index[int(treatment_beam_index)] = {
+                "beam_id": beam_id,
+                "beam_path": delivery_path,
+                "beam_number": int(treatment_beam_index),
+                "timestamp": delivery_timestamp,
+            }
+
+    if unresolved_folders:
+        logger.error(
+            "Failed to map one or more delivery folders to RT Plan beam metadata",
+            {"unresolved_folders": unresolved_folders},
+        )
+        return [], []
+
+    if len(unique_treatment_indices) != expected_beam_count:
+        logger.error(
+            "Unique delivered treatment beam count does not match RT Plan beam count",
+            {
+                "expected": expected_beam_count,
+                "unique_delivered": len(unique_treatment_indices),
+                "delivery_folders": len(delivery_records),
+            },
+        )
+        return [], []
+
+    beam_jobs = sorted(
+        (
+            {
+                "beam_id": info["beam_id"],
+                "beam_path": info["beam_path"],
+                "beam_number": info["beam_number"],
+            }
+            for info in reference_by_treatment_index.values()
+        ),
+        key=lambda job: job["beam_number"],
+    )
+
+    reference_ids = {job["beam_id"]: str(job["beam_path"]) for job in beam_jobs}
+    for record in delivery_records:
+        if reference_ids.get(record["beam_id"]) == str(record["delivery_path"]):
+            record["is_reference_delivery"] = True
+
+    delivery_records.sort(
+        key=lambda record: (
+            record["delivery_timestamp"],
+            record["treatment_beam_index"] or 0,
+            str(record["delivery_path"]),
+        )
+    )
+    logger.info(
+        "Prepared reference beams and delivery records",
+        {
+            "case_id": case_id,
+            "reference_beams": len(beam_jobs),
+            "deliveries": len(delivery_records),
+        },
+    )
+    return beam_jobs, delivery_records
+
+
 def update_case_status_from_beams(case_id: str, case_repo: CaseRepository, logger: StructuredLogger = None):
     """Checks the status of all beams for a given case and updates the parent case's status.
 
@@ -256,152 +460,18 @@ def queue_case(
 def prepare_beam_jobs(
     case_id: str, case_path: Path, settings
 ) -> List[Dict[str, Any]]:
-    """Scans a case directory for beams and returns a list of jobs to be processed by workers.
+    """Return unique reference beam jobs for dose computation.
 
-    Validates expected beams using RT Plan file, filters actual beam folders,
-    and returns a list of {beam_id, beam_path} dicts.
+    When a case contains repeated daily deliveries, the earliest delivery for each
+    treatment beam becomes the reference beam job for moqui_SMC.
     """
-    logger = LoggerFactory.get_logger(f"dispatcher_{case_id}")
-    beam_jobs: List[Dict[str, Any]] = []
-
     try:
-        logger.info(f"Scanning for beams for case: {case_id}")
-        validator = DataIntegrityValidator(logger)
-
-        rtplan_path = validator.find_rtplan_file(case_path)
-        if not rtplan_path:
-            logger.error(f"No RT Plan file found in case directory: {case_path}")
-            return []
-
-        try:
-            expected_beam_count = validator.parse_rtplan_beam_count(rtplan_path)
-            logger.info(f"RT Plan indicates {expected_beam_count} treatment beams for case {case_id}")
-        except ProcessingError as e:
-            logger.error(f"Failed to parse RT Plan file: {str(e)}")
-            return []
-
-        if expected_beam_count == 0:
-            logger.warning(f"RT plan indicates 0 beams for case {case_id}")
-            return []
-
-        dicom_parent_dir = rtplan_path.parent
-        all_subdirs = [d for d in case_path.iterdir() if d.is_dir()]
-
-        beam_folders = []
-        for subdir in all_subdirs:
-            if subdir == dicom_parent_dir:
-                logger.debug(f"Excluding DICOM directory: {subdir.name}")
-                continue
-
-            has_ptn_files = list(subdir.glob("*.ptn"))
-            matches_beam_naming = subdir.name.lower().startswith('beam_') or subdir.name.lower().startswith('field_')
-
-            if has_ptn_files or matches_beam_naming:
-                beam_folders.append(subdir)
-                logger.debug(f"Identified beam folder: {subdir.name}")
-            else:
-                logger.debug(f"Excluding non-beam directory: {subdir.name}")
-
-        beam_folders.sort(key=lambda path: path.name)
-
-        actual_beam_count = len(beam_folders)
-        logger.info(f"Found {actual_beam_count} actual beam folders after filtering")
-
-        if actual_beam_count != expected_beam_count:
-            logger.error(
-                f"Data transfer incomplete or incorrect: Expected {expected_beam_count} beams "
-                f"from RT Plan, but found {actual_beam_count} beam data folders"
-            )
-            return []
-
-        beam_info = validator.get_beam_information(case_path)
-        treatment_beams = beam_info.get("beams", [])
-        rtplan_patient_id = str(beam_info.get("patient_id", "")).strip()
-        if len(treatment_beams) != actual_beam_count:
-            logger.error(
-                "Beam metadata count mismatch during beam preparation",
-                {"expected": actual_beam_count, "metadata_count": len(treatment_beams)},
-            )
-            return []
-
-        unresolved_folders = []
-        seen_planinfo_beam_numbers = set()
-
-        for beam_path in beam_folders:
-            beam_name = beam_path.name
-            beam_id = f"{case_id}_{beam_name}"
-            planinfo = _parse_required_planinfo(beam_path)
-            if not planinfo:
-                logger.error(
-                    "Missing or invalid required PlanInfo data",
-                    {"beam_folder": beam_name},
-                )
-                return []
-
-            if rtplan_patient_id and planinfo["patient_id"] != rtplan_patient_id:
-                logger.error(
-                    "PlanInfo patient ID does not match RT plan patient ID",
-                    {
-                        "beam_folder": beam_name,
-                        "planinfo_patient_id": planinfo["patient_id"],
-                        "rtplan_patient_id": rtplan_patient_id,
-                    },
-                )
-                return []
-
-            raw_beam_number = int(planinfo["beam_number"])
-            if raw_beam_number in seen_planinfo_beam_numbers:
-                logger.error(
-                    "Duplicate DICOM beam number found across PlanInfo files",
-                    {"beam_folder": beam_name, "beam_number": raw_beam_number},
-                )
-                return []
-            seen_planinfo_beam_numbers.add(raw_beam_number)
-
-            matched_metadata = _match_metadata_by_raw_beam_number(
-                raw_beam_number, treatment_beams
-            )
-            treatment_beam_index = None
-            if matched_metadata:
-                treatment_beam_index = _resolve_treatment_beam_index(
-                    matched_metadata, treatment_beams
-                )
-
-            if not matched_metadata or treatment_beam_index is None:
-                unresolved_folders.append(beam_name)
-                continue
-            beam_jobs.append(
-                {
-                    "beam_id": beam_id,
-                    "beam_path": beam_path,
-                    "beam_number": int(treatment_beam_index),
-                }
-            )
-
-        if unresolved_folders:
-            logger.error(
-                "Failed to map one or more beam folders to RT Plan beam metadata",
-                {"unresolved_folders": unresolved_folders},
-            )
-            return []
-
-        # Sort beam_jobs by beam_number to match database ordering (W-3 enhancement)
-        # This ensures beam_jobs order matches the GPU assignments from dispatcher
-        beam_jobs.sort(key=lambda job: job["beam_number"])
-
-        logger.info(f"Successfully prepared {len(beam_jobs)} beam jobs for case: {case_id}")
-
-        if beam_info.get("beam_count", 0) > 0:
-            logger.info(
-                f"RT plan information - Patient ID: {beam_info.get('patient_id')}, "
-                f"Plan: {beam_info.get('plan_label')}, Expected beams: {beam_info.get('beam_count')}"
-            )
-
+        beam_jobs, _ = prepare_case_delivery_data(case_id, case_path, settings)
+        return beam_jobs
     except Exception as e:
+        logger = LoggerFactory.get_logger(f"dispatcher_{case_id}")
         logger.error("Failed to prepare beam jobs", {"case_id": case_id, "error": str(e)})
         return []
-
-    return beam_jobs
 
 
 def allocate_gpus_for_pending_beams(

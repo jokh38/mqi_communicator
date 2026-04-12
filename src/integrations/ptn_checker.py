@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import importlib.util
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, Optional
 
 
 @dataclass
@@ -14,6 +14,8 @@ class PtnCheckerResult:
     status_code: str
     error_message: Optional[str] = None
     output_dir: Optional[Path] = None
+    analysis_data: Optional[Dict[str, Any]] = None
+    report_path: Optional[Path] = None
 
 
 class PtnCheckerIntegration:
@@ -51,11 +53,14 @@ class PtnCheckerIntegration:
 
         try:
             run_analysis = self._load_run_analysis()
-            run_analysis(str(log_dir), str(Path(dcm_file)), str(output_dir))
+            analysis_data = run_analysis(str(log_dir), str(Path(dcm_file)), str(output_dir))
+            report_path = self._find_report_path(output_dir)
             return PtnCheckerResult(
                 success=True,
                 status_code="SUCCESS",
                 output_dir=output_dir,
+                analysis_data=analysis_data if isinstance(analysis_data, dict) else None,
+                report_path=report_path,
             )
         except FileNotFoundError as exc:
             message = str(exc)
@@ -65,6 +70,7 @@ class PtnCheckerIntegration:
                 status_code=status_code,
                 error_message=message,
                 output_dir=output_dir,
+                report_path=self._find_report_path(output_dir),
             )
         except Exception as exc:
             return PtnCheckerResult(
@@ -72,6 +78,7 @@ class PtnCheckerIntegration:
                 status_code="FAILED_EXCEPTION",
                 error_message=str(exc),
                 output_dir=output_dir,
+                report_path=self._find_report_path(output_dir),
             )
 
     def _load_run_analysis(self):
@@ -90,3 +97,9 @@ class PtnCheckerIntegration:
         if run_analysis is None:
             raise AttributeError(f"run_analysis not found in {module_path}")
         return run_analysis
+
+    def _find_report_path(self, output_dir: Path) -> Optional[Path]:
+        if not output_dir.exists():
+            return None
+        pdfs = sorted(output_dir.glob("*.pdf"))
+        return pdfs[0] if pdfs else None

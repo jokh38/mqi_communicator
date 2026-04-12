@@ -138,6 +138,7 @@ def create_app() -> FastAPI:
         provider = _get_provider(request)
         raw_case = provider.case_repo.get_case(case_id)
         beams = provider.case_repo.get_beams_for_case(case_id)
+        deliveries = provider.case_repo.get_deliveries_for_case(case_id)
         workflow_steps = provider.case_repo.get_workflow_steps(case_id)
 
         case_view = None
@@ -146,11 +147,34 @@ def create_app() -> FastAPI:
                 [{"case_data": raw_case, "beams": [beam.__dict__ for beam in beams]}]
             )[0]
 
+        delivery_view = [
+            {
+                "delivery_id": delivery.delivery_id,
+                "beam_id": delivery.beam_id,
+                "delivery_path": str(delivery.delivery_path),
+                "delivery_timestamp": delivery.delivery_timestamp,
+                "delivery_date": delivery.delivery_date,
+                "raw_beam_number": delivery.raw_beam_number,
+                "treatment_beam_index": delivery.treatment_beam_index,
+                "is_reference_delivery": delivery.is_reference_delivery,
+                "ptn_status": delivery.ptn_status,
+                "ptn_last_run_at": delivery.ptn_last_run_at,
+                "gamma_pass_rate": delivery.gamma_pass_rate,
+                "gamma_mean": delivery.gamma_mean,
+                "gamma_max": delivery.gamma_max,
+                "evaluated_points": delivery.evaluated_points,
+                "report_path": str(delivery.report_path) if delivery.report_path else None,
+                "error_message": delivery.error_message,
+            }
+            for delivery in deliveries
+        ]
+
         return templates.TemplateResponse(
             "case_detail.html",
             {
                 "request": request,
                 "case": case_view,
+                "deliveries": delivery_view,
                 "workflow_steps": workflow_steps,
             },
         )

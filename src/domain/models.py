@@ -44,6 +44,31 @@ class BeamData:
 
 
 @dataclass
+class DeliveryData:
+    """Data Transfer Object for a single delivered beam log session."""
+
+    delivery_id: str
+    parent_case_id: str
+    beam_id: str
+    delivery_path: Path
+    delivery_timestamp: datetime
+    delivery_date: str
+    raw_beam_number: Optional[int]
+    treatment_beam_index: Optional[int]
+    is_reference_delivery: bool
+    ptn_status: Optional[str] = None
+    ptn_last_run_at: Optional[datetime] = None
+    gamma_pass_rate: Optional[float] = None
+    gamma_mean: Optional[float] = None
+    gamma_max: Optional[float] = None
+    evaluated_points: Optional[int] = None
+    report_path: Optional[Path] = None
+    error_message: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+@dataclass
 class GpuResource:
     """Data Transfer Object for GPU resource information."""
     uuid: str

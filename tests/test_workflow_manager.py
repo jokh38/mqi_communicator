@@ -143,3 +143,34 @@ def test_case_detection_handler_ignores_non_completed_case_ptn_event(tmp_path):
             handler.on_created(event)
 
     queue_mock.assert_not_called()
+
+
+def test_scan_existing_cases_discovers_nested_study_directories(tmp_path):
+    scan_root = tmp_path / "G1"
+    study_path = scan_root / "04198922" / "1.2.3.4"
+    delivery_path = study_path / "2026031923483900"
+    delivery_path.mkdir(parents=True)
+    (study_path / "RP.test.dcm").write_text("", encoding="ascii")
+    (delivery_path / "PlanInfo.txt").write_text(
+        "DICOM_PATIENT_ID,04198922\nDICOM_BEAM_NUMBER,2\n",
+        encoding="ascii",
+    )
+    (delivery_path / "sample.ptn").write_text("", encoding="ascii")
+
+    settings = MagicMock()
+    settings.get_case_directories.return_value = {"scan": scan_root}
+    settings.get_processing_config.return_value = {"max_case_retries": 3}
+    logger = MagicMock()
+    case_queue = MagicMock()
+    case_repo = MagicMock()
+    case_repo.get_all_case_ids.return_value = []
+
+    context_manager = MagicMock()
+    context_manager.__enter__.return_value = case_repo
+    context_manager.__exit__.return_value = False
+
+    with patch("src.core.workflow_manager.get_db_session", return_value=context_manager), \
+         patch("src.core.workflow_manager._queue_case", return_value=True) as queue_mock:
+        scan_existing_cases(case_queue, settings, logger)
+
+    queue_mock.assert_called_once_with("04198922", study_path, case_queue, logger)

@@ -17,6 +17,7 @@ from src.utils.db_context import get_db_session
 
 from src.core.case_aggregator import ensure_logger as _ensure_logger
 from src.core.case_aggregator import _normalize_beam_identifier
+from src.core.case_aggregator import prepare_case_delivery_data
 from src.core.workflow_manager import scan_existing_cases, CaseDetectionHandler
 from src.integrations.ptn_checker import PtnCheckerIntegration, PtnCheckerResult
 
@@ -494,28 +495,70 @@ def create_ptn_checker_integration(settings: Settings) -> PtnCheckerIntegration:
     )
 
 
+def _summarize_point_gamma_metrics(analysis_data: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Build weighted delivery-level gamma metrics from PTN checker report data."""
+    if not analysis_data:
+        return {}
+
+    total_points = 0
+    weighted_pass = 0.0
+    weighted_mean = 0.0
+    gamma_max = None
+
+    for beam_name, beam_data in analysis_data.items():
+        if str(beam_name).startswith("_") or not isinstance(beam_data, dict):
+            continue
+        for layer in beam_data.get("layers", []):
+            results = layer.get("results", {})
+            evaluated_points = int(results.get("evaluated_point_count", 0) or 0)
+            pass_rate = float(results.get("pass_rate", 0.0) or 0.0) * 100.0
+            gamma_mean = float(results.get("gamma_mean", 0.0) or 0.0)
+            layer_gamma_max = float(results.get("gamma_max", 0.0) or 0.0)
+
+            total_points += evaluated_points
+            weighted_pass += pass_rate * evaluated_points
+            weighted_mean += gamma_mean * evaluated_points
+            gamma_max = layer_gamma_max if gamma_max is None else max(gamma_max, layer_gamma_max)
+
+    if total_points <= 0:
+        return {}
+
+    return {
+        "gamma_pass_rate": weighted_pass / total_points,
+        "gamma_mean": weighted_mean / total_points,
+        "gamma_max": gamma_max,
+        "evaluated_points": total_points,
+    }
+
+
 def run_case_level_ptn_analysis(
     case_id: str,
     case_path: Path,
     settings: Settings,
 ) -> PtnCheckerResult:
-    """Run PTN checker for a completed case without changing case completion status."""
+    """Run PTN checker for each delivery of a completed case and persist DB results."""
     logger = LoggerFactory.get_logger(f"ptn_dispatcher_{case_id}")
     validator = DataIntegrityValidator(logger)
     integration = create_ptn_checker_integration(settings)
     ptn_config = settings.get_ptn_checker_config()
     default_output_dir = case_path / ptn_config["output_subdir"]
     rtplan_path = validator.find_rtplan_file(case_path)
-    ptn_files = validator.find_ptn_files(case_path)
-    log_dir = ptn_files[0].parent if ptn_files else case_path
-
     with get_db_session(settings, logger, handler_name="CsvInterpreter") as case_repo:
+        deliveries = list(case_repo.get_deliveries_for_case(case_id) or [])
+        if not deliveries:
+            beam_jobs, delivery_records = prepare_case_delivery_data(case_id, case_path, settings)
+            if beam_jobs:
+                case_repo.create_case_with_beams(case_id, str(case_path), beam_jobs)
+                case_repo.create_or_update_deliveries(case_id, delivery_records)
+                deliveries = list(case_repo.get_deliveries_for_case(case_id) or [])
+
         case_repo.record_workflow_step(
             case_id=case_id,
             step=WorkflowStep.POSTPROCESSING,
             status="started",
-            metadata={"message": "Starting PTN checker analysis."},
+            metadata={"message": "Starting PTN checker analysis for delivery records."},
         )
+
         if rtplan_path is None:
             result = PtnCheckerResult(
                 success=False,
@@ -523,12 +566,116 @@ def run_case_level_ptn_analysis(
                 error_message="No RTPLAN DICOM file available for PTN analysis",
                 output_dir=default_output_dir,
             )
-        else:
+            case_repo.record_ptn_checker_result(
+                case_id=case_id,
+                status_code=result.status_code,
+                last_run_at=datetime.now(),
+                error_message=result.error_message,
+            )
+            case_repo.record_workflow_step(
+                case_id=case_id,
+                step=WorkflowStep.POSTPROCESSING,
+                status="failed",
+                error_message=result.error_message,
+                metadata={
+                    "message": "PTN checker analysis finished.",
+                    "status_code": result.status_code,
+                    "output_dir": str(default_output_dir),
+                },
+            )
+            return result
+
+        if not deliveries:
+            ptn_files = validator.find_ptn_files(case_path)
+            if ptn_files:
+                fallback_result = integration.run_analysis(
+                    log_dir=ptn_files[0].parent,
+                    dcm_file=rtplan_path,
+                    case_path=case_path,
+                )
+                metrics = _summarize_point_gamma_metrics(fallback_result.analysis_data)
+                case_repo.record_ptn_checker_result(
+                    case_id=case_id,
+                    status_code=fallback_result.status_code,
+                    last_run_at=datetime.now(),
+                    error_message=fallback_result.error_message,
+                )
+                case_repo.record_workflow_step(
+                    case_id=case_id,
+                    step=WorkflowStep.POSTPROCESSING,
+                    status="completed" if fallback_result.success else "failed",
+                    error_message=fallback_result.error_message,
+                    metadata={
+                        "message": "PTN checker analysis finished via fallback single-log execution.",
+                        "status_code": fallback_result.status_code,
+                        "output_dir": str(fallback_result.output_dir or default_output_dir),
+                        "gamma_pass_rate": metrics.get("gamma_pass_rate"),
+                        "gamma_mean": metrics.get("gamma_mean"),
+                    },
+                )
+                return fallback_result
+
+            result = PtnCheckerResult(
+                success=False,
+                status_code="FAILED_NO_PTN",
+                error_message=f"No delivery records or PTN logs found under {case_path}",
+                output_dir=default_output_dir,
+            )
+            case_repo.record_ptn_checker_result(
+                case_id=case_id,
+                status_code=result.status_code,
+                last_run_at=datetime.now(),
+                error_message=result.error_message,
+            )
+            case_repo.record_workflow_step(
+                case_id=case_id,
+                step=WorkflowStep.POSTPROCESSING,
+                status="failed",
+                error_message=result.error_message,
+                metadata={
+                    "message": "PTN checker analysis finished.",
+                    "status_code": result.status_code,
+                    "output_dir": str(default_output_dir),
+                },
+            )
+            return result
+
+        overall_status = "SUCCESS"
+        overall_error = None
+        overall_output_dir = default_output_dir
+        success_count = 0
+        for delivery in deliveries:
             result = integration.run_analysis(
-                log_dir=log_dir,
+                log_dir=delivery.delivery_path,
                 dcm_file=rtplan_path,
                 case_path=case_path,
             )
+            metrics = _summarize_point_gamma_metrics(result.analysis_data)
+            case_repo.record_delivery_analysis_result(
+                delivery_id=delivery.delivery_id,
+                status_code=result.status_code,
+                last_run_at=datetime.now(),
+                gamma_pass_rate=metrics.get("gamma_pass_rate"),
+                gamma_mean=metrics.get("gamma_mean"),
+                gamma_max=metrics.get("gamma_max"),
+                evaluated_points=metrics.get("evaluated_points"),
+                report_path=result.report_path,
+                error_message=result.error_message,
+            )
+            if result.success:
+                success_count += 1
+            else:
+                overall_status = result.status_code
+                overall_error = result.error_message
+            if result.output_dir is not None:
+                overall_output_dir = result.output_dir
+
+        result = PtnCheckerResult(
+            success=success_count == len(deliveries),
+            status_code=overall_status if success_count != len(deliveries) else "SUCCESS",
+            error_message=overall_error,
+            output_dir=overall_output_dir,
+        )
         case_repo.record_ptn_checker_result(
             case_id=case_id,
             status_code=result.status_code,
@@ -544,6 +691,8 @@ def run_case_level_ptn_analysis(
                 "message": "PTN checker analysis finished.",
                 "status_code": result.status_code,
                 "output_dir": str(result.output_dir or default_output_dir),
+                "delivery_count": len(deliveries),
+                "delivery_success_count": success_count,
             },
         )
         return result

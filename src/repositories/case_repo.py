@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional
 
 from src.database.connection import DatabaseConnection
 from src.domain.enums import BeamStatus, CaseStatus, WorkflowStep
-from src.domain.models import BeamData, CaseData, WorkflowStepRecord
+from src.domain.models import BeamData, CaseData, DeliveryData, WorkflowStepRecord
 from src.infrastructure.logging_handler import StructuredLogger
 from src.repositories.base import BaseRepository
 
@@ -766,6 +766,110 @@ class CaseRepository(BaseRepository):
 
         return results
 
+    def create_or_update_deliveries(self, case_id: str, deliveries: List[Dict[str, Any]]) -> None:
+        """Upsert delivery-session records for a case."""
+        self._log_operation(
+            "create_or_update_deliveries",
+            case_id=case_id,
+            delivery_count=len(deliveries),
+        )
+        if not deliveries:
+            return
+
+        with self.db.transaction() as conn:
+            for delivery in deliveries:
+                conn.execute(
+                    """
+                    INSERT INTO deliveries (
+                        delivery_id, parent_case_id, beam_id, delivery_path,
+                        delivery_timestamp, delivery_date, raw_beam_number,
+                        treatment_beam_index, is_reference_delivery,
+                        created_at, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    ON CONFLICT(delivery_id) DO UPDATE SET
+                        beam_id = excluded.beam_id,
+                        delivery_path = excluded.delivery_path,
+                        delivery_timestamp = excluded.delivery_timestamp,
+                        delivery_date = excluded.delivery_date,
+                        raw_beam_number = excluded.raw_beam_number,
+                        treatment_beam_index = excluded.treatment_beam_index,
+                        is_reference_delivery = excluded.is_reference_delivery,
+                        updated_at = CURRENT_TIMESTAMP
+                    """,
+                    (
+                        delivery["delivery_id"],
+                        case_id,
+                        delivery["beam_id"],
+                        str(delivery["delivery_path"]),
+                        delivery["delivery_timestamp"],
+                        delivery["delivery_date"],
+                        delivery.get("raw_beam_number"),
+                        delivery.get("treatment_beam_index"),
+                        1 if delivery.get("is_reference_delivery") else 0,
+                    ),
+                )
+
+    def get_deliveries_for_case(self, case_id: str) -> List[DeliveryData]:
+        """Return all beam-delivery rows for a case ordered by delivery time."""
+        self._log_operation("get_deliveries_for_case", case_id=case_id)
+        rows = self._execute_query(
+            """
+            SELECT *
+            FROM deliveries
+            WHERE parent_case_id = ?
+            ORDER BY delivery_timestamp ASC, delivery_id ASC
+            """,
+            (case_id,),
+            fetch_all=True,
+        )
+        return [self._map_row_to_delivery_data(row) for row in rows]
+
+    def record_delivery_analysis_result(
+        self,
+        delivery_id: str,
+        status_code: str,
+        last_run_at: datetime,
+        gamma_pass_rate: Optional[float] = None,
+        gamma_mean: Optional[float] = None,
+        gamma_max: Optional[float] = None,
+        evaluated_points: Optional[int] = None,
+        report_path: Optional[Path] = None,
+        error_message: Optional[str] = None,
+    ) -> None:
+        """Persist PTN checker status and gamma metrics for a delivery."""
+        self._log_operation(
+            "record_delivery_analysis_result",
+            delivery_id=delivery_id,
+            status_code=status_code,
+        )
+        self._execute_query(
+            """
+            UPDATE deliveries
+            SET ptn_status = ?,
+                ptn_last_run_at = ?,
+                gamma_pass_rate = ?,
+                gamma_mean = ?,
+                gamma_max = ?,
+                evaluated_points = ?,
+                report_path = ?,
+                error_message = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE delivery_id = ?
+            """,
+            (
+                status_code,
+                last_run_at.isoformat(),
+                gamma_pass_rate,
+                gamma_mean,
+                gamma_max,
+                evaluated_points,
+                str(report_path) if report_path else None,
+                error_message,
+                delivery_id,
+            ),
+        )
+
     # =================================================================================
     # Private DTO Mapping Helpers
     # =================================================================================
@@ -828,6 +932,46 @@ class CaseRepository(BaseRepository):
             ),
             hpc_job_id=row["hpc_job_id"],
             error_message=row.get("error_message") if hasattr(row, "get") else row["error_message"],
+        )
+
+    def _map_row_to_delivery_data(self, row) -> DeliveryData:
+        """Maps a database row to a DeliveryData DTO."""
+        return DeliveryData(
+            delivery_id=row["delivery_id"],
+            parent_case_id=row["parent_case_id"],
+            beam_id=row["beam_id"],
+            delivery_path=Path(row["delivery_path"]),
+            delivery_timestamp=datetime.fromisoformat(row["delivery_timestamp"]),
+            delivery_date=row["delivery_date"],
+            raw_beam_number=row["raw_beam_number"],
+            treatment_beam_index=row["treatment_beam_index"],
+            is_reference_delivery=bool(row["is_reference_delivery"]),
+            ptn_status=row["ptn_status"] if "ptn_status" in row.keys() else None,
+            ptn_last_run_at=(
+                datetime.fromisoformat(row["ptn_last_run_at"])
+                if "ptn_last_run_at" in row.keys() and row["ptn_last_run_at"]
+                else None
+            ),
+            gamma_pass_rate=row["gamma_pass_rate"] if "gamma_pass_rate" in row.keys() else None,
+            gamma_mean=row["gamma_mean"] if "gamma_mean" in row.keys() else None,
+            gamma_max=row["gamma_max"] if "gamma_max" in row.keys() else None,
+            evaluated_points=row["evaluated_points"] if "evaluated_points" in row.keys() else None,
+            report_path=(
+                Path(row["report_path"])
+                if "report_path" in row.keys() and row["report_path"]
+                else None
+            ),
+            error_message=row["error_message"] if "error_message" in row.keys() else None,
+            created_at=(
+                datetime.fromisoformat(row["created_at"])
+                if "created_at" in row.keys() and row["created_at"]
+                else None
+            ),
+            updated_at=(
+                datetime.fromisoformat(row["updated_at"])
+                if "updated_at" in row.keys() and row["updated_at"]
+                else None
+            ),
         )
 
 

@@ -22,6 +22,67 @@ from src.utils.db_context import get_db_session
 from src.core.case_aggregator import queue_case as _queue_case
 
 
+def _looks_like_case_directory(path: Path) -> bool:
+    """Return True for a study directory containing an RTPLAN and delivery subfolders."""
+    try:
+        if not path.is_dir():
+            return False
+    except Exception:
+        return False
+    has_rtplan = any(child.is_file() and child.suffix.lower() == ".dcm" for child in path.iterdir())
+    has_delivery_subdir = any(
+        child.is_dir() and ((child / "PlanInfo.txt").exists() or any(child.glob("*.ptn")))
+        for child in path.iterdir()
+    )
+    return has_rtplan and has_delivery_subdir
+
+
+def _derive_case_identity(case_path: Path) -> tuple[str, Path]:
+    """Resolve case_id/case_path from nested daily-log structures.
+
+    Preferred structure:
+      <scan_root>/<patient_id>/<study_uid>/<delivery_timestamp>
+    """
+    if _looks_like_case_directory(case_path):
+        patient_candidate = case_path.parent.name if case_path.parent else case_path.name
+        if patient_candidate and patient_candidate != case_path.name:
+            return patient_candidate, case_path
+        return case_path.name, case_path
+
+    if case_path.parent and _looks_like_case_directory(case_path.parent):
+        return _derive_case_identity(case_path.parent)
+
+    return case_path.name, case_path
+
+
+def _discover_case_directories(scan_directory: Path) -> List[tuple[str, Path]]:
+    """Discover case roots recursively under the configured scan directory."""
+    discovered: List[tuple[str, Path]] = []
+    seen_paths = set()
+    for candidate in [scan_directory, *scan_directory.rglob("*")]:
+        if not isinstance(candidate, Path) or not candidate.exists() or not candidate.is_dir():
+            continue
+        if not _looks_like_case_directory(candidate):
+            continue
+        case_id, case_path = _derive_case_identity(candidate)
+        normalized = str(case_path.resolve())
+        if normalized in seen_paths:
+            continue
+        seen_paths.add(normalized)
+        discovered.append((case_id, case_path))
+    discovered.sort(key=lambda item: (item[0], str(item[1])))
+    if discovered:
+        return discovered
+
+    # Backward-compatible fallback: treat immediate child directories as cases.
+    fallback = []
+    for item in scan_directory.iterdir():
+        if item.is_dir():
+            fallback.append((item.name, item))
+    fallback.sort(key=lambda item: (item[0], str(item[1])))
+    return fallback
+
+
 def should_route_case_to_ptn_checker(
     case_data: Any,
     case_path: Path,
@@ -172,11 +233,7 @@ def scan_existing_cases(case_queue: mp.Queue,
             logger.info(
                 f"Found {len(existing_case_ids)} cases already in database")
 
-            filesystem_cases = []
-            for item in scan_directory.iterdir():
-                if item.is_dir():
-                    case_id = item.name
-                    filesystem_cases.append((case_id, item))
+            filesystem_cases = _discover_case_directories(scan_directory)
             logger.info(
                 f"Found {len(filesystem_cases)} case directories in scan directory"
             )
@@ -268,8 +325,7 @@ class CaseDetectionHandler(FileSystemEventHandler):
 
     def _handle_event(self, event) -> None:
         if event.is_directory:
-            case_path = Path(event.src_path)
-            case_id = case_path.name
+            case_id, case_path = _derive_case_identity(Path(event.src_path))
             self.logger.info(f"New case detected: {case_id} at {case_path}")
             _queue_case(case_id, case_path, self.case_queue, self.logger)
             return
@@ -278,10 +334,7 @@ class CaseDetectionHandler(FileSystemEventHandler):
         if src_path.suffix.lower() != ".ptn" or self.settings is None:
             return
 
-        case_path = src_path.parent
-        if case_path.name.startswith("beam_") or case_path.name.startswith("field_"):
-            case_path = case_path.parent
-        case_id = case_path.name
+        case_id, case_path = _derive_case_identity(src_path.parent)
 
         if self.case_repo is not None:
             case_data = self.case_repo.get_case(case_id)

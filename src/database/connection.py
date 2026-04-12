@@ -196,6 +196,31 @@ class DatabaseConnection:
                             FOREIGN KEY (case_id) REFERENCES cases (case_id)
                         )
                     """)
+                    conn.execute("""
+                        CREATE TABLE IF NOT EXISTS deliveries (
+                            delivery_id TEXT PRIMARY KEY,
+                            parent_case_id TEXT NOT NULL,
+                            beam_id TEXT NOT NULL,
+                            delivery_path TEXT NOT NULL,
+                            delivery_timestamp TIMESTAMP NOT NULL,
+                            delivery_date TEXT NOT NULL,
+                            raw_beam_number INTEGER,
+                            treatment_beam_index INTEGER,
+                            is_reference_delivery BOOLEAN DEFAULT 0,
+                            ptn_status TEXT,
+                            ptn_last_run_at TIMESTAMP,
+                            gamma_pass_rate REAL,
+                            gamma_mean REAL,
+                            gamma_max REAL,
+                            evaluated_points INTEGER,
+                            report_path TEXT,
+                            error_message TEXT,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            FOREIGN KEY (parent_case_id) REFERENCES cases (case_id),
+                            FOREIGN KEY (beam_id) REFERENCES beams (beam_id)
+                        )
+                    """)
                     cursor = conn.execute("PRAGMA table_info(gpu_resources)")
                     columns = [column[1] for column in cursor.fetchall()]
                     if 'gpu_index' not in columns:
@@ -234,6 +259,42 @@ class DatabaseConnection:
                         self.logger.info("Adding beam_number column to beams table")
                         conn.execute("ALTER TABLE beams ADD COLUMN beam_number INTEGER")
 
+                    cursor = conn.execute("PRAGMA table_info(deliveries)")
+                    delivery_columns = [column[1] for column in cursor.fetchall()]
+                    if 'raw_beam_number' not in delivery_columns:
+                        self.logger.info("Adding raw_beam_number column to deliveries table")
+                        conn.execute("ALTER TABLE deliveries ADD COLUMN raw_beam_number INTEGER")
+                    if 'treatment_beam_index' not in delivery_columns:
+                        self.logger.info("Adding treatment_beam_index column to deliveries table")
+                        conn.execute("ALTER TABLE deliveries ADD COLUMN treatment_beam_index INTEGER")
+                    if 'is_reference_delivery' not in delivery_columns:
+                        self.logger.info("Adding is_reference_delivery column to deliveries table")
+                        conn.execute("ALTER TABLE deliveries ADD COLUMN is_reference_delivery BOOLEAN DEFAULT 0")
+                    if 'ptn_status' not in delivery_columns:
+                        self.logger.info("Adding ptn_status column to deliveries table")
+                        conn.execute("ALTER TABLE deliveries ADD COLUMN ptn_status TEXT")
+                    if 'ptn_last_run_at' not in delivery_columns:
+                        self.logger.info("Adding ptn_last_run_at column to deliveries table")
+                        conn.execute("ALTER TABLE deliveries ADD COLUMN ptn_last_run_at TIMESTAMP")
+                    if 'gamma_pass_rate' not in delivery_columns:
+                        self.logger.info("Adding gamma_pass_rate column to deliveries table")
+                        conn.execute("ALTER TABLE deliveries ADD COLUMN gamma_pass_rate REAL")
+                    if 'gamma_mean' not in delivery_columns:
+                        self.logger.info("Adding gamma_mean column to deliveries table")
+                        conn.execute("ALTER TABLE deliveries ADD COLUMN gamma_mean REAL")
+                    if 'gamma_max' not in delivery_columns:
+                        self.logger.info("Adding gamma_max column to deliveries table")
+                        conn.execute("ALTER TABLE deliveries ADD COLUMN gamma_max REAL")
+                    if 'evaluated_points' not in delivery_columns:
+                        self.logger.info("Adding evaluated_points column to deliveries table")
+                        conn.execute("ALTER TABLE deliveries ADD COLUMN evaluated_points INTEGER")
+                    if 'report_path' not in delivery_columns:
+                        self.logger.info("Adding report_path column to deliveries table")
+                        conn.execute("ALTER TABLE deliveries ADD COLUMN report_path TEXT")
+                    if 'error_message' not in delivery_columns:
+                        self.logger.info("Adding error_message column to deliveries table")
+                        conn.execute("ALTER TABLE deliveries ADD COLUMN error_message TEXT")
+
                     self._migrate_gpu_assignment_foreign_key(conn)
 
                     conn.execute("CREATE INDEX IF NOT EXISTS idx_cases_status ON cases (status)")
@@ -241,6 +302,9 @@ class DatabaseConnection:
                     conn.execute("CREATE INDEX IF NOT EXISTS idx_gpu_status ON gpu_resources (status)")
                     conn.execute("CREATE INDEX IF NOT EXISTS idx_workflow_case ON workflow_steps (case_id)")
                     conn.execute("CREATE INDEX IF NOT EXISTS idx_beams_parent_case ON beams (parent_case_id)")
+                    conn.execute("CREATE INDEX IF NOT EXISTS idx_deliveries_case ON deliveries (parent_case_id)")
+                    conn.execute("CREATE INDEX IF NOT EXISTS idx_deliveries_beam ON deliveries (beam_id)")
+                    conn.execute("CREATE INDEX IF NOT EXISTS idx_deliveries_date ON deliveries (delivery_date)")
 
                     cursor = conn.execute(
                         "UPDATE gpu_resources SET status = ? WHERE status = ?",

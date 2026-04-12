@@ -1,7 +1,7 @@
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from src.core.case_aggregator import prepare_beam_jobs
+from src.core.case_aggregator import prepare_beam_jobs, prepare_case_delivery_data
 
 
 def _write_planinfo(beam_dir: Path, patient_id: str, beam_number: int) -> None:
@@ -132,7 +132,17 @@ def test_prepare_beam_jobs_fails_when_planinfo_beam_numbers_are_duplicated(
     }
     mock_validator_cls.return_value = validator
 
-    result = prepare_beam_jobs("55061194", case_path, settings=MagicMock())
+    validator.parse_rtplan_beam_count.return_value = 1
+    validator.get_beam_information.return_value = {
+        "patient_id": "55061194",
+        "beams": [{"beam_name": "Beam_2", "beam_number": 2}],
+    }
 
-    if result != []:
-        raise AssertionError(f"Expected hard failure on duplicated beam numbers, got {result!r}")
+    beam_jobs, deliveries = prepare_case_delivery_data("55061194", case_path, settings=MagicMock())
+
+    if len(beam_jobs) != 1:
+        raise AssertionError(f"Expected one reference beam job, got {beam_jobs!r}")
+    if len(deliveries) != 2:
+        raise AssertionError(f"Expected both duplicate daily deliveries to be retained, got {deliveries!r}")
+    if beam_jobs[0]["beam_path"].name != "2025042401440800":
+        raise AssertionError(f"Expected earliest delivery to be selected as reference, got {beam_jobs[0]!r}")

@@ -45,7 +45,7 @@ from src.core.dispatcher import (
     run_case_level_ptn_analysis,
     run_case_level_tps_generation,
 )
-from src.core.case_aggregator import prepare_beam_jobs
+from src.core.case_aggregator import prepare_case_delivery_data
 from src.core.workflow_manager import scan_existing_cases, CaseDetectionHandler
 from src.domain.enums import CaseStatus, BeamStatus
 from src.utils.db_context import get_db_session
@@ -268,7 +268,7 @@ class MQIApplication:
         self.logger.info(
             f"Discovering beams and validating data transfer for case: {case_id}"
         )
-        beam_jobs = prepare_beam_jobs(case_id, case_path, self.settings)
+        beam_jobs, delivery_records = prepare_case_delivery_data(case_id, case_path, self.settings)
 
         if not beam_jobs:
             case_repo.add_case(case_id, case_path)
@@ -279,8 +279,9 @@ class MQIApplication:
             return []
 
         case_repo.create_case_with_beams(case_id, str(case_path), beam_jobs)
+        case_repo.create_or_update_deliveries(case_id, delivery_records)
         self.logger.info(
-            f"Created {len(beam_jobs)} beam records in DB for case {case_id}"
+            f"Created {len(beam_jobs)} beam records and {len(delivery_records)} delivery records in DB for case {case_id}"
         )
         return beam_jobs
 
