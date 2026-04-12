@@ -546,10 +546,10 @@ def run_case_level_ptn_analysis(
     with get_db_session(settings, logger, handler_name="CsvInterpreter") as case_repo:
         deliveries = list(case_repo.get_deliveries_for_case(case_id) or [])
         if not deliveries:
-            beam_jobs, delivery_records = prepare_case_delivery_data(case_id, case_path, settings)
-            if beam_jobs:
-                case_repo.create_case_with_beams(case_id, str(case_path), beam_jobs)
-                case_repo.create_or_update_deliveries(case_id, delivery_records)
+            prepared = prepare_case_delivery_data(case_id, case_path, settings)
+            if prepared.status == "ready" and prepared.beam_jobs:
+                case_repo.create_case_with_beams(case_id, str(case_path), prepared.beam_jobs)
+                case_repo.create_or_update_deliveries(case_id, prepared.delivery_records)
                 deliveries = list(case_repo.get_deliveries_for_case(case_id) or [])
 
         case_repo.record_workflow_step(

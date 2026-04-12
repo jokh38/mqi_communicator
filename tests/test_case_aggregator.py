@@ -138,11 +138,15 @@ def test_prepare_beam_jobs_fails_when_planinfo_beam_numbers_are_duplicated(
         "beams": [{"beam_name": "Beam_2", "beam_number": 2}],
     }
 
-    beam_jobs, deliveries = prepare_case_delivery_data("55061194", case_path, settings=MagicMock())
+    result = prepare_case_delivery_data("55061194", case_path, settings=MagicMock())
 
-    if len(beam_jobs) != 1:
-        raise AssertionError(f"Expected one reference beam job, got {beam_jobs!r}")
-    if len(deliveries) != 2:
-        raise AssertionError(f"Expected both duplicate daily deliveries to be retained, got {deliveries!r}")
-    if beam_jobs[0]["beam_path"].name != "2025042401440800":
-        raise AssertionError(f"Expected earliest delivery to be selected as reference, got {beam_jobs[0]!r}")
+    if result.status != "ready":
+        raise AssertionError(f"Expected ready result, got {result!r}")
+    if len(result.beam_jobs) != 1:
+        raise AssertionError(f"Expected one reference beam job, got {result.beam_jobs!r}")
+    if len(result.delivery_records) != 2:
+        raise AssertionError(f"Expected both duplicate daily deliveries to be retained, got {result.delivery_records!r}")
+    if result.beam_jobs[0]["beam_path"].name != "2025042401440800":
+        raise AssertionError(f"Expected earliest delivery to be selected as reference, got {result.beam_jobs[0]!r}")
+    if any(record["fraction_index"] != 1 for record in result.delivery_records):
+        raise AssertionError(f"Expected duplicate deliveries to stay in fraction 1, got {result.delivery_records!r}")

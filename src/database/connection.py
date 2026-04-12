@@ -215,6 +215,7 @@ class DatabaseConnection:
                             evaluated_points INTEGER,
                             report_path TEXT,
                             error_message TEXT,
+                            fraction_index INTEGER,
                             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                             FOREIGN KEY (parent_case_id) REFERENCES cases (case_id),
@@ -294,6 +295,9 @@ class DatabaseConnection:
                     if 'error_message' not in delivery_columns:
                         self.logger.info("Adding error_message column to deliveries table")
                         conn.execute("ALTER TABLE deliveries ADD COLUMN error_message TEXT")
+                    if 'fraction_index' not in delivery_columns:
+                        self.logger.info("Adding fraction_index column to deliveries table")
+                        conn.execute("ALTER TABLE deliveries ADD COLUMN fraction_index INTEGER")
 
                     self._migrate_gpu_assignment_foreign_key(conn)
 

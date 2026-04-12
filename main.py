@@ -46,6 +46,7 @@ from src.core.dispatcher import (
     run_case_level_tps_generation,
 )
 from src.core.case_aggregator import prepare_case_delivery_data
+from src.core.fraction_grouper import FractionTracker, ReadyCase
 from src.core.workflow_manager import scan_existing_cases, CaseDetectionHandler
 from src.domain.enums import CaseStatus, BeamStatus
 from src.utils.db_context import get_db_session
@@ -78,6 +79,7 @@ class MQIApplication:
         self.monitor_db_connection: Optional[DatabaseConnection] = None
         self.shutdown_event = threading.Event()
         self.service_monitor_thread: Optional[threading.Thread] = None
+        self.fraction_tracker = FractionTracker(poll_interval_seconds=1800)
 
     def _create_db_connection(self) -> DatabaseConnection:
         """Creates a database connection with standard settings.
@@ -268,22 +270,94 @@ class MQIApplication:
         self.logger.info(
             f"Discovering beams and validating data transfer for case: {case_id}"
         )
-        beam_jobs, delivery_records = prepare_case_delivery_data(case_id, case_path, self.settings)
+        result = prepare_case_delivery_data(case_id, case_path, self.settings)
 
-        if not beam_jobs:
+        if result.status == "pending":
+            return result
+
+        if not result.beam_jobs:
             case_repo.add_case(case_id, case_path)
             self.logger.error(
-                f"No beams found or data transfer incomplete for case {case_id}"
+                f"No beams found or data transfer incomplete for case {case_id}",
+                {"pending_reason": result.pending_reason},
             )
-            case_repo.fail_case(case_id, "No beams found or data transfer incomplete")
-            return []
+            case_repo.fail_case(
+                case_id,
+                f"No beams found or data transfer incomplete ({result.pending_reason or 'unknown'})",
+            )
+            return result
 
-        case_repo.create_case_with_beams(case_id, str(case_path), beam_jobs)
-        case_repo.create_or_update_deliveries(case_id, delivery_records)
+        case_repo.create_case_with_beams(case_id, str(case_path), result.beam_jobs)
+        case_repo.create_or_update_deliveries(case_id, result.delivery_records)
         self.logger.info(
-            f"Created {len(beam_jobs)} beam records and {len(delivery_records)} delivery records in DB for case {case_id}"
+            f"Created {len(result.beam_jobs)} beam records and {len(result.delivery_records)} delivery records in DB for case {case_id}"
         )
-        return beam_jobs
+        return result
+
+    def _continue_processing_ready_case(
+        self,
+        case_id: str,
+        case_path: Path,
+        result,
+        case_repo: CaseRepository,
+        executor: ProcessPoolExecutor,
+        active_futures: Dict,
+        pending_beams_by_case: Dict,
+    ) -> None:
+        beam_jobs = result.beam_jobs
+
+        if not self._run_csv_interpreting(case_id, case_path, case_repo):
+            return
+
+        gpu_assignments = self._run_tps_generation(
+            case_id, case_path, len(beam_jobs), case_repo
+        )
+        if gpu_assignments is None or len(gpu_assignments) == 0:
+            return
+
+        self._dispatch_workers(
+            case_id,
+            case_path,
+            beam_jobs,
+            gpu_assignments,
+            case_repo,
+            executor,
+            active_futures,
+            pending_beams_by_case,
+        )
+
+    def _process_ready_case(
+        self,
+        ready: ReadyCase,
+        executor: ProcessPoolExecutor,
+        active_futures: Dict,
+        pending_beams_by_case: Dict,
+    ) -> None:
+        """Continue processing for a case that was resolved by FractionTracker."""
+        case_id = ready.case_id
+        case_path = ready.case_path
+        self.logger.info(f"Fraction tracker resolved pending case: {case_id}")
+
+        with get_db_session(self.settings, self.logger) as case_repo:
+            if not ready.result.beam_jobs:
+                case_repo.add_case(case_id, case_path)
+                case_repo.fail_case(
+                    case_id,
+                    f"Fraction grouping yielded no beams ({ready.result.pending_reason or 'unknown'})",
+                )
+                return
+
+            case_repo.create_case_with_beams(case_id, str(case_path), ready.result.beam_jobs)
+            case_repo.create_or_update_deliveries(case_id, ready.result.delivery_records)
+            self._continue_processing_ready_case(
+                case_id,
+                case_path,
+                ready.result,
+                case_repo,
+                executor,
+                active_futures,
+                pending_beams_by_case,
+            )
 
     def _run_csv_interpreting(
         self, case_id: str, case_path: Path, case_repo: CaseRepository
@@ -454,30 +528,27 @@ class MQIApplication:
                 return
 
             # Step 1: Discover beams and validate data transfer completion
-            beam_jobs = self._discover_beams(case_id, case_path, case_repo)
-            if not beam_jobs:
+            result = self._discover_beams(case_id, case_path, case_repo)
+            if result.status == "pending":
+                self.logger.info(
+                    f"Case {case_id} has pending fractions; registering with tracker",
+                    {"case_id": case_id, "fractions": len(result.fractions)},
+                )
+                self.fraction_tracker.register(
+                    case_id=case_id,
+                    case_path=case_path,
+                    fractions=result.fractions,
+                    expected_beam_count=result.expected_beam_count or 0,
+                )
                 return
 
-            # Step 2: Run case-level CSV interpreting
-            if not self._run_csv_interpreting(case_id, case_path, case_repo):
+            if not result.beam_jobs:
                 return
 
-            # Step 3: Generate TPS file with dynamic GPU assignments
-            gpu_assignments = self._run_tps_generation(
-                case_id, case_path, len(beam_jobs), case_repo
-            )
-            if gpu_assignments is None:
-                return
-
-            if len(gpu_assignments) == 0:
-                return
-
-            # Step 4: Dispatch individual workers for simulation
-            self._dispatch_workers(
+            self._continue_processing_ready_case(
                 case_id,
                 case_path,
-                beam_jobs,
-                gpu_assignments,
+                result,
                 case_repo,
                 executor,
                 active_futures,
@@ -531,6 +602,22 @@ class MQIApplication:
                             self.settings,
                             self.logger,
                         )
+
+                    if self.fraction_tracker.pending_count > 0:
+                        ready_cases = self.fraction_tracker.check_pending(
+                            rescan=lambda pending_case_id, pending_case_path: prepare_case_delivery_data(
+                                pending_case_id,
+                                pending_case_path,
+                                self.settings,
+                            )
+                        )
+                        for ready in ready_cases:
+                            self._process_ready_case(
+                                ready,
+                                executor,
+                                active_futures,
+                                pending_beams_by_case,
+                            )
 
                 except KeyboardInterrupt:
                     self.logger.info("Received shutdown signal")

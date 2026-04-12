@@ -783,10 +783,10 @@ class CaseRepository(BaseRepository):
                     INSERT INTO deliveries (
                         delivery_id, parent_case_id, beam_id, delivery_path,
                         delivery_timestamp, delivery_date, raw_beam_number,
-                        treatment_beam_index, is_reference_delivery,
+                        treatment_beam_index, is_reference_delivery, fraction_index,
                         created_at, updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                     ON CONFLICT(delivery_id) DO UPDATE SET
                         beam_id = excluded.beam_id,
                         delivery_path = excluded.delivery_path,
@@ -795,6 +795,7 @@ class CaseRepository(BaseRepository):
                         raw_beam_number = excluded.raw_beam_number,
                         treatment_beam_index = excluded.treatment_beam_index,
                         is_reference_delivery = excluded.is_reference_delivery,
+                        fraction_index = excluded.fraction_index,
                         updated_at = CURRENT_TIMESTAMP
                     """,
                     (
@@ -807,6 +808,7 @@ class CaseRepository(BaseRepository):
                         delivery.get("raw_beam_number"),
                         delivery.get("treatment_beam_index"),
                         1 if delivery.get("is_reference_delivery") else 0,
+                        delivery.get("fraction_index"),
                     ),
                 )
 
@@ -946,6 +948,7 @@ class CaseRepository(BaseRepository):
             raw_beam_number=row["raw_beam_number"],
             treatment_beam_index=row["treatment_beam_index"],
             is_reference_delivery=bool(row["is_reference_delivery"]),
+            fraction_index=row["fraction_index"] if "fraction_index" in row.keys() else None,
             ptn_status=row["ptn_status"] if "ptn_status" in row.keys() else None,
             ptn_last_run_at=(
                 datetime.fromisoformat(row["ptn_last_run_at"])

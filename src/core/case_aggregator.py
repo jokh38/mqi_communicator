@@ -15,7 +15,7 @@ import hashlib
 import multiprocessing as mp
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional
 
 from src.repositories.case_repo import CaseRepository
 from src.repositories.gpu_repo import GpuRepository
@@ -23,6 +23,13 @@ from src.domain.enums import CaseStatus, BeamStatus, WorkflowStep
 from src.domain.errors import ProcessingError
 from src.infrastructure.logging_handler import StructuredLogger, LoggerFactory
 from src.core.data_integrity_validator import DataIntegrityValidator
+from src.core.fraction_grouper import (
+    CaseDeliveryResult,
+    group_deliveries_into_fractions,
+    select_reference_fraction,
+    get_fraction_event_logger,
+    log_fraction_event,
+)
 from src.utils.db_context import get_db_session
 
 
@@ -198,13 +205,23 @@ def _delivery_id(case_id: str, delivery_path: Path) -> str:
     return f"{case_id}_delivery_{digest}"
 
 
+def _select_fallback_reference_fraction(fractions):
+    for fraction in fractions:
+        if fraction.status == "partial":
+            return fraction
+    for fraction in fractions:
+        if fraction.status == "anomaly":
+            return fraction
+    return None
+
+
 def prepare_case_delivery_data(
     case_id: str, case_path: Path, settings
-) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    """Return unique reference beam jobs plus all mapped delivery records for a case."""
+) -> CaseDeliveryResult:
+    """Prepare grouped delivery information for simulation and PTN analysis."""
     logger = LoggerFactory.get_logger(f"dispatcher_{case_id}")
-    beam_jobs: List[Dict[str, Any]] = []
     delivery_records: List[Dict[str, Any]] = []
+    fraction_logger = get_fraction_event_logger()
 
     logger.info(f"Scanning for beams for case: {case_id}")
     validator = DataIntegrityValidator(logger)
@@ -212,18 +229,37 @@ def prepare_case_delivery_data(
     rtplan_path = validator.find_rtplan_file(case_path)
     if not rtplan_path:
         logger.error(f"No RT Plan file found in case directory: {case_path}")
-        return [], []
+        return CaseDeliveryResult(
+            beam_jobs=[],
+            delivery_records=[],
+            fractions=[],
+            status="ready",
+            pending_reason="missing_rtplan",
+        )
 
     try:
         expected_beam_count = validator.parse_rtplan_beam_count(rtplan_path)
         logger.info(f"RT Plan indicates {expected_beam_count} treatment beams for case {case_id}")
     except ProcessingError as e:
         logger.error(f"Failed to parse RT Plan file: {str(e)}")
-        return [], []
+        return CaseDeliveryResult(
+            beam_jobs=[],
+            delivery_records=[],
+            fractions=[],
+            status="ready",
+            pending_reason="rtplan_parse_failed",
+        )
 
     if expected_beam_count == 0:
         logger.warning(f"RT plan indicates 0 beams for case {case_id}")
-        return [], []
+        return CaseDeliveryResult(
+            beam_jobs=[],
+            delivery_records=[],
+            fractions=[],
+            status="ready",
+            pending_reason="zero_expected_beams",
+            expected_beam_count=expected_beam_count,
+        )
 
     dicom_parent_dir = rtplan_path.parent
     all_subdirs = [d for d in case_path.iterdir() if d.is_dir()]
@@ -240,7 +276,31 @@ def prepare_case_delivery_data(
     delivery_folders.sort(key=lambda path: path.name)
     if not delivery_folders:
         logger.error(f"No delivery folders found in case directory: {case_path}")
-        return [], []
+        return CaseDeliveryResult(
+            beam_jobs=[],
+            delivery_records=[],
+            fractions=[],
+            status="ready",
+            pending_reason="missing_deliveries",
+            expected_beam_count=expected_beam_count,
+        )
+
+    fractions = group_deliveries_into_fractions(
+        delivery_folders, expected_beam_count=expected_beam_count
+    )
+    if any(fraction.status == "pending" for fraction in fractions):
+        logger.info(
+            "Case has pending fractions; deferring processing",
+            {"case_id": case_id, "fractions": len(fractions)},
+        )
+        return CaseDeliveryResult(
+            beam_jobs=[],
+            delivery_records=[],
+            fractions=fractions,
+            status="pending",
+            pending_reason="fraction_window_open",
+            expected_beam_count=expected_beam_count,
+        )
 
     beam_info = validator.get_beam_information(case_path)
     treatment_beams = beam_info.get("beams", [])
@@ -250,96 +310,204 @@ def prepare_case_delivery_data(
             "Beam metadata count mismatch during delivery preparation",
             {"expected": expected_beam_count, "metadata_count": len(treatment_beams)},
         )
-        return [], []
+        return CaseDeliveryResult(
+            beam_jobs=[],
+            delivery_records=[],
+            fractions=fractions,
+            status="ready",
+            pending_reason="beam_metadata_mismatch",
+            expected_beam_count=expected_beam_count,
+        )
 
-    reference_by_treatment_index: Dict[int, Dict[str, Any]] = {}
-    unresolved_folders = []
-    unique_treatment_indices = set()
-
-    for delivery_path in delivery_folders:
-        planinfo = _parse_required_planinfo(delivery_path)
-        if not planinfo:
-            logger.error(
-                "Missing or invalid required PlanInfo data",
-                {"delivery_folder": delivery_path.name},
-            )
-            return [], []
-
-        if rtplan_patient_id and planinfo["patient_id"] != rtplan_patient_id:
-            logger.error(
-                "PlanInfo patient ID does not match RT plan patient ID",
+    reference_fraction = select_reference_fraction(fractions)
+    if reference_fraction is None:
+        reference_fraction = _select_fallback_reference_fraction(fractions)
+        if reference_fraction is not None:
+            log_fraction_event(
+                logger,
+                fraction_logger,
+                "partial_reference_used",
+                "No complete fraction available; using earliest partial fraction as reference",
                 {
-                    "delivery_folder": delivery_path.name,
-                    "planinfo_patient_id": planinfo["patient_id"],
-                    "rtplan_patient_id": rtplan_patient_id,
+                    "case_id": case_id,
+                    "fraction_index": reference_fraction.index,
+                    "expected_beam_count": expected_beam_count,
+                    "delivered_count": len(reference_fraction.delivery_folders),
+                    "beam_numbers": reference_fraction.beam_numbers,
                 },
             )
-            return [], []
 
-        raw_beam_number = int(planinfo["beam_number"])
-        matched_metadata = _match_metadata_by_raw_beam_number(raw_beam_number, treatment_beams)
-        if not matched_metadata:
-            matched_metadata = _map_beam_folder_to_metadata(delivery_path, treatment_beams)
-
-        treatment_beam_index = (
-            _resolve_treatment_beam_index(matched_metadata, treatment_beams)
-            if matched_metadata
-            else None
+    if reference_fraction is None:
+        logger.error(
+            "No complete or partial fraction available for reference selection",
+            {"case_id": case_id, "fraction_count": len(fractions)},
         )
-        if not matched_metadata or treatment_beam_index is None:
-            unresolved_folders.append(delivery_path.name)
-            continue
+        return CaseDeliveryResult(
+            beam_jobs=[],
+            delivery_records=[],
+            fractions=fractions,
+            status="ready",
+            pending_reason="no_reference_fraction",
+            expected_beam_count=expected_beam_count,
+        )
 
-        unique_treatment_indices.add(int(treatment_beam_index))
-        delivery_timestamp = _parse_delivery_timestamp(delivery_path)
-        if delivery_timestamp is None:
-            logger.error(
-                "Could not determine delivery timestamp",
-                {"delivery_folder": delivery_path.name},
+    reference_fraction_paths = {path.resolve() for path in reference_fraction.delivery_folders}
+    reference_by_treatment_index: Dict[int, Dict[str, Any]] = {}
+    unresolved_folders = []
+
+    for fraction in fractions:
+        duplicate_beam_numbers = sorted(
+            {beam_number for beam_number in fraction.beam_numbers if beam_number and fraction.beam_numbers.count(beam_number) > 1}
+        )
+        if duplicate_beam_numbers:
+            log_fraction_event(
+                logger,
+                fraction_logger,
+                "duplicate_beam_number",
+                "Duplicate beam number detected within fraction",
+                {
+                    "case_id": case_id,
+                    "fraction_index": fraction.index,
+                    "duplicate_beam_numbers": duplicate_beam_numbers,
+                    "delivery_folders": [str(path) for path in fraction.delivery_folders],
+                },
             )
-            return [], []
+        if fraction.status == "anomaly":
+            log_fraction_event(
+                logger,
+                fraction_logger,
+                "anomaly_fraction",
+                "Fraction contains more delivered folders than expected beams",
+                {
+                    "case_id": case_id,
+                    "fraction_index": fraction.index,
+                    "expected_beam_count": expected_beam_count,
+                    "delivered_count": len(fraction.delivery_folders),
+                    "beam_numbers": fraction.beam_numbers,
+                },
+            )
 
-        beam_id = f"{case_id}_beam_{int(treatment_beam_index)}"
-        record = {
-            "delivery_id": _delivery_id(case_id, delivery_path),
-            "beam_id": beam_id,
-            "delivery_path": delivery_path,
-            "delivery_timestamp": delivery_timestamp.isoformat(),
-            "delivery_date": delivery_timestamp.strftime("%Y-%m-%d"),
-            "raw_beam_number": raw_beam_number,
-            "treatment_beam_index": int(treatment_beam_index),
-            "is_reference_delivery": False,
-        }
-        delivery_records.append(record)
+    for fraction in fractions:
+        for delivery_path in fraction.delivery_folders:
+            planinfo = _parse_required_planinfo(delivery_path)
+            if not planinfo:
+                logger.error(
+                    "Missing or invalid required PlanInfo data",
+                    {"delivery_folder": delivery_path.name},
+                )
+                return CaseDeliveryResult(
+                    beam_jobs=[],
+                    delivery_records=[],
+                    fractions=fractions,
+                    status="ready",
+                    pending_reason="invalid_planinfo",
+                    expected_beam_count=expected_beam_count,
+                )
 
-        existing = reference_by_treatment_index.get(int(treatment_beam_index))
-        if existing is None or delivery_timestamp < existing["timestamp"]:
-            reference_by_treatment_index[int(treatment_beam_index)] = {
+            if rtplan_patient_id and planinfo["patient_id"] != rtplan_patient_id:
+                logger.error(
+                    "PlanInfo patient ID does not match RT plan patient ID",
+                    {
+                        "delivery_folder": delivery_path.name,
+                        "planinfo_patient_id": planinfo["patient_id"],
+                        "rtplan_patient_id": rtplan_patient_id,
+                    },
+                )
+                return CaseDeliveryResult(
+                    beam_jobs=[],
+                    delivery_records=[],
+                    fractions=fractions,
+                    status="ready",
+                    pending_reason="patient_id_mismatch",
+                    expected_beam_count=expected_beam_count,
+                )
+
+            raw_beam_number = int(planinfo["beam_number"])
+            matched_metadata = _match_metadata_by_raw_beam_number(raw_beam_number, treatment_beams)
+            if not matched_metadata:
+                matched_metadata = _map_beam_folder_to_metadata(delivery_path, treatment_beams)
+
+            treatment_beam_index = (
+                _resolve_treatment_beam_index(matched_metadata, treatment_beams)
+                if matched_metadata
+                else None
+            )
+            if not matched_metadata or treatment_beam_index is None:
+                unresolved_folders.append(delivery_path.name)
+                continue
+
+            delivery_timestamp = _parse_delivery_timestamp(delivery_path)
+            if delivery_timestamp is None:
+                logger.error(
+                    "Could not determine delivery timestamp",
+                    {"delivery_folder": delivery_path.name},
+                )
+                return CaseDeliveryResult(
+                    beam_jobs=[],
+                    delivery_records=[],
+                    fractions=fractions,
+                    status="ready",
+                    pending_reason="missing_delivery_timestamp",
+                    expected_beam_count=expected_beam_count,
+                )
+
+            beam_id = f"{case_id}_beam_{int(treatment_beam_index)}"
+            record = {
+                "delivery_id": _delivery_id(case_id, delivery_path),
                 "beam_id": beam_id,
-                "beam_path": delivery_path,
-                "beam_number": int(treatment_beam_index),
-                "timestamp": delivery_timestamp,
+                "delivery_path": delivery_path,
+                "delivery_timestamp": delivery_timestamp.isoformat(),
+                "delivery_date": delivery_timestamp.strftime("%Y-%m-%d"),
+                "raw_beam_number": raw_beam_number,
+                "treatment_beam_index": int(treatment_beam_index),
+                "is_reference_delivery": False,
+                "fraction_index": fraction.index,
             }
+            delivery_records.append(record)
+
+            if delivery_path.resolve() in reference_fraction_paths:
+                existing = reference_by_treatment_index.get(int(treatment_beam_index))
+                if existing is None or delivery_timestamp < existing["timestamp"]:
+                    reference_by_treatment_index[int(treatment_beam_index)] = {
+                        "beam_id": beam_id,
+                        "beam_path": delivery_path,
+                        "beam_number": int(treatment_beam_index),
+                        "timestamp": delivery_timestamp,
+                    }
 
     if unresolved_folders:
         logger.error(
             "Failed to map one or more delivery folders to RT Plan beam metadata",
             {"unresolved_folders": unresolved_folders},
         )
-        return [], []
+        return CaseDeliveryResult(
+            beam_jobs=[],
+            delivery_records=[],
+            fractions=fractions,
+            status="ready",
+            pending_reason="unresolved_folders",
+            expected_beam_count=expected_beam_count,
+        )
 
-    if len(unique_treatment_indices) != expected_beam_count:
+    if len(reference_by_treatment_index) != expected_beam_count:
         logger.error(
-            "Unique delivered treatment beam count does not match RT Plan beam count",
+            "Reference fraction did not resolve to the expected unique treatment beam count",
             {
                 "expected": expected_beam_count,
-                "unique_delivered": len(unique_treatment_indices),
-                "delivery_folders": len(delivery_records),
+                "unique_delivered": len(reference_by_treatment_index),
+                "reference_fraction_index": reference_fraction.index,
             },
         )
-        return [], []
+        return CaseDeliveryResult(
+            beam_jobs=[],
+            delivery_records=delivery_records,
+            fractions=fractions,
+            status="ready",
+            pending_reason="reference_beam_count_mismatch",
+            expected_beam_count=expected_beam_count,
+        )
 
-    beam_jobs = sorted(
+    beam_jobs: List[Dict[str, Any]] = sorted(
         (
             {
                 "beam_id": info["beam_id"],
@@ -369,9 +537,16 @@ def prepare_case_delivery_data(
             "case_id": case_id,
             "reference_beams": len(beam_jobs),
             "deliveries": len(delivery_records),
+            "fractions": len(fractions),
         },
     )
-    return beam_jobs, delivery_records
+    return CaseDeliveryResult(
+        beam_jobs=beam_jobs,
+        delivery_records=delivery_records,
+        fractions=fractions,
+        status="ready",
+        expected_beam_count=expected_beam_count,
+    )
 
 
 def update_case_status_from_beams(case_id: str, case_repo: CaseRepository, logger: StructuredLogger = None):
@@ -466,8 +641,7 @@ def prepare_beam_jobs(
     treatment beam becomes the reference beam job for moqui_SMC.
     """
     try:
-        beam_jobs, _ = prepare_case_delivery_data(case_id, case_path, settings)
-        return beam_jobs
+        return prepare_case_delivery_data(case_id, case_path, settings).beam_jobs
     except Exception as e:
         logger = LoggerFactory.get_logger(f"dispatcher_{case_id}")
         logger.error("Failed to prepare beam jobs", {"case_id": case_id, "error": str(e)})

@@ -56,6 +56,7 @@ class DeliveryData:
     raw_beam_number: Optional[int]
     treatment_beam_index: Optional[int]
     is_reference_delivery: bool
+    fraction_index: Optional[int] = None
     ptn_status: Optional[str] = None
     ptn_last_run_at: Optional[datetime] = None
     gamma_pass_rate: Optional[float] = None
