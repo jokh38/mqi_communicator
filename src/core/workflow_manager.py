@@ -4,9 +4,10 @@
 # =====================================================================================
 """Manages and orchestrates the entire workflow for a case using a state pattern."""
 
-from typing import Optional, Any, Dict
+from typing import Optional, Any, Dict, List
 from pathlib import Path
 import multiprocessing as mp
+import time
 
 from watchdog.events import FileSystemEventHandler
 
@@ -19,6 +20,22 @@ from src.domain.enums import BeamStatus, CaseStatus
 from src.domain.states import WorkflowState, InitialState
 from src.utils.db_context import get_db_session
 from src.core.case_aggregator import queue_case as _queue_case
+
+
+def should_route_case_to_ptn_checker(
+    case_data: Any,
+    case_path: Path,
+    settings: Any,
+    observed_ptn_files: Optional[List[Path]] = None,
+) -> bool:
+    """Return True when a completed case with stable PTN arrivals should run PTN checker."""
+    if getattr(case_data, "status", None) != CaseStatus.COMPLETED:
+        return False
+
+    observed_ptn_files = observed_ptn_files or sorted(case_path.rglob("*.ptn"))
+    if not observed_ptn_files:
+        return False
+    return True
 
 
 class WorkflowManager:
@@ -238,12 +255,47 @@ class CaseDetectionHandler(FileSystemEventHandler):
         super().__init__()
         self.case_queue = case_queue
         self.logger = logger
+        self.settings = None
+        self.case_repo = None
 
     def on_created(self, event) -> None:
         """Handles the 'created' event from the file system watcher."""
-        if not event.is_directory:
+        self._handle_event(event)
+
+    def on_modified(self, event) -> None:
+        """Handles PTN modifications after file writes settle."""
+        self._handle_event(event)
+
+    def _handle_event(self, event) -> None:
+        if event.is_directory:
+            case_path = Path(event.src_path)
+            case_id = case_path.name
+            self.logger.info(f"New case detected: {case_id} at {case_path}")
+            _queue_case(case_id, case_path, self.case_queue, self.logger)
             return
-        case_path = Path(event.src_path)
+
+        src_path = Path(event.src_path)
+        if src_path.suffix.lower() != ".ptn" or self.settings is None:
+            return
+
+        case_path = src_path.parent
+        if case_path.name.startswith("beam_") or case_path.name.startswith("field_"):
+            case_path = case_path.parent
         case_id = case_path.name
-        self.logger.info(f"New case detected: {case_id} at {case_path}")
-        _queue_case(case_id, case_path, self.case_queue, self.logger)
+
+        if self.case_repo is not None:
+            case_data = self.case_repo.get_case(case_id)
+        else:
+            with get_db_session(self.settings, self.logger) as case_repo:
+                case_data = case_repo.get_case(case_id)
+
+        if not should_route_case_to_ptn_checker(
+            case_data=case_data,
+            case_path=case_path,
+            settings=self.settings,
+            observed_ptn_files=[src_path],
+        ):
+            return
+
+        self.logger.info(f"Stable PTN detected for completed case: {case_id}")
+        _queue_case(case_id, case_path, self.case_queue, self.logger, reason="ptn_checker")

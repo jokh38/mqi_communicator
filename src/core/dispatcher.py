@@ -1,5 +1,6 @@
 """Contains logic for dispatching cases and beams for processing."""
 
+from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
@@ -17,6 +18,7 @@ from src.utils.db_context import get_db_session
 from src.core.case_aggregator import ensure_logger as _ensure_logger
 from src.core.case_aggregator import _normalize_beam_identifier
 from src.core.workflow_manager import scan_existing_cases, CaseDetectionHandler
+from src.integrations.ptn_checker import PtnCheckerIntegration, PtnCheckerResult
 
 def _resolve_treatment_beam_index_from_raw_number(
     raw_beam_number: int, beam_metadata: List[Dict[str, Any]]
@@ -252,12 +254,21 @@ def run_case_level_tps_generation(
                 metadata={"message": f"Generating TPS file with {beam_count} beam assignments."}
             )
 
+            runtime_config = settings.get_moqui_runtime_config()
+            if not isinstance(runtime_config, dict):
+                runtime_config = {}
+            multigpu_enabled = runtime_config.get("multigpu_enabled", False)
+            beam_uses_all_available_gpus = runtime_config.get("beam_uses_all_available_gpus", False)
+            max_gpus_per_beam = runtime_config.get("max_gpus_per_beam", 1)
+
             # Check available GPUs and allocate what's possible
             available_gpu_count = gpu_repo.get_available_gpu_count()
             logger.info(f"Checking GPU availability for case {case_id}: {available_gpu_count} idle GPUs, {beam_count} requested")
 
-            # Allocate available GPUs (may be less than beam_count)
-            gpus_to_allocate = min(beam_count, available_gpu_count)
+            if multigpu_enabled and beam_uses_all_available_gpus:
+                gpus_to_allocate = min(available_gpu_count, max_gpus_per_beam)
+            else:
+                gpus_to_allocate = min(beam_count, available_gpu_count)
 
             if gpus_to_allocate == 0:
                 error_message = f"No GPUs available for case {case_id}. All beams will remain pending."
@@ -369,28 +380,25 @@ def run_case_level_tps_generation(
 
             tps_generator = TpsGenerator(settings, logger)
 
-            # Generate a separate TPS file for each beam with its own GPU assignment
-            # Use actual HpcJobSubmitter mode for execution_mode
             execution_mode = settings.get_handler_mode("HpcJobSubmitter")
-            for i, (gpu_assignment, beam) in enumerate(zip(gpu_assignments, beams[:len(gpu_assignments)])):
-                # Update GPU assignment to this specific beam (for UI display)
-                gpu_repo.assign_gpu_to_case(gpu_assignment["gpu_uuid"], beam.beam_id)
-
-                # W-3 fix: Add beam_id to gpu_assignment for proper matching in main.py
-                gpu_assignment["beam_id"] = beam.beam_id
-
-                beam_gpu_assignment = [gpu_assignment]  # Single GPU for this beam
+            if multigpu_enabled and beam_uses_all_available_gpus:
+                beam = beams[0]
                 beam_number = beam.beam_number
                 if beam_number is None:
                     raise ProcessingError(f"Beam number missing for {beam.beam_id}")
+
+                for gpu_assignment in gpu_assignments:
+                    gpu_repo.assign_gpu_to_case(gpu_assignment["gpu_uuid"], beam.beam_id)
+                    gpu_assignment["beam_id"] = beam.beam_id
+
                 success = tps_generator.generate_tps_file_with_gpu_assignments(
                     case_path=case_path,
                     case_id=case_id,
-                    gpu_assignments=beam_gpu_assignment,
+                    gpu_assignments=gpu_assignments,
                     execution_mode=execution_mode,
                     output_dir=tps_output_dir,
                     beam_name=beam.beam_id,
-                    beam_number=beam_number
+                    beam_number=beam_number,
                 )
 
                 if not success:
@@ -407,6 +415,39 @@ def run_case_level_tps_generation(
                         metadata={"error": error_message, "failed_beam": beam.beam_id}
                     )
                     return None
+            else:
+                for i, (gpu_assignment, beam) in enumerate(zip(gpu_assignments, beams[:len(gpu_assignments)])):
+                    gpu_repo.assign_gpu_to_case(gpu_assignment["gpu_uuid"], beam.beam_id)
+                    gpu_assignment["beam_id"] = beam.beam_id
+
+                    beam_gpu_assignment = [gpu_assignment]
+                    beam_number = beam.beam_number
+                    if beam_number is None:
+                        raise ProcessingError(f"Beam number missing for {beam.beam_id}")
+                    success = tps_generator.generate_tps_file_with_gpu_assignments(
+                        case_path=case_path,
+                        case_id=case_id,
+                        gpu_assignments=beam_gpu_assignment,
+                        execution_mode=execution_mode,
+                        output_dir=tps_output_dir,
+                        beam_name=beam.beam_id,
+                        beam_number=beam_number
+                    )
+
+                    if not success:
+                        error_message = f"TPS file generation failed for beam {beam.beam_id} in case {case_id}"
+                        logger.error(error_message)
+                        for allocated_gpu in gpu_assignments:
+                            gpu_uuid = allocated_gpu.get("gpu_uuid")
+                            if gpu_uuid:
+                                gpu_repo.release_gpu(gpu_uuid)
+                        case_repo.record_workflow_step(
+                            case_id=case_id,
+                            step=WorkflowStep.TPS_GENERATION,
+                            status="failed",
+                            metadata={"error": error_message, "failed_beam": beam.beam_id}
+                        )
+                        return None
 
             allocated_count = len(gpu_assignments)
             pending_count = beam_count - allocated_count
@@ -443,3 +484,66 @@ def run_case_level_tps_generation(
         except Exception as cleanup_error:
             logger.error("Failed to cleanup GPU allocations", {"error": str(cleanup_error)})
         return None
+
+
+def create_ptn_checker_integration(settings: Settings) -> PtnCheckerIntegration:
+    ptn_config = settings.get_ptn_checker_config()
+    return PtnCheckerIntegration(
+        ptn_checker_path=Path(ptn_config["path"]),
+        output_subdir=ptn_config["output_subdir"],
+    )
+
+
+def run_case_level_ptn_analysis(
+    case_id: str,
+    case_path: Path,
+    settings: Settings,
+) -> PtnCheckerResult:
+    """Run PTN checker for a completed case without changing case completion status."""
+    logger = LoggerFactory.get_logger(f"ptn_dispatcher_{case_id}")
+    validator = DataIntegrityValidator(logger)
+    integration = create_ptn_checker_integration(settings)
+    ptn_config = settings.get_ptn_checker_config()
+    default_output_dir = case_path / ptn_config["output_subdir"]
+    rtplan_path = validator.find_rtplan_file(case_path)
+    ptn_files = validator.find_ptn_files(case_path)
+    log_dir = ptn_files[0].parent if ptn_files else case_path
+
+    with get_db_session(settings, logger, handler_name="CsvInterpreter") as case_repo:
+        case_repo.record_workflow_step(
+            case_id=case_id,
+            step=WorkflowStep.POSTPROCESSING,
+            status="started",
+            metadata={"message": "Starting PTN checker analysis."},
+        )
+        if rtplan_path is None:
+            result = PtnCheckerResult(
+                success=False,
+                status_code="FAILED_NO_DICOM",
+                error_message="No RTPLAN DICOM file available for PTN analysis",
+                output_dir=default_output_dir,
+            )
+        else:
+            result = integration.run_analysis(
+                log_dir=log_dir,
+                dcm_file=rtplan_path,
+                case_path=case_path,
+            )
+        case_repo.record_ptn_checker_result(
+            case_id=case_id,
+            status_code=result.status_code,
+            last_run_at=datetime.now(),
+            error_message=result.error_message,
+        )
+        case_repo.record_workflow_step(
+            case_id=case_id,
+            step=WorkflowStep.POSTPROCESSING,
+            status="completed" if result.success else "failed",
+            error_message=result.error_message,
+            metadata={
+                "message": "PTN checker analysis finished.",
+                "status_code": result.status_code,
+                "output_dir": str(result.output_dir or default_output_dir),
+            },
+        )
+        return result

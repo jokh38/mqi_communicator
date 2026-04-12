@@ -109,6 +109,8 @@ class Settings:
                 "progress_tracking": self._yaml_config.get("progress_tracking", {}),
                 "logging": self._yaml_config.get("logging", {}),
                 "gpu": self._yaml_config.get("gpu", {}),
+                "moqui_runtime": self._yaml_config.get("moqui_runtime", {}),
+                "ptn_checker": self._yaml_config.get("ptn_checker", {}),
                 "ui": self._yaml_config.get("ui", {}),
                 "retry_policy": self._yaml_config.get("retry_policy", {}),
             }
@@ -337,6 +339,18 @@ class Settings:
         if self._validated_config:
             return self._validated_config.gpu.model_dump()
         return self._yaml_config.get("gpu", {})
+
+    def get_moqui_runtime_config(self) -> Dict[str, Any]:
+        """Return moqui runtime scheduling configuration."""
+        if self._validated_config:
+            return self._validated_config.moqui_runtime.model_dump()
+        return self._yaml_config.get("moqui_runtime", {})
+
+    def get_ptn_checker_config(self) -> Dict[str, Any]:
+        """Return PTN checker integration configuration."""
+        if self._validated_config:
+            return self._validated_config.ptn_checker.model_dump()
+        return self._yaml_config.get("ptn_checker", {})
 
     def get_validated_config(self) -> AppConfig:
         """Returns the typed validated Pydantic configuration."""

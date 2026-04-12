@@ -143,6 +143,9 @@ class DatabaseConnection:
                             assigned_gpu TEXT,
                             interpreter_completed BOOLEAN DEFAULT 0,
                             retry_count INTEGER DEFAULT 0,
+                            ptn_checker_run_count INTEGER DEFAULT 0,
+                            ptn_checker_last_run_at TIMESTAMP,
+                            ptn_checker_status TEXT,
                             FOREIGN KEY (assigned_gpu) REFERENCES gpu_resources (uuid)
                         )
                     """)
@@ -209,6 +212,15 @@ class DatabaseConnection:
                     if 'retry_count' not in case_columns:
                         self.logger.info("Adding retry_count column to cases table")
                         conn.execute("ALTER TABLE cases ADD COLUMN retry_count INTEGER DEFAULT 0")
+                    if 'ptn_checker_run_count' not in case_columns:
+                        self.logger.info("Adding ptn_checker_run_count column to cases table")
+                        conn.execute("ALTER TABLE cases ADD COLUMN ptn_checker_run_count INTEGER DEFAULT 0")
+                    if 'ptn_checker_last_run_at' not in case_columns:
+                        self.logger.info("Adding ptn_checker_last_run_at column to cases table")
+                        conn.execute("ALTER TABLE cases ADD COLUMN ptn_checker_last_run_at TIMESTAMP")
+                    if 'ptn_checker_status' not in case_columns:
+                        self.logger.info("Adding ptn_checker_status column to cases table")
+                        conn.execute("ALTER TABLE cases ADD COLUMN ptn_checker_status TEXT")
 
                     cursor = conn.execute("PRAGMA table_info(beams)")
                     beam_columns = [column[1] for column in cursor.fetchall()]

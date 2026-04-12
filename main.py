@@ -42,6 +42,7 @@ from src.core.worker import (
 )
 from src.core.dispatcher import (
     run_case_level_csv_interpreting,
+    run_case_level_ptn_analysis,
     run_case_level_tps_generation,
 )
 from src.core.case_aggregator import prepare_beam_jobs
@@ -148,8 +149,9 @@ class MQIApplication:
             if not scan_directory:
                 return
             event_handler = CaseDetectionHandler(self.case_queue, self.logger)
+            event_handler.settings = self.settings
             self.observer = Observer()
-            self.observer.schedule(event_handler, str(scan_directory), recursive=False)
+            self.observer.schedule(event_handler, str(scan_directory), recursive=True)
             self.observer.start()
             self.logger.info(f"Watching for new cases in: {scan_directory}")
         except Exception as e:
@@ -440,11 +442,16 @@ class MQIApplication:
         """
         case_id = case_data["case_id"]
         case_path = Path(case_data["case_path"])
+        queue_reason = case_data.get("reason")
         self.logger.info(f"Processing new case: {case_id}")
 
         # The main process now orchestrates the initial case-level steps
         # and updates the database so the UI can reflect the status.
         with get_db_session(self.settings, self.logger) as case_repo:
+            if queue_reason == "ptn_checker":
+                run_case_level_ptn_analysis(case_id, case_path, self.settings)
+                return
+
             # Step 1: Discover beams and validate data transfer completion
             beam_jobs = self._discover_beams(case_id, case_path, case_repo)
             if not beam_jobs:

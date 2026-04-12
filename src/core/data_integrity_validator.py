@@ -92,6 +92,18 @@ class DataIntegrityValidator:
             )
             return None
 
+    def find_ptn_files(self, case_path: Path) -> List[Path]:
+        """Find PTN files under the case directory."""
+        try:
+            return sorted(
+                file_path
+                for file_path in case_path.rglob("*.ptn")
+                if file_path.is_file()
+            )
+        except Exception as e:
+            self.logger.error(f"Error searching for PTN files in {case_path}: {str(e)}")
+            return []
+
     def parse_rtplan_beam_count(self, rtplan_path: Path) -> int:
         """
         Parse RT plan file to get expected beam count.

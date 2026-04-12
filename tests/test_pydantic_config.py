@@ -15,6 +15,8 @@ from src.config.pydantic_models import (
     ProgressTrackingConfig,
     LoggingConfig,
     GpuConfig,
+    MoquiRuntimeConfig,
+    PtnCheckerConfig,
     WebConfig,
     UIConfig,
     AppConfig,
@@ -257,6 +259,67 @@ class TestGpuConfig:
             GpuConfig(assignment_grace_period_seconds=-1)
 
         assert "assignment_grace_period_seconds" in str(exc_info.value)
+
+
+class TestMoquiRuntimeConfig:
+    """Test multigpu runtime configuration validation."""
+
+    def test_moqui_runtime_config_with_defaults(self):
+        config = MoquiRuntimeConfig()
+
+        assert config.multigpu_enabled is False
+        assert config.beam_uses_all_available_gpus is False
+        assert config.max_gpus_per_beam == 1
+
+    def test_moqui_runtime_config_accepts_valid_values(self):
+        config = MoquiRuntimeConfig(
+            multigpu_enabled=True,
+            beam_uses_all_available_gpus=True,
+            max_gpus_per_beam=4,
+        )
+
+        assert config.multigpu_enabled is True
+        assert config.beam_uses_all_available_gpus is True
+        assert config.max_gpus_per_beam == 4
+
+    def test_moqui_runtime_config_rejects_zero_max_gpus_per_beam(self):
+        with pytest.raises(ValidationError) as exc_info:
+            MoquiRuntimeConfig(max_gpus_per_beam=0)
+
+        assert "max_gpus_per_beam" in str(exc_info.value)
+
+
+class TestPtnCheckerConfig:
+    """Test PTN checker configuration validation."""
+
+    def test_ptn_checker_config_with_defaults(self):
+        config = PtnCheckerConfig()
+
+        assert config.output_subdir == "ptn_checker_output"
+        assert config.stability_window_seconds == 30
+        assert config.min_file_age_seconds == 5
+        assert config.size_poll_interval_seconds == 1
+
+    def test_ptn_checker_config_accepts_valid_values(self):
+        config = PtnCheckerConfig(
+            path="/tmp/ptn_checker",
+            output_subdir="custom_output",
+            stability_window_seconds=60,
+            min_file_age_seconds=10,
+            size_poll_interval_seconds=2,
+        )
+
+        assert config.path == "/tmp/ptn_checker"
+        assert config.output_subdir == "custom_output"
+        assert config.stability_window_seconds == 60
+        assert config.min_file_age_seconds == 10
+        assert config.size_poll_interval_seconds == 2
+
+    def test_ptn_checker_config_rejects_negative_file_age(self):
+        with pytest.raises(ValidationError) as exc_info:
+            PtnCheckerConfig(min_file_age_seconds=-1)
+
+        assert "min_file_age_seconds" in str(exc_info.value)
 
 
 class TestWebConfig:

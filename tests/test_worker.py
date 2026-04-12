@@ -276,3 +276,70 @@ def test_monitor_completed_workers_handles_completed_future_while_others_still_r
         raise AssertionError("Completed future should be removed from active_futures")
     if pending_future not in active_futures:
         raise AssertionError("Pending future should remain tracked")
+
+
+def test_try_allocate_pending_beams_multigpu_dispatches_only_first_waiting_beam():
+    settings = MagicMock()
+    settings.get_path.return_value = str(Path("tmp") / "csv_output")
+    settings.get_handler_mode.return_value = "local"
+    settings.get_moqui_runtime_config.return_value = {
+        "multigpu_enabled": True,
+        "beam_uses_all_available_gpus": True,
+        "max_gpus_per_beam": 3,
+    }
+    logger = MagicMock()
+    executor = MagicMock()
+    active_futures = {}
+    pending_beams = {
+        "case-1": {
+            "pending_jobs": [
+                {"beam_id": "beam-01", "beam_path": Path("cases") / "case-1" / "beam-01"},
+                {"beam_id": "beam-02", "beam_path": Path("cases") / "case-1" / "beam-02"},
+            ],
+            "case_path": Path("cases") / "case-1",
+        }
+    }
+
+    case_repo = MagicMock()
+    case_repo.db = object()
+    case_repo.get_beams_for_case.return_value = [
+        SimpleNamespace(beam_id="beam-01", beam_number=1),
+        SimpleNamespace(beam_id="beam-02", beam_number=2),
+    ]
+
+    repo_context = MagicMock()
+    repo_context.__enter__.return_value = case_repo
+    repo_context.__exit__.return_value = False
+
+    tps_generator = MagicMock()
+    tps_generator.generate_tps_file_with_gpu_assignments.return_value = True
+    gpu_assignments = [
+        {"gpu_uuid": "gpu-0", "gpu_id": 0},
+        {"gpu_uuid": "gpu-1", "gpu_id": 1},
+        {"gpu_uuid": "gpu-2", "gpu_id": 2},
+    ]
+
+    with patch("src.core.worker.allocate_gpus_for_pending_beams", return_value=gpu_assignments), \
+         patch("src.core.worker.TpsGenerator", return_value=tps_generator), \
+         patch("src.core.worker.submit_beam_worker") as submit_mock, \
+         patch("src.core.worker.get_db_session", return_value=repo_context), \
+         patch("src.utils.db_context.get_db_session", return_value=repo_context), \
+         patch("src.core.worker.GpuRepository") as gpu_repo_cls:
+        worker.try_allocate_pending_beams(
+            pending_beams_by_case=pending_beams,
+            executor=executor,
+            active_futures=active_futures,
+            settings=settings,
+            logger=logger,
+        )
+
+    tps_generator.generate_tps_file_with_gpu_assignments.assert_called_once()
+    call = tps_generator.generate_tps_file_with_gpu_assignments.call_args
+    if call.kwargs["beam_name"] != "beam-01":
+        raise AssertionError(f"Expected only the first beam to be dispatched, got {call.kwargs['beam_name']!r}")
+    if call.kwargs["gpu_assignments"] != gpu_assignments:
+        raise AssertionError(f"Expected all allocated GPUs on first beam, got {call.kwargs['gpu_assignments']!r}")
+    submit_mock.assert_called_once_with(executor, "beam-01", Path("cases") / "case-1" / "beam-01", settings, active_futures, logger)
+    remaining_jobs = pending_beams["case-1"]["pending_jobs"]
+    if [job["beam_id"] for job in remaining_jobs] != ["beam-02"]:
+        raise AssertionError(f"Expected second beam to remain queued, got {remaining_jobs!r}")

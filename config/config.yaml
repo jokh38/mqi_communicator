@@ -93,6 +93,18 @@ gpu:
   monitor_interval: 10
   assignment_grace_period_seconds: 60
 
+moqui_runtime:
+  multigpu_enabled: true
+  beam_uses_all_available_gpus: true
+  max_gpus_per_beam: 4
+
+ptn_checker:
+  path: "/home/jokh38/MOQUI_SMC/ptn_checker"
+  output_subdir: "ptn_checker_output"
+  stability_window_seconds: 30
+  min_file_age_seconds: 5
+  size_poll_interval_seconds: 1
+
 # =====================================================================================
 # UI - Dashboard 설정
 # =====================================================================================

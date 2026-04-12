@@ -51,6 +51,18 @@ class TestSettingsPydanticIntegration:
                 "utilization_threshold_percent": 80,
                 "polling_interval_seconds": 10
             },
+            "moqui_runtime": {
+                "multigpu_enabled": True,
+                "beam_uses_all_available_gpus": True,
+                "max_gpus_per_beam": 4
+            },
+            "ptn_checker": {
+                "path": "/tmp/ptn_checker",
+                "output_subdir": "ptn_checker_output",
+                "stability_window_seconds": 30,
+                "min_file_age_seconds": 5,
+                "size_poll_interval_seconds": 1
+            },
             "ui": {
                 "refresh_interval_seconds": 1,
                 "max_cases_display": 50
@@ -122,6 +134,25 @@ class TestSettingsPydanticIntegration:
         assert isinstance(proc_config, dict)
         assert proc_config["max_retries"] == 3
         assert proc_config["max_workers"] == 4
+
+    def test_settings_backward_compatible_get_moqui_runtime_config(self, valid_config_file):
+        settings = Settings(config_path=valid_config_file)
+
+        runtime_config = settings.get_moqui_runtime_config()
+
+        assert isinstance(runtime_config, dict)
+        assert runtime_config["multigpu_enabled"] is True
+        assert runtime_config["beam_uses_all_available_gpus"] is True
+        assert runtime_config["max_gpus_per_beam"] == 4
+
+    def test_settings_backward_compatible_get_ptn_checker_config(self, valid_config_file):
+        settings = Settings(config_path=valid_config_file)
+
+        ptn_config = settings.get_ptn_checker_config()
+
+        assert isinstance(ptn_config, dict)
+        assert ptn_config["path"] == "/tmp/ptn_checker"
+        assert ptn_config["output_subdir"] == "ptn_checker_output"
 
     def test_settings_backward_compatible_get_progress_tracking_config(self, valid_config_file):
         """Test get_progress_tracking_config() returns dict for backward compatibility"""

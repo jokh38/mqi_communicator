@@ -29,6 +29,10 @@ class TestCaseRepositoryMapping(unittest.TestCase):
             "error_message": "Test error",
             "assigned_gpu": "GPU-0",
             "interpreter_completed": 1,
+            "retry_count": 2,
+            "ptn_checker_run_count": 3,
+            "ptn_checker_last_run_at": "2025-01-01T12:00:00",
+            "ptn_checker_status": "SUCCESS",
         }
 
         result = self.repo._map_row_to_case_data(mock_row)
@@ -43,6 +47,10 @@ class TestCaseRepositoryMapping(unittest.TestCase):
         self.assertEqual(result.error_message, "Test error")
         self.assertEqual(result.assigned_gpu, "GPU-0")
         self.assertTrue(result.interpreter_completed)
+        self.assertEqual(result.retry_count, 2)
+        self.assertEqual(result.ptn_checker_run_count, 3)
+        self.assertEqual(result.ptn_checker_last_run_at, datetime(2025, 1, 1, 12, 0, 0))
+        self.assertEqual(result.ptn_checker_status, "SUCCESS")
 
     def test_map_row_to_case_data_with_null_updated_at(self):
         mock_row = {
@@ -55,6 +63,10 @@ class TestCaseRepositoryMapping(unittest.TestCase):
             "error_message": None,
             "assigned_gpu": None,
             "interpreter_completed": 0,
+            "retry_count": 0,
+            "ptn_checker_run_count": 0,
+            "ptn_checker_last_run_at": None,
+            "ptn_checker_status": None,
         }
 
         result = self.repo._map_row_to_case_data(mock_row)
@@ -65,6 +77,10 @@ class TestCaseRepositoryMapping(unittest.TestCase):
         self.assertIsNone(result.error_message)
         self.assertIsNone(result.assigned_gpu)
         self.assertFalse(result.interpreter_completed)
+        self.assertEqual(result.retry_count, 0)
+        self.assertEqual(result.ptn_checker_run_count, 0)
+        self.assertIsNone(result.ptn_checker_last_run_at)
+        self.assertIsNone(result.ptn_checker_status)
 
     def test_map_row_to_case_data_interpreter_completed_boolean(self):
         mock_row_false = {
@@ -77,6 +93,10 @@ class TestCaseRepositoryMapping(unittest.TestCase):
             "error_message": None,
             "assigned_gpu": None,
             "interpreter_completed": 0,
+            "retry_count": 0,
+            "ptn_checker_run_count": 0,
+            "ptn_checker_last_run_at": None,
+            "ptn_checker_status": None,
         }
 
         result_false = self.repo._map_row_to_case_data(mock_row_false)
@@ -89,6 +109,25 @@ class TestCaseRepositoryMapping(unittest.TestCase):
         result_true = self.repo._map_row_to_case_data(mock_row_true)
 
         self.assertTrue(result_true.interpreter_completed)
+
+    def test_record_ptn_checker_result_updates_tracking_fields(self):
+        self.repo._execute_query = Mock()
+
+        run_at = datetime(2025, 1, 1, 12, 30, 0)
+        self.repo.record_ptn_checker_result(
+            case_id="TEST001",
+            status_code="SUCCESS",
+            last_run_at=run_at,
+            error_message=None,
+        )
+
+        query, params = self.repo._execute_query.call_args[0]
+        self.assertIn("ptn_checker_status = ?", query)
+        self.assertIn("ptn_checker_last_run_at = ?", query)
+        self.assertIn("ptn_checker_run_count = ptn_checker_run_count + 1", query)
+        self.assertEqual(params[0], "SUCCESS")
+        self.assertEqual(params[1], run_at.isoformat())
+        self.assertEqual(params[-1], "TEST001")
 
     def test_map_row_to_beam_data_with_all_fields(self):
         mock_row = {
