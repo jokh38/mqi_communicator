@@ -142,6 +142,7 @@ cython_debug/
 
 # Local git worktrees
 .worktrees/
+.worktree/
 
 # Project-specific ignores
 .omc/
