@@ -183,7 +183,7 @@ class MQIApplication:
                 if web_config.get("enabled", False):
                     import socket
 
-                    web_port = web_config.get("port", 8080)
+                    web_port = self.ui_process_manager.get_web_port()
                     bind_address = web_config.get("bind_address", "0.0.0.0")
 
                     # Determine accessible URLs

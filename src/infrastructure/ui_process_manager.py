@@ -5,6 +5,7 @@
 """Manages the UI subprocess lifecycle, handling its creation, monitoring, and termination."""
 
 import os
+import errno
 import shutil
 import signal
 import subprocess
@@ -46,6 +47,7 @@ class UIProcessManager:
         self._process: Optional[subprocess.Popen] = None
         self._stdout_log_file: Optional[IO[str]] = None
         self._is_running = False
+        self.web_port: Optional[int] = None
         self.log_dir = self.project_root / self.config.get_logging_config()['log_dir']
     
     def start(self) -> bool:
@@ -67,12 +69,23 @@ class UIProcessManager:
             ui_config = self.config.get_ui_config()
             mode = ui_config.get("mode", "web")
             web_enabled = (mode == "web")
+            self.web_port = None
 
             if web_enabled:
                 web_config = ui_config.get("web", {})
                 port = web_config.get("port", 8080)
-                if not self._ensure_web_port_ready(port):
-                    raise RuntimeError(f"Port {port} already in use")
+                if self._ensure_web_port_ready(port):
+                    self.web_port = port
+                else:
+                    fallback_port = self._find_next_available_web_port(port + 1)
+                    if fallback_port is None:
+                        raise RuntimeError(f"Port {port} already in use")
+                    self.web_port = fallback_port
+                    if self.logger:
+                        self.logger.warning(
+                            "Using fallback UI port after reclaim failed",
+                            {"requested_port": port, "fallback_port": fallback_port},
+                        )
 
             command = self._get_ui_command()
 
@@ -241,6 +254,14 @@ class UIProcessManager:
             "is_running": self.is_running(),
             "return_code": self._process.returncode
         }
+
+    def get_web_port(self) -> Optional[int]:
+        """Return the active web port if the UI is running in web mode."""
+        if self.web_port is not None:
+            return self.web_port
+        ui_config = self.config.get_ui_config()
+        web_config = ui_config.get("web", {})
+        return web_config.get("port", 8080)
     
     def restart(self) -> bool:
         """Restarts the UI process.
@@ -275,7 +296,7 @@ class UIProcessManager:
         if mode == "web":
             web_config = ui_config.get("web", {})
             host = web_config.get("host", "0.0.0.0")
-            port = web_config.get("port", 8080)
+            port = self.web_port if self.web_port is not None else web_config.get("port", 8080)
             
             cmd = [
                 sys.executable,
@@ -375,10 +396,18 @@ class UIProcessManager:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.bind(('', port))
                 return True
-        except OSError:
+        except OSError as exc:
+            if getattr(exc, "errno", None) == errno.EADDRINUSE:
+                if self.logger:
+                    self.logger.error(f"Port {port} is already in use")
+                return False
+
             if self.logger:
-                self.logger.error(f"Port {port} is already in use")
-            return False
+                self.logger.warning(
+                    "Could not probe UI port availability; continuing without a bind pre-check",
+                    {"port": port, "error": str(exc), "errno": getattr(exc, "errno", None)},
+                )
+            return True
 
     def _ensure_web_port_ready(self, port: int) -> bool:
         """Ensure the configured UI port is free, killing any occupying process."""
@@ -386,42 +415,94 @@ class UIProcessManager:
             return True
 
         owner_info = self._find_port_owner_info(port)
-        if not owner_info:
+        if owner_info:
             if self.logger:
-                self.logger.error("UI port is in use but the owning process could not be identified", {
-                    "port": port
-                })
-            return False
-
-        if self.logger:
-            self.logger.warning("UI port is occupied. Killing the occupying process to reclaim port.", {
-                "port": port,
-                "pid": owner_info.get("pid"),
-                "command": owner_info.get("command"),
-            })
-
-        if not self._terminate_process_tree(owner_info["pid"]):
-            if self.logger:
-                self.logger.error("Failed to terminate process occupying UI port", {
+                self.logger.warning("UI port is occupied. Killing the occupying process to reclaim port.", {
                     "port": port,
                     "pid": owner_info.get("pid"),
+                    "command": owner_info.get("command"),
                 })
-            return False
+
+            if not self._terminate_process_tree(owner_info["pid"]):
+                if self.logger:
+                    self.logger.error("Failed to terminate process occupying UI port", {
+                        "port": port,
+                        "pid": owner_info.get("pid"),
+                    })
+                return False
+        else:
+            if self.logger:
+                self.logger.warning(
+                    "UI port is occupied but the owning process could not be identified; "
+                    "attempting direct port reclamation.",
+                    {"port": port},
+                )
+            if not self._reclaim_port_without_owner(port):
+                if self.logger:
+                    self.logger.error("Failed to reclaim occupied UI port", {"port": port})
+                return False
 
         if not self._wait_for_port_available(port):
             if self.logger:
                 self.logger.error("UI port did not clear after terminating occupying process", {
                     "port": port,
-                    "pid": owner_info.get("pid"),
+                    "pid": owner_info.get("pid") if owner_info else None,
                 })
             return False
 
         if self.logger:
             self.logger.info("Successfully reclaimed UI port", {
                 "port": port,
-                "pid": owner_info.get("pid"),
+                "pid": owner_info.get("pid") if owner_info else None,
             })
         return True
+
+    def _find_next_available_web_port(self, start_port: int, max_attempts: int = 50) -> Optional[int]:
+        """Find the next available port at or above start_port."""
+        for candidate in range(start_port, start_port + max_attempts):
+            if self._check_port_available(candidate):
+                return candidate
+        return None
+
+    def _reclaim_port_without_owner(self, port: int) -> bool:
+        """Forcefully reclaim a port when the owning process cannot be identified."""
+        commands = []
+        if shutil.which("fuser"):
+            commands.append(["fuser", "-k", "-KILL", "-n", "tcp", str(port)])
+            commands.append(["fuser", "-k", "-n", "tcp", str(port)])
+        if shutil.which("lsof"):
+            commands.append(["bash", "-lc", f"lsof -tiTCP:{port} -sTCP:LISTEN | xargs -r kill -KILL"])
+        commands.append([
+            "pkill",
+            "-9",
+            "-f",
+            f"uvicorn.*src.web.app:app.*--port {port}",
+        ])
+        commands.append([
+            "pkill",
+            "-9",
+            "-f",
+            f"src.web.app:app.*--port {port}",
+        ])
+
+        if not commands:
+            return False
+
+        for command in commands:
+            try:
+                result = subprocess.run(
+                    command,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+            except Exception:
+                continue
+
+            if result.returncode == 0:
+                return True
+
+        return False
 
     def _find_port_owner_info(self, port: int) -> Optional[Dict[str, Any]]:
         """Return PID and command for the process listening on a TCP port."""
