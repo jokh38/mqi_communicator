@@ -23,6 +23,10 @@ class CaseData:
     error_message: Optional[str] = None
     assigned_gpu: Optional[str] = None
     interpreter_completed: bool = False
+    retry_count: int = 0
+    ptn_checker_run_count: int = 0
+    ptn_checker_last_run_at: Optional[datetime] = None
+    ptn_checker_status: Optional[str] = None
 
 @dataclass
 class BeamData:

@@ -114,7 +114,8 @@ class CaseRepository(BaseRepository):
 
         query = """
             SELECT case_id, case_path, status, progress, created_at,
-                   updated_at, error_message, assigned_gpu, interpreter_completed
+                   updated_at, error_message, assigned_gpu, interpreter_completed,
+                   retry_count, ptn_checker_run_count, ptn_checker_last_run_at, ptn_checker_status
             FROM cases
             WHERE case_id = ?
         """
@@ -139,7 +140,8 @@ class CaseRepository(BaseRepository):
 
         query = """
             SELECT case_id, case_path, status, progress, created_at,
-                   updated_at, error_message, assigned_gpu, interpreter_completed
+                   updated_at, error_message, assigned_gpu, interpreter_completed,
+                   retry_count, ptn_checker_run_count, ptn_checker_last_run_at, ptn_checker_status
             FROM cases
             WHERE status = ?
             ORDER BY created_at ASC
@@ -329,6 +331,67 @@ class CaseRepository(BaseRepository):
             "Interpreter marked as completed", {"case_id": case_id}
         )
 
+    def update_ptn_checker_status(
+        self,
+        case_id: str,
+        status_code: str,
+        last_run_at: Optional[datetime] = None,
+    ) -> None:
+        """Update PTN checker status fields without altering run count."""
+        self._log_operation(
+            "update_ptn_checker_status",
+            case_id=case_id,
+            status_code=status_code,
+        )
+
+        query = """
+            UPDATE cases
+            SET ptn_checker_status = ?,
+                ptn_checker_last_run_at = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE case_id = ?
+        """
+        serialized_last_run_at = last_run_at.isoformat() if last_run_at else None
+        self._execute_query(query, (status_code, serialized_last_run_at, case_id))
+
+    def increment_ptn_checker_run_count(self, case_id: str) -> None:
+        """Increment PTN checker invocation count for a case."""
+        self._log_operation("increment_ptn_checker_run_count", case_id=case_id)
+        query = """
+            UPDATE cases
+            SET ptn_checker_run_count = ptn_checker_run_count + 1,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE case_id = ?
+        """
+        self._execute_query(query, (case_id,))
+
+    def record_ptn_checker_result(
+        self,
+        case_id: str,
+        status_code: str,
+        last_run_at: datetime,
+        error_message: Optional[str] = None,
+    ) -> None:
+        """Atomically record PTN checker result fields on the parent case."""
+        self._log_operation(
+            "record_ptn_checker_result",
+            case_id=case_id,
+            status_code=status_code,
+        )
+        query = """
+            UPDATE cases
+            SET ptn_checker_status = ?,
+                ptn_checker_last_run_at = ?,
+                ptn_checker_run_count = ptn_checker_run_count + 1,
+                error_message = COALESCE(?, error_message),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE case_id = ?
+        """
+        self._execute_query(
+            query,
+            (status_code, last_run_at.isoformat(), error_message, case_id),
+        )
+
     # =================================================================================
     # Beam-specific methods
     # =================================================================================
@@ -500,7 +563,8 @@ class CaseRepository(BaseRepository):
         placeholders = ",".join(["?" for _ in active_statuses])
         query = f"""
             SELECT case_id, case_path, status, progress, created_at,
-                   updated_at, error_message, assigned_gpu, interpreter_completed
+                   updated_at, error_message, assigned_gpu, interpreter_completed,
+                   retry_count, ptn_checker_run_count, ptn_checker_last_run_at, ptn_checker_status
             FROM cases
             WHERE status IN ({placeholders})
             ORDER BY created_at ASC
@@ -609,7 +673,8 @@ class CaseRepository(BaseRepository):
         # Get cases
         case_query = f"""
             SELECT case_id, case_path, status, progress, created_at,
-                   updated_at, error_message, assigned_gpu, interpreter_completed
+                   updated_at, error_message, assigned_gpu, interpreter_completed,
+                   retry_count, ptn_checker_run_count, ptn_checker_last_run_at, ptn_checker_status
             FROM cases
             WHERE status IN ({placeholders})
             ORDER BY created_at ASC
@@ -658,7 +723,8 @@ class CaseRepository(BaseRepository):
 
         case_query = """
             SELECT case_id, case_path, status, progress, created_at,
-                   updated_at, error_message, assigned_gpu, interpreter_completed
+                   updated_at, error_message, assigned_gpu, interpreter_completed,
+                   retry_count, ptn_checker_run_count, ptn_checker_last_run_at, ptn_checker_status
             FROM cases
             ORDER BY updated_at DESC, created_at DESC, case_id ASC
         """
@@ -727,6 +793,14 @@ class CaseRepository(BaseRepository):
             error_message=row.get("error_message") if hasattr(row, "get") else row["error_message"],
             assigned_gpu=row.get("assigned_gpu") if hasattr(row, "get") else row["assigned_gpu"],
             interpreter_completed=bool(row["interpreter_completed"]) if "interpreter_completed" in row.keys() else False,
+            retry_count=row["retry_count"] if "retry_count" in row.keys() else 0,
+            ptn_checker_run_count=row["ptn_checker_run_count"] if "ptn_checker_run_count" in row.keys() else 0,
+            ptn_checker_last_run_at=(
+                datetime.fromisoformat(row["ptn_checker_last_run_at"])
+                if "ptn_checker_last_run_at" in row.keys() and row["ptn_checker_last_run_at"]
+                else None
+            ),
+            ptn_checker_status=row["ptn_checker_status"] if "ptn_checker_status" in row.keys() else None,
         )
 
 

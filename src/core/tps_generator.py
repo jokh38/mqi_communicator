@@ -35,6 +35,30 @@ class TpsGenerator:
         # Fetch and resolve TPS generator paths from configuration
         self.resolved_paths = self._resolve_tps_generator_paths()
 
+    def _format_gpu_parameter(self, gpu_assignments: List[Dict[str, Any]], beam_number: Optional[int]) -> Any:
+        runtime_config = self.settings.get_moqui_runtime_config()
+        if not isinstance(runtime_config, dict):
+            runtime_config = {}
+        multigpu_enabled = runtime_config.get("multigpu_enabled", False)
+        beam_uses_all_available_gpus = runtime_config.get("beam_uses_all_available_gpus", False)
+
+        if not gpu_assignments:
+            return 0
+
+        if multigpu_enabled and beam_uses_all_available_gpus and beam_number is not None:
+            gpu_ids = [str(assignment.get("gpu_id", 0)) for assignment in gpu_assignments]
+            return ",".join(gpu_ids)
+
+        if len(gpu_assignments) == 1:
+            return gpu_assignments[0].get("gpu_id", 0)
+
+        gpu_mapping = []
+        for i, assignment in enumerate(gpu_assignments):
+            mapped_beam_number = i + 1
+            gpu_id = assignment.get("gpu_id", 0)
+            gpu_mapping.append(f"{mapped_beam_number}:{gpu_id}")
+        return ",".join(gpu_mapping)
+
     def _resolve_tps_generator_paths(self) -> Dict[str, str]:
         """Resolve TPS generator paths from configuration using Settings.get_path().
 
@@ -143,27 +167,8 @@ class TpsGenerator:
             else:
                 parameters["BeamNumbers"] = beam_count
 
-            # Create GPU assignment mapping
-            if gpu_assignments:
-                # For multiple beams, set BeamNumbers to map to actual GPU IDs
-                # Format: "BeamNumber1:GPUID1,BeamNumber2:GPUID2,..."
-                gpu_mapping = []
-                for i, assignment in enumerate(gpu_assignments):
-                    beam_number = i + 1  # Beam numbers are 1-indexed
-                    # Use the actual GPU ID from the assignment, not the sequential index
-                    gpu_id = assignment.get("gpu_id", 0)
-                    gpu_mapping.append(f"{beam_number}:{gpu_id}")
-
-                # Set GPUID as comma-separated mapping or single value for compatibility
-                if len(gpu_assignments) == 1:
-                    # Single beam case - just use the GPU ID
-                    parameters["GPUID"] = gpu_assignments[0].get("gpu_id", 0)
-                else:
-                    # Multiple beams - use mapping format
-                    parameters["GPUID"] = ",".join(gpu_mapping)
-            else:
-                # Fallback to default single GPU
-                parameters["GPUID"] = 0
+            parameters["GPUID"] = self._format_gpu_parameter(gpu_assignments, beam_number)
+            if not gpu_assignments:
                 parameters["BeamNumbers"] = 1
 
             # Validate required parameters

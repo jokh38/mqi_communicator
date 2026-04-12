@@ -73,3 +73,27 @@ def test_repo_config_uses_single_case_prefix_in_sim_log_name() -> None:
 
     if log_path != "/home/jokh38/MOQUI_SMC/mqi_communicator/logs/sim_55061194_2025042401440800.log":
         raise AssertionError(f"Unexpected log path: {log_path}")
+
+
+def test_repo_config_exposes_moqui_runtime_section() -> None:
+    settings = Settings(config_path=Path("config/config.yaml"))
+
+    runtime_config = settings.get_moqui_runtime_config()
+
+    if runtime_config["multigpu_enabled"] is not True:
+        raise AssertionError(f"Expected multigpu_enabled True, got {runtime_config!r}")
+    if runtime_config["beam_uses_all_available_gpus"] is not True:
+        raise AssertionError(f"Expected beam_uses_all_available_gpus True, got {runtime_config!r}")
+    if runtime_config["max_gpus_per_beam"] != 4:
+        raise AssertionError(f"Expected max_gpus_per_beam 4, got {runtime_config!r}")
+
+
+def test_repo_config_exposes_ptn_checker_section() -> None:
+    settings = Settings(config_path=Path("config/config.yaml"))
+
+    ptn_config = settings.get_ptn_checker_config()
+
+    if ptn_config["path"] != "/home/jokh38/MOQUI_SMC/ptn_checker":
+        raise AssertionError(f"Unexpected PTN checker path: {ptn_config!r}")
+    if ptn_config["output_subdir"] != "ptn_checker_output":
+        raise AssertionError(f"Unexpected PTN checker output_subdir: {ptn_config!r}")

@@ -227,6 +227,56 @@ class GpuConfig(BaseModel):
     )
 
 
+class MoquiRuntimeConfig(BaseModel):
+    """Runtime settings that control moqui GPU scheduling semantics."""
+
+    multigpu_enabled: bool = Field(
+        default=False,
+        description="Enable multigpu-aware scheduling and TPS generation"
+    )
+    beam_uses_all_available_gpus: bool = Field(
+        default=False,
+        description="Reserve all currently usable GPUs for a single beam"
+    )
+    max_gpus_per_beam: int = Field(
+        default=1,
+        ge=1,
+        le=32,
+        description="Upper bound for GPUs reserved by one beam"
+    )
+
+
+class PtnCheckerConfig(BaseModel):
+    """Configuration for PTN follow-up analysis on completed cases."""
+
+    path: Optional[str] = Field(
+        default=None,
+        description="Filesystem path to the in-repo PTN checker project"
+    )
+    output_subdir: str = Field(
+        default="ptn_checker_output",
+        description="Case-local output directory for PTN checker artifacts"
+    )
+    stability_window_seconds: int = Field(
+        default=30,
+        ge=0,
+        le=3600,
+        description="Debounce window before PTN analysis is considered stable"
+    )
+    min_file_age_seconds: int = Field(
+        default=5,
+        ge=0,
+        le=3600,
+        description="Minimum PTN file age before analysis is allowed"
+    )
+    size_poll_interval_seconds: int = Field(
+        default=1,
+        ge=1,
+        le=300,
+        description="Polling interval for PTN file size stability checks"
+    )
+
+
 class UIMode(str, Enum):
     """Valid UI modes"""
     TERMINAL = "terminal"
@@ -398,6 +448,14 @@ class AppConfig(BaseModel):
     gpu: GpuConfig = Field(
         default_factory=GpuConfig,
         description="GPU configuration"
+    )
+    moqui_runtime: MoquiRuntimeConfig = Field(
+        default_factory=MoquiRuntimeConfig,
+        description="moqui runtime scheduling configuration"
+    )
+    ptn_checker: PtnCheckerConfig = Field(
+        default_factory=PtnCheckerConfig,
+        description="PTN checker integration configuration"
     )
     ui: UIConfig = Field(
         default_factory=UIConfig,

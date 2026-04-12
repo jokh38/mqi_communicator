@@ -1,10 +1,11 @@
 from datetime import datetime
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from src.domain.enums import CaseStatus
-from src.core.workflow_manager import scan_existing_cases
+from src.core.workflow_manager import CaseDetectionHandler, scan_existing_cases
 
 
 def _case(case_id: str, status: CaseStatus, retry_count: int = 0):
@@ -91,3 +92,54 @@ def test_scan_existing_cases_requeues_processing_case(tmp_path):
         scan_existing_cases(case_queue, settings, logger)
 
     queue_mock.assert_called_once_with("55061194", case_path, case_queue, logger)
+
+
+def test_case_detection_handler_queues_completed_case_when_ptn_file_stabilizes(tmp_path):
+    case_queue = MagicMock()
+    logger = MagicMock()
+    handler = CaseDetectionHandler(case_queue, logger)
+    handler.settings = MagicMock()
+    handler.settings.get_ptn_checker_config.return_value = {
+        "stability_window_seconds": 30,
+        "min_file_age_seconds": 5,
+        "size_poll_interval_seconds": 1,
+    }
+    handler.case_repo = MagicMock()
+    handler.case_repo.get_case.return_value = _case("55061194", CaseStatus.COMPLETED)
+
+    case_path = tmp_path / "55061194"
+    case_path.mkdir()
+    ptn_file = case_path / "delivered.ptn"
+    ptn_file.write_text("stable", encoding="utf-8")
+    event = SimpleNamespace(is_directory=False, src_path=str(ptn_file))
+
+    with patch("src.core.workflow_manager._queue_case", return_value=True) as queue_mock:
+        handler.on_created(event)
+
+    queue_mock.assert_called_once_with("55061194", case_path, case_queue, logger, reason="ptn_checker")
+
+
+def test_case_detection_handler_ignores_non_completed_case_ptn_event(tmp_path):
+    case_queue = MagicMock()
+    logger = MagicMock()
+    handler = CaseDetectionHandler(case_queue, logger)
+    handler.settings = MagicMock()
+    handler.settings.get_ptn_checker_config.return_value = {
+        "stability_window_seconds": 30,
+        "min_file_age_seconds": 0,
+        "size_poll_interval_seconds": 1,
+    }
+    handler.case_repo = MagicMock()
+    handler.case_repo.get_case.return_value = _case("55061194", CaseStatus.PROCESSING)
+
+    case_path = tmp_path / "55061194"
+    case_path.mkdir()
+    ptn_file = case_path / "delivered.ptn"
+    ptn_file.write_text("stable", encoding="utf-8")
+    now = time.time() - 10
+    with patch.object(Path, "stat", return_value=SimpleNamespace(st_size=6, st_mtime=now)):
+        event = SimpleNamespace(is_directory=False, src_path=str(ptn_file))
+        with patch("src.core.workflow_manager._queue_case", return_value=True) as queue_mock:
+            handler.on_created(event)
+
+    queue_mock.assert_not_called()

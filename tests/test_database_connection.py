@@ -377,3 +377,78 @@ def test_update_resources_preserves_assigned_gpu_state_and_beam_mapping(tmp_path
         raise AssertionError(f"Expected memory_free 20480, got {row['memory_free']!r}")
     if row["utilization"] != 88:
         raise AssertionError(f"Expected utilization 88, got {row['utilization']!r}")
+
+
+def test_init_db_creates_ptn_checker_columns_for_new_database(tmp_path: Path) -> None:
+    db_path = tmp_path / "ptn_columns_new.db"
+    settings = Mock()
+    settings.get_database_config.return_value = {
+        "connection_timeout_seconds": 30,
+        "journal_mode": "WAL",
+        "synchronous_mode": "NORMAL",
+        "cache_size_mb": 64,
+        "busy_timeout_ms": 5000,
+    }
+    logger = Mock()
+
+    db = DatabaseConnection(db_path=db_path, settings=settings, logger=logger)
+    try:
+        db.init_db()
+        columns = {
+            row[1]: row
+            for row in db.connection.execute("PRAGMA table_info(cases)").fetchall()
+        }
+    finally:
+        db.close()
+
+    for column_name in ("ptn_checker_run_count", "ptn_checker_last_run_at", "ptn_checker_status"):
+        if column_name not in columns:
+            raise AssertionError(f"Expected PTN checker column {column_name!r} in cases table")
+
+
+def test_init_db_migrates_existing_cases_table_with_ptn_checker_columns(tmp_path: Path) -> None:
+    db_path = tmp_path / "ptn_columns_migration.db"
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        """
+        CREATE TABLE cases (
+            case_id TEXT PRIMARY KEY,
+            case_path TEXT NOT NULL,
+            status TEXT NOT NULL,
+            progress REAL DEFAULT 0.0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            error_message TEXT,
+            assigned_gpu TEXT,
+            interpreter_completed BOOLEAN DEFAULT 0,
+            retry_count INTEGER DEFAULT 0
+        )
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    settings = Mock()
+    settings.get_database_config.return_value = {
+        "connection_timeout_seconds": 30,
+        "journal_mode": "WAL",
+        "synchronous_mode": "NORMAL",
+        "cache_size_mb": 64,
+        "busy_timeout_ms": 5000,
+    }
+    logger = Mock()
+
+    db = DatabaseConnection(db_path=db_path, settings=settings, logger=logger)
+    try:
+        db.init_db()
+        columns = {
+            row[1]: row
+            for row in db.connection.execute("PRAGMA table_info(cases)").fetchall()
+        }
+    finally:
+        db.close()
+
+    if columns["ptn_checker_run_count"][4] != "0":
+        raise AssertionError(
+            f"Expected default 0 for ptn_checker_run_count, got {columns['ptn_checker_run_count'][4]!r}"
+        )
