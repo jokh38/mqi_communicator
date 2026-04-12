@@ -173,6 +173,7 @@ class DashboardDataProvider:
                 "memory_used": gpu.memory_used,
                 "memory_total": gpu.memory_total,
                 "utilization": gpu.utilization,
+                "core_clock": getattr(gpu, "core_clock", 0),
                 "temperature": gpu.temperature
             })
         return processed_gpus

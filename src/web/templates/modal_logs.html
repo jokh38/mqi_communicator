@@ -1,0 +1,102 @@
+<!-- modal_logs.html -->
+<div id="log-modal" class="relative z-50" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+    <!-- Background backdrop -->
+    <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" 
+         onclick="document.getElementById('modal-container').innerHTML = '';"></div>
+
+    <div class="fixed inset-0 z-10 w-screen overflow-y-auto">
+        <div class="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
+            <div class="relative transform overflow-hidden rounded-lg bg-white text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-3xl">
+                <!-- Modal Header -->
+                <div class="bg-gray-50 px-4 py-3 border-b border-gray-200 flex justify-between items-center">
+                    <div>
+                        <h3 class="text-base font-semibold leading-6 text-gray-900" id="modal-title">
+                            Workflow Logs: {{ case_display.case_id }}
+                        </h3>
+                        <p class="mt-1 text-sm text-gray-500">Current Status: <span class="font-medium text-gray-800">{{ case_display.status.value }}</span></p>
+                    </div>
+                    <button type="button" 
+                            class="text-gray-400 hover:text-gray-500 focus:outline-none" 
+                            onclick="document.getElementById('modal-container').innerHTML = '';">
+                        <span class="sr-only">Close</span>
+                        <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+                
+                <!-- Modal Body -->
+                <div class="bg-white px-4 pb-4 pt-5 sm:p-6">
+                    
+                    {% if case_display.error_message %}
+                    <div class="mb-4 rounded-md bg-red-50 p-4 border border-red-200">
+                        <div class="flex">
+                            <div class="flex-shrink-0">
+                                <svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clip-rule="evenodd" />
+                                </svg>
+                            </div>
+                            <div class="ml-3">
+                                <h3 class="text-sm font-medium text-red-800">Failure Reason</h3>
+                                <div class="mt-2 text-sm text-red-700">
+                                    <p class="whitespace-pre-wrap font-mono text-xs">{{ case_display.error_message }}</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <div class="overflow-x-auto border rounded-lg border-gray-200">
+                        <table class="min-w-full divide-y divide-gray-200 text-sm">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-4 py-2 text-left font-medium text-gray-500 uppercase tracking-wider">Step</th>
+                                    <th class="px-4 py-2 text-left font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                    <th class="px-4 py-2 text-left font-medium text-gray-500 uppercase tracking-wider">Started At</th>
+                                    <th class="px-4 py-2 text-left font-medium text-gray-500 uppercase tracking-wider">Completed At</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-200 bg-white">
+                                {% for step in workflow_steps %}
+                                <tr class="{% if step.status == 'failed' %}bg-red-50{% endif %}">
+                                    <td class="px-4 py-2 font-medium text-gray-900">{{ step.step.value }}</td>
+                                    <td class="px-4 py-2">
+                                        <span class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium 
+                                            {% if step.status == 'completed' %}bg-green-50 text-green-700 ring-1 ring-inset ring-green-600/20
+                                            {% elif step.status == 'failed' %}bg-red-50 text-red-700 ring-1 ring-inset ring-red-600/10
+                                            {% else %}bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-700/10{% endif %}">
+                                            {{ step.status }}
+                                        </span>
+                                    </td>
+                                    <td class="px-4 py-2 text-gray-500 whitespace-nowrap">{{ step.started_at }}</td>
+                                    <td class="px-4 py-2 text-gray-500 whitespace-nowrap">{{ step.completed_at or '-' }}</td>
+                                </tr>
+                                {% if step.error_message %}
+                                <tr>
+                                    <td colspan="4" class="px-4 py-2 text-xs text-red-600 bg-red-50 border-t-0 font-mono whitespace-pre-wrap">
+                                        Error: {{ step.error_message }}
+                                    </td>
+                                </tr>
+                                {% endif %}
+                                {% else %}
+                                <tr>
+                                    <td colspan="4" class="px-4 py-4 text-center text-gray-500">No workflow history recorded.</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <!-- Modal Footer -->
+                <div class="bg-gray-50 px-4 py-3 sm:flex sm:flex-row-reverse sm:px-6">
+                    <button type="button" 
+                            class="mt-3 inline-flex w-full justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:mt-0 sm:w-auto"
+                            onclick="document.getElementById('modal-container').innerHTML = '';">
+                        Close
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

@@ -51,9 +51,9 @@ class GpuRepository(BaseRepository):
         query = """
             INSERT INTO gpu_resources (
                 uuid, gpu_index, name, memory_total, memory_used, memory_free,
-                temperature, utilization, status, last_updated
+                temperature, utilization, core_clock, status, last_updated
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             ON CONFLICT(uuid) DO UPDATE SET
                 gpu_index = excluded.gpu_index,
                 name = excluded.name,
@@ -62,6 +62,7 @@ class GpuRepository(BaseRepository):
                 memory_free = excluded.memory_free,
                 temperature = excluded.temperature,
                 utilization = excluded.utilization,
+                core_clock = excluded.core_clock,
                 status = CASE
                     WHEN gpu_resources.assigned_case IS NOT NULL THEN gpu_resources.status
                     ELSE excluded.status
@@ -80,6 +81,7 @@ class GpuRepository(BaseRepository):
                 gpu["memory_free"],
                 gpu["temperature"],
                 gpu["utilization"],
+                gpu.get("core_clock", 0),
                 GpuStatus.IDLE.value,
             )
             for gpu in gpu_data
@@ -328,7 +330,7 @@ class GpuRepository(BaseRepository):
 
         query = """
             SELECT uuid, gpu_index, name, memory_total, memory_used, memory_free,
-                   temperature, utilization, status, assigned_case, last_updated
+                   temperature, utilization, core_clock, status, assigned_case, last_updated
             FROM gpu_resources
             ORDER BY gpu_index ASC
         """
@@ -347,6 +349,7 @@ class GpuRepository(BaseRepository):
                     memory_free=row["memory_free"],
                     temperature=row["temperature"],
                     utilization=row["utilization"],
+                    core_clock=row.get("core_clock", 0),
                     status=GpuStatus(row["status"]),
                     assigned_case=row["assigned_case"],
                     last_updated=(
@@ -372,7 +375,7 @@ class GpuRepository(BaseRepository):
 
         query = """
             SELECT uuid, gpu_index, name, memory_total, memory_used, memory_free,
-                   temperature, utilization, status, assigned_case, last_updated
+                   temperature, utilization, core_clock, status, assigned_case, last_updated
             FROM gpu_resources
             WHERE uuid = ?
         """
@@ -389,6 +392,7 @@ class GpuRepository(BaseRepository):
                 memory_free=row["memory_free"],
                 temperature=row["temperature"],
                 utilization=row["utilization"],
+                core_clock=row.get("core_clock", 0),
                 status=GpuStatus(row["status"]),
                 assigned_case=row["assigned_case"],
                 last_updated=(

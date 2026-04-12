@@ -1,73 +1,101 @@
-<div class="h-full flex flex-col space-y-6" hx-get="/ui/workflow" hx-trigger="every 3s" hx-swap="outerHTML">
-    <!-- Top Banner: System Metrics -->
-    <div class="grid grid-cols-4 gap-4">
-        <div class="bg-white p-4 rounded shadow border-l-4 border-blue-500">
-            <h3 class="text-sm text-gray-500 uppercase tracking-wide">Total GPUs</h3>
-            <p class="text-2xl font-bold">{{ stats.total_gpus }}</p>
+<div class="h-full flex flex-col space-y-4" hx-get="/ui/workflow" hx-trigger="every 3s [!document.getElementById('log-modal')]" hx-swap="outerHTML">
+    <!-- Top Banner: System Metrics & Wall Time -->
+    <div class="flex justify-between items-center bg-white p-4 rounded shadow border border-gray-200">
+        <div class="flex space-x-6">
+            <div>
+                <h3 class="text-xs text-gray-500 uppercase tracking-wide">Active Cases</h3>
+                <p class="text-xl font-bold text-gray-800">{{ cases|length }}</p>
+            </div>
+            <div>
+                <h3 class="text-xs text-gray-500 uppercase tracking-wide">Pending Queue</h3>
+                <p class="text-xl font-bold text-gray-800">{{ stats.get('pending', 0) }}</p>
+            </div>
+            <div>
+                <h3 class="text-xs text-gray-500 uppercase tracking-wide">Total GPUs</h3>
+                <p class="text-xl font-bold text-blue-600">{{ stats.total_gpus }}</p>
+            </div>
         </div>
-        <div class="bg-white p-4 rounded shadow border-l-4 border-green-500">
-            <h3 class="text-sm text-gray-500 uppercase tracking-wide">Available GPUs</h3>
-            <p class="text-2xl font-bold">{{ stats.available_gpus }}</p>
+        <div class="text-right">
+            <h3 class="text-xs text-gray-500 uppercase tracking-wide">Wall Time</h3>
+            <p class="text-2xl font-mono font-bold text-gray-700">
+                {{ stats.last_update.strftime('%H:%M:%S') if stats.last_update else '--:--:--' }}
+            </p>
         </div>
-        <div class="bg-white p-4 rounded shadow border-l-4 border-yellow-500">
-            <h3 class="text-sm text-gray-500 uppercase tracking-wide">Active Cases</h3>
-            <p class="text-2xl font-bold">{{ cases|length }}</p>
-        </div>
-        <div class="bg-white p-4 rounded shadow border-l-4 border-purple-500">
-            <h3 class="text-sm text-gray-500 uppercase tracking-wide">Pending Queue</h3>
-            <p class="text-2xl font-bold">{{ stats.get('pending', 0) }}</p>
+    </div>
+
+    <!-- GPU Grid -->
+    <div class="bg-white rounded shadow p-4 border border-gray-200">
+        <h2 class="text-sm font-semibold mb-3 text-gray-700 uppercase tracking-wide border-b pb-1">GPU Status Monitor</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+            {% for gpu in gpus %}
+                <div class="border rounded p-3 bg-gray-50 flex flex-col space-y-1 relative overflow-hidden">
+                    <!-- Status Indicator Line -->
+                    <div class="absolute top-0 left-0 w-1 h-full {% if gpu.status.value == 'assigned' %}bg-yellow-500{% elif gpu.status.value == 'idle' %}bg-green-500{% else %}bg-gray-400{% endif %}"></div>
+                    
+                    <div class="flex justify-between items-center ml-2">
+                        <span class="text-sm font-bold text-gray-800">GPU {{ gpu.gpu_index }}</span>
+                        <span class="text-xs font-semibold px-2 py-0.5 rounded-full {% if gpu.status.value == 'assigned' %}bg-yellow-100 text-yellow-800{% elif gpu.status.value == 'idle' %}bg-green-100 text-green-800{% else %}bg-gray-200 text-gray-800{% endif %}">
+                            {{ gpu.status.value }}
+                        </span>
+                    </div>
+                    <div class="ml-2 text-xs text-gray-600 grid grid-cols-2 gap-y-1 mt-1">
+                        <div><span class="text-gray-400">VRAM:</span> {{ gpu.memory_used }}/{{ gpu.memory_total }} MB</div>
+                        <div><span class="text-gray-400">Core:</span> {{ gpu.core_clock }} MHz</div>
+                        <div><span class="text-gray-400">Load:</span> {{ gpu.utilization }}%</div>
+                        <div><span class="text-gray-400">Temp:</span> {{ gpu.temperature }}°C</div>
+                    </div>
+                </div>
+            {% else %}
+                <div class="col-span-full text-center text-sm text-gray-500 py-2">No GPUs detected.</div>
+            {% endfor %}
         </div>
     </div>
 
     <!-- Active Pipeline Workspace -->
-    <div class="bg-white flex-grow rounded shadow p-6 flex flex-col overflow-hidden">
-        <h2 class="text-lg font-semibold mb-4 border-b pb-2">Live Case Tracker</h2>
+    <div class="bg-white flex-grow rounded shadow p-4 flex flex-col overflow-hidden border border-gray-200">
+        <h2 class="text-sm font-semibold mb-3 text-gray-700 uppercase tracking-wide border-b pb-1">Live Case Tracker</h2>
         
         <div class="flex-grow overflow-auto">
             <table class="min-w-full divide-y divide-gray-200">
-                <thead class="bg-gray-50 sticky top-0">
+                <thead class="bg-gray-50 sticky top-0 z-10">
                     <tr>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Case ID</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Stage</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Elapsed Time</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Progress</th>
+                        <th class="px-6 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Case ID</th>
+                        <th class="px-6 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Stage</th>
+                        <th class="px-6 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Elapsed Time</th>
+                        <th class="px-6 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Progress</th>
                     </tr>
                 </thead>
                 <tbody class="bg-white divide-y divide-gray-200">
                     {% for case in cases %}
                         {% set display = case.case_display %}
-                        <tr>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ display.case_id }}</td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
+                        <tr class="hover:bg-gray-50 transition-colors">
+                            <td class="px-6 py-3 whitespace-nowrap text-sm font-medium text-gray-900">{{ display.case_id }}</td>
+                            <td class="px-6 py-3 whitespace-nowrap text-sm text-gray-500">
+                                <button 
+                                    hx-get="/ui/logs/{{ display.case_id }}" 
+                                    hx-target="#modal-container"
+                                    class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800 hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 cursor-pointer shadow-sm transition-transform active:scale-95"
+                                    title="Click to view detailed logs">
                                     {{ display.status.value }}
-                                </span>
+                                </button>
                             </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ display.elapsed_time | round(1) }}s</td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 w-1/3">
+                            <td class="px-6 py-3 whitespace-nowrap text-sm text-gray-500 font-mono">{{ display.elapsed_time | round(1) }}s</td>
+                            <td class="px-6 py-3 whitespace-nowrap text-sm text-gray-500 w-1/3">
                                 <div class="flex items-center">
-                                    <div class="w-full bg-gray-200 rounded-full h-2.5 mr-2">
-                                        <div class="bg-blue-600 h-2.5 rounded-full" style="width: {{ display.progress }}%"></div>
+                                    <div class="w-full bg-gray-200 rounded-full h-2 mr-2 overflow-hidden border border-gray-300">
+                                        <div class="bg-blue-600 h-2 rounded-full transition-all duration-500 ease-in-out" style="width: {{ display.progress }}%"></div>
                                     </div>
-                                    <span>{{ display.progress | round(1) }}%</span>
+                                    <span class="font-mono text-xs w-10 text-right">{{ display.progress | round(1) }}%</span>
                                 </div>
                             </td>
                         </tr>
                     {% else %}
                         <tr>
-                            <td colspan="4" class="px-6 py-4 text-center text-sm text-gray-500">No active cases currently processing.</td>
+                            <td colspan="4" class="px-6 py-8 text-center text-sm text-gray-500">No active cases currently processing.</td>
                         </tr>
                     {% endfor %}
                 </tbody>
             </table>
         </div>
-    </div>
-
-    <!-- Live Logs/Events placeholder -->
-    <div class="bg-gray-900 text-green-400 p-4 rounded shadow font-mono text-sm h-32 overflow-y-auto border border-gray-700">
-        <p>[{{ stats.last_update.strftime('%H:%M:%S') if stats.last_update else '' }}] System poll completed.</p>
-        {% for case in cases %}
-            <p>[{{ stats.last_update.strftime('%H:%M:%S') if stats.last_update else '' }}] Case {{ case.case_display.case_id }} is at {{ case.case_display.progress }}%</p>
-        {% endfor %}
     </div>
 </div>

@@ -209,11 +209,11 @@ class GpuMonitor:
             csv_reader = csv.reader(StringIO(raw_output))
             
             for row_index, row in enumerate(csv_reader):
-                if len(row) != 8:  # Expected: index, uuid, name, mem_total, mem_used, mem_free, temp, util
+                if len(row) not in (8, 9):  # Expected: index, uuid, name, mem_total, mem_used, mem_free, temp, util, [clock]
                     self.logger.warning("Unexpected nvidia-smi output format", {
                         "row_index": row_index,
                         "row_length": len(row),
-                        "expected_length": 8,
+                        "expected_length": "8 or 9",
                         "row_data": row
                     })
                     continue
@@ -229,6 +229,7 @@ class GpuMonitor:
                         'memory_free': self._parse_memory_value(row[5]),
                         'temperature': self._parse_temperature_value(row[6]),
                         'utilization': self._parse_utilization_value(row[7]),
+                        'core_clock': self._parse_clock_value(row[8]) if len(row) > 8 else 0,
                         'last_updated': datetime.now()
                     }
                     
@@ -320,6 +321,26 @@ class GpuMonitor:
             return int(float(value))
         except ValueError:
             raise ValueError(f"Invalid utilization value: {value}")
+    
+    def _parse_clock_value(self, value: str) -> int:
+        """Parse a clock value in MHz, handling 'N/A' cases.
+
+        Args:
+            value (str): The string value to parse.
+
+        Returns:
+            int: The clock value as an integer.
+
+        Raises:
+            ValueError: If the value is invalid.
+        """
+        value = value.strip()
+        if value.lower() in ['n/a', '', 'null']:
+            return 0
+        try:
+            return int(float(value))
+        except ValueError:
+            raise ValueError(f"Invalid clock value: {value}")
     
     def _validate_gpu_data(self, gpu_info: Dict[str, Any]) -> None:
         """Validate parsed GPU data for consistency.

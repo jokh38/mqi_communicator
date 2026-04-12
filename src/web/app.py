@@ -133,6 +133,28 @@ def create_app() -> FastAPI:
             },
         )
 
+    @app.get("/ui/logs/{case_id}", response_class=HTMLResponse)
+    async def log_modal(request: Request, case_id: str) -> HTMLResponse:
+        provider = _get_provider(request)
+        raw_case = provider.case_repo.get_case(case_id)
+        workflow_steps = provider.case_repo.get_workflow_steps(case_id)
+
+        case_display = None
+        if raw_case is not None:
+            # Reusing the existing data processor for cases
+            case_display = provider._process_cases_with_beams_data(
+                [{"case_data": raw_case, "beams": []}]
+            )[0]["case_display"]
+
+        return templates.TemplateResponse(
+            "modal_logs.html",
+            {
+                "request": request,
+                "case_display": case_display,
+                "workflow_steps": workflow_steps,
+            },
+        )
+
     @app.get("/ui/cases/{case_id}/details", response_class=HTMLResponse)
     async def case_details(request: Request, case_id: str) -> HTMLResponse:
         provider = _get_provider(request)

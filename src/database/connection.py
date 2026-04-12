@@ -176,6 +176,7 @@ class DatabaseConnection:
                             memory_free INTEGER NOT NULL,
                             temperature INTEGER NOT NULL,
                             utilization INTEGER NOT NULL,
+                            core_clock INTEGER NOT NULL DEFAULT 0,
                             status TEXT NOT NULL,
                             assigned_case TEXT,
                             last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -227,6 +228,9 @@ class DatabaseConnection:
                     if 'gpu_index' not in columns:
                         self.logger.info("Adding gpu_index column to gpu_resources table")
                         conn.execute("ALTER TABLE gpu_resources ADD COLUMN gpu_index INTEGER DEFAULT 0")
+                    if 'core_clock' not in columns:
+                        self.logger.info("Adding core_clock column to gpu_resources table")
+                        conn.execute("ALTER TABLE gpu_resources ADD COLUMN core_clock INTEGER DEFAULT 0")
 
                     # Add interpreter_completed column to cases table if it doesn't exist
                     cursor = conn.execute("PRAGMA table_info(cases)")
@@ -367,6 +371,7 @@ class DatabaseConnection:
                 memory_free INTEGER NOT NULL,
                 temperature INTEGER NOT NULL,
                 utilization INTEGER NOT NULL,
+                core_clock INTEGER NOT NULL DEFAULT 0,
                 status TEXT NOT NULL,
                 assigned_case TEXT,
                 last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -376,11 +381,11 @@ class DatabaseConnection:
         conn.execute("""
             INSERT INTO gpu_resources_new (
                 uuid, gpu_index, name, memory_total, memory_used, memory_free,
-                temperature, utilization, status, assigned_case, last_updated
+                temperature, utilization, core_clock, status, assigned_case, last_updated
             )
             SELECT
                 uuid, gpu_index, name, memory_total, memory_used, memory_free,
-                temperature, utilization, status, assigned_case, last_updated
+                temperature, utilization, core_clock, status, assigned_case, last_updated
             FROM gpu_resources
         """)
         conn.execute("DROP TABLE gpu_resources")

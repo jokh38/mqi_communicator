@@ -80,6 +80,7 @@ class GpuResource:
     memory_free: int
     temperature: int
     utilization: int
+    core_clock: int
     status: GpuStatus
     assigned_case: Optional[str] = None
     last_updated: Optional[datetime] = None

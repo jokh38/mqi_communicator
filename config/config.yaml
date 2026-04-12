@@ -67,7 +67,7 @@ logging:
   tz_hours: 9
 
 gpu:
-  gpu_monitor_command: "nvidia-smi --query-gpu=index,uuid,name,memory.total,memory.used,memory.free,temperature.gpu,utilization.gpu --format=csv,noheader,nounits"
+  gpu_monitor_command: "nvidia-smi --query-gpu=index,uuid,name,memory.total,memory.used,memory.free,temperature.gpu,utilization.gpu,clocks.gr --format=csv,noheader,nounits"
   monitor_interval: 10
   assignment_grace_period_seconds: 60
 
