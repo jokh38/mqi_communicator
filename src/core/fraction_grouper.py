@@ -32,6 +32,7 @@ class CaseDeliveryResult:
     status: str
     pending_reason: Optional[str] = None
     expected_beam_count: Optional[int] = None
+    error_detail: Optional[str] = None
 
 
 @dataclass

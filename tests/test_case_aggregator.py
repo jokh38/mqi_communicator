@@ -102,6 +102,49 @@ def test_prepare_beam_jobs_fails_when_planinfo_patient_id_mismatches_rtplan(
 
 @patch("src.core.case_aggregator.LoggerFactory.get_logger")
 @patch("src.core.case_aggregator.DataIntegrityValidator")
+def test_prepare_case_delivery_data_surfaces_invalid_planinfo_details(
+    mock_validator_cls,
+    mock_get_logger,
+    tmp_path,
+):
+    logger = MagicMock()
+    mock_get_logger.return_value = logger
+
+    case_path = tmp_path / "55061194"
+    case_path.mkdir()
+    (case_path / "RP.test.dcm").write_text("", encoding="ascii")
+    beam_dir = case_path / "2025042401440800"
+    beam_dir.mkdir()
+    (beam_dir / "sample.ptn").write_text("", encoding="ascii")
+    (beam_dir / "PlanInfo.txt").write_text(
+        "\n".join(
+            [
+                "DICOM_PATIENT_ID,55061194",
+                f"TCSC_IRRAD_DATETIME,{beam_dir.name}",
+            ]
+        ),
+        encoding="ascii",
+    )
+
+    validator = MagicMock()
+    validator.find_rtplan_file.return_value = case_path / "RP.test.dcm"
+    validator.parse_rtplan_beam_count.return_value = 1
+    validator.get_beam_information.return_value = {
+        "patient_id": "55061194",
+        "beams": [{"beam_name": "Beam_2", "beam_number": 2}],
+    }
+    mock_validator_cls.return_value = validator
+
+    result = prepare_case_delivery_data("55061194", case_path, settings=MagicMock())
+
+    if result.pending_reason != "invalid_planinfo":
+        raise AssertionError(f"Expected invalid_planinfo, got {result!r}")
+    if "2025042401440800" not in (result.error_detail or ""):
+        raise AssertionError(f"Expected delivery folder in error detail, got {result.error_detail!r}")
+
+
+@patch("src.core.case_aggregator.LoggerFactory.get_logger")
+@patch("src.core.case_aggregator.DataIntegrityValidator")
 def test_prepare_beam_jobs_fails_when_planinfo_beam_numbers_are_duplicated(
     mock_validator_cls,
     mock_get_logger,

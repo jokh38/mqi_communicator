@@ -402,6 +402,10 @@ def prepare_case_delivery_data(
                     status="ready",
                     pending_reason="invalid_planinfo",
                     expected_beam_count=expected_beam_count,
+                    error_detail=(
+                        f"Delivery folder '{delivery_path.name}' is missing required "
+                        "PlanInfo values DICOM_PATIENT_ID or DICOM_BEAM_NUMBER"
+                    ),
                 )
 
             if rtplan_patient_id and planinfo["patient_id"] != rtplan_patient_id:
@@ -420,6 +424,11 @@ def prepare_case_delivery_data(
                     status="ready",
                     pending_reason="patient_id_mismatch",
                     expected_beam_count=expected_beam_count,
+                    error_detail=(
+                        f"Delivery folder '{delivery_path.name}' patient ID "
+                        f"'{planinfo['patient_id']}' does not match RT plan patient ID "
+                        f"'{rtplan_patient_id}'"
+                    ),
                 )
 
             raw_beam_number = int(planinfo["beam_number"])
@@ -449,6 +458,7 @@ def prepare_case_delivery_data(
                     status="ready",
                     pending_reason="missing_delivery_timestamp",
                     expected_beam_count=expected_beam_count,
+                    error_detail=f"Delivery folder '{delivery_path.name}' is missing a valid irradiation timestamp",
                 )
 
             beam_id = f"{case_id}_beam_{int(treatment_beam_index)}"
@@ -487,6 +497,10 @@ def prepare_case_delivery_data(
             status="ready",
             pending_reason="unresolved_folders",
             expected_beam_count=expected_beam_count,
+            error_detail=(
+                "Could not match delivery folders to RT plan beams: "
+                + ", ".join(unresolved_folders)
+            ),
         )
 
     if len(reference_by_treatment_index) != expected_beam_count:
@@ -505,6 +519,10 @@ def prepare_case_delivery_data(
             status="ready",
             pending_reason="reference_beam_count_mismatch",
             expected_beam_count=expected_beam_count,
+            error_detail=(
+                f"Reference fraction {reference_fraction.index} resolved "
+                f"{len(reference_by_treatment_index)} unique treatment beams, expected {expected_beam_count}"
+            ),
         )
 
     beam_jobs: List[Dict[str, Any]] = sorted(

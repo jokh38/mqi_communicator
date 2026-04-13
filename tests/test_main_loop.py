@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from main import MQIApplication
+from src.core.fraction_grouper import CaseDeliveryResult
 
 
 def _mock_settings(**overrides):
@@ -139,3 +140,28 @@ def test_run_reclaims_and_registers_matching_previous_process_before_startup():
     testcase = unittest.TestCase()
     testcase.assertLess(lifecycle.index("reclaim"), lifecycle.index("database"))
     testcase.assertLess(lifecycle.index("register"), lifecycle.index("scan"))
+
+
+def test_discover_beams_uses_detailed_delivery_failure_message():
+    app = MQIApplication(config_path=Path("config/config.yaml"))
+    app.logger = MagicMock()
+    app.settings = _mock_settings()
+    case_repo = MagicMock()
+    case_path = Path("cases") / "55061194"
+
+    with patch("main.prepare_case_delivery_data", return_value=CaseDeliveryResult(
+        beam_jobs=[],
+        delivery_records=[],
+        fractions=[],
+        status="ready",
+        pending_reason="invalid_planinfo",
+        error_detail="Delivery folder '2025042401440800' is missing required PlanInfo values",
+    )):
+        result = app._discover_beams("55061194", case_path, case_repo)
+
+    if result.pending_reason != "invalid_planinfo":
+        raise AssertionError(f"Unexpected result: {result!r}")
+    case_repo.fail_case.assert_called_once_with(
+        "55061194",
+        "Delivery folder '2025042401440800' is missing required PlanInfo values",
+    )

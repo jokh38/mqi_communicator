@@ -277,14 +277,18 @@ class MQIApplication:
 
         if not result.beam_jobs:
             case_repo.add_case(case_id, case_path)
+            failure_message = (
+                result.error_detail
+                or f"No beams found or data transfer incomplete ({result.pending_reason or 'unknown'})"
+            )
             self.logger.error(
                 f"No beams found or data transfer incomplete for case {case_id}",
-                {"pending_reason": result.pending_reason},
+                {
+                    "pending_reason": result.pending_reason,
+                    "error_detail": result.error_detail,
+                },
             )
-            case_repo.fail_case(
-                case_id,
-                f"No beams found or data transfer incomplete ({result.pending_reason or 'unknown'})",
-            )
+            case_repo.fail_case(case_id, failure_message)
             return result
 
         case_repo.create_case_with_beams(case_id, str(case_path), result.beam_jobs)

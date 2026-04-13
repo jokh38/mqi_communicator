@@ -100,6 +100,7 @@
                                     <button 
                                         hx-get="/ui/logs/{{ display.case_id }}" 
                                         hx-target="#modal-container"
+                                        hx-swap="innerHTML"
                                         class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full 
                                         {% if display.status.value == 'failed' %}bg-red-100 text-red-800 hover:bg-red-200 focus:ring-red-500
                                         {% elif display.status.value == 'completed' %}bg-green-100 text-green-800 hover:bg-green-200 focus:ring-green-500

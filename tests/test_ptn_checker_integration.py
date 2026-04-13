@@ -162,3 +162,55 @@ def test_ptn_checker_wrapper_runs_in_isolated_subprocess_when_src_package_alread
 
     if result.success is not True:
         raise AssertionError(f"Expected subprocess-isolated PTN analysis success, got {result!r}")
+
+
+def test_ptn_checker_wrapper_handles_numpy_like_results_and_noisy_stdout(tmp_path: Path) -> None:
+    from src.integrations.ptn_checker import PtnCheckerIntegration
+
+    ptn_checker_path = tmp_path / "ptn_checker"
+    ptn_checker_path.mkdir()
+    (ptn_checker_path / "main.py").write_text(
+        "class FakeScalar:\n"
+        "    def __init__(self, value):\n"
+        "        self._value = value\n"
+        "    def item(self):\n"
+        "        return self._value\n"
+        "\n"
+        "class FakeArray:\n"
+        "    def __init__(self, values):\n"
+        "        self._values = values\n"
+        "    def tolist(self):\n"
+        "        return self._values\n"
+        "\n"
+        "def run_analysis(log_dir, dcm_file, output_dir):\n"
+        "    print('PTN file count (15) does not match expected layer count (16)')\n"
+        "    print('No more PTN files to process for layer 30 of beam 5G000:TX.')\n"
+        "    return {\n"
+        "        'status': 'ok',\n"
+        "        'layers': FakeArray([{'gamma_mean': FakeScalar(0.8)}]),\n"
+        "    }\n",
+        encoding="utf-8",
+    )
+    case_path = tmp_path / "case"
+    case_path.mkdir()
+    log_dir = case_path / "logs"
+    log_dir.mkdir()
+    (log_dir / "delivered.ptn").write_text("stable", encoding="utf-8")
+    dcm_file = case_path / "RP.test.dcm"
+    dcm_file.write_text("dicom", encoding="utf-8")
+
+    integration = PtnCheckerIntegration(
+        ptn_checker_path=ptn_checker_path,
+        output_subdir="ptn_output",
+    )
+
+    result = integration.run_analysis(
+        log_dir=log_dir,
+        dcm_file=dcm_file,
+        case_path=case_path,
+    )
+
+    if result.success is not True:
+        raise AssertionError(f"Expected noisy PTN analysis success, got {result!r}")
+    if result.analysis_data != {"status": "ok", "layers": [{"gamma_mean": 0.8}]}:
+        raise AssertionError(f"Unexpected analysis data: {result.analysis_data!r}")

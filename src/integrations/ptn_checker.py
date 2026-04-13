@@ -112,15 +112,29 @@ class PtnCheckerIntegration:
 
             from main import run_analysis
 
-            def _json_default(value):
-                if hasattr(value, "tolist"):
-                    return value.tolist()
+            def _make_json_safe(value):
+                if isinstance(value, dict):
+                    return {str(key): _make_json_safe(item) for key, item in value.items()}
+                if isinstance(value, (list, tuple, set)):
+                    return [_make_json_safe(item) for item in value]
                 if isinstance(value, Path):
                     return str(value)
+                if hasattr(value, "item"):
+                    try:
+                        return _make_json_safe(value.item())
+                    except Exception:
+                        pass
+                if hasattr(value, "tolist"):
+                    try:
+                        return _make_json_safe(value.tolist())
+                    except Exception:
+                        pass
+                if isinstance(value, (str, int, float, bool)) or value is None:
+                    return value
                 return str(value)
 
             result = run_analysis(log_dir, dcm_file, output_dir)
-            print(json.dumps(result, default=_json_default))
+            print(json.dumps(_make_json_safe(result)))
             """
         )
 
@@ -144,11 +158,34 @@ class PtnCheckerIntegration:
             error_message = completed.stderr.strip() or completed.stdout.strip()
             raise RuntimeError(error_message or "PTN checker subprocess failed")
 
-        payload = completed.stdout.strip()
-        if not payload:
+        payload = self._extract_json_payload(completed.stdout)
+        if payload is None:
             return None
 
         return json.loads(payload)
+
+    def _extract_json_payload(self, stdout: str) -> Optional[str]:
+        output = stdout.strip()
+        if not output:
+            return None
+
+        try:
+            json.loads(output)
+            return output
+        except json.JSONDecodeError:
+            pass
+
+        for line in reversed(output.splitlines()):
+            candidate = line.strip()
+            if not candidate:
+                continue
+            try:
+                json.loads(candidate)
+                return candidate
+            except json.JSONDecodeError:
+                continue
+
+        raise RuntimeError(output)
 
     def _load_run_analysis(self):
         module_path = self.ptn_checker_path / "main.py"
