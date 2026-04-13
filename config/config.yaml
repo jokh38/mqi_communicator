@@ -15,7 +15,7 @@ paths:
     final_dicom_dir: "{base_directory}/data/Dose_dcm/{case_id}"
     database_path: "{base_directory}/data/mqi_communicator.db"
     mqi_interpreter_dir: "{base_directory}/mqi_interpreter"
-    mqi_run_dir: "{base_directory}/moqui"
+    mqi_run_dir: "{base_directory}/moqui_SMC"
     raw_to_dicom_dir: "{base_directory}/RawToDCM"
     tps_input_file: "{base_directory}/data/Outputs_csv/{case_id}/moqui_tps_{beam_id}.in"  # Generated per-beam TPS files
     log_path: "{base_directory}/mqi_communicator/logs/sim_{beam_id}.log"
@@ -32,7 +32,7 @@ command_templates:
       cd {mqi_interpreter_dir} && {python} {mqi_interpreter_script} --logdir {input_path} --outputdir {csv_output_dir}
     post_process: >-
       cd {raw_to_dicom_dir} && {python} {raw_to_dicom_script} --input {input_file} --output {output_dir} --dosetype 2d
-    submit_simulation: "cd {mqi_run_dir} && ./tps_env/tps_env {tps_input_file} > {log_path} 2>&1"
+    submit_simulation: "cd {mqi_run_dir} && ./build/tps_env/tps_env {tps_input_file} > {log_path} 2>&1"
     cleanup: "rm -rf {target_path}"
 
 database:
@@ -96,7 +96,7 @@ tps_generator:
   validation:
     required_params:
       - 'GPUID'
-      - 'DicomDir'
+      - 'DicomPath'
       - 'logFilePath'
       - 'OutputDir'
       - 'BeamNumbers'
@@ -108,14 +108,15 @@ tps_generator:
 moqui_tps_parameters:
   GPUID: 0
   RandomSeed: -1932780356
-  UseAbsolutePath: false
+  UseAbsolutePath: true
   TotalThreads: -1
   MaxHistoriesPerBatch: 10000000
   Verbosity: 0
-  ParentDir: "../data/Outputs_csv/{case_id}"
-  DicomDir: "rtplan"
-  logFilePath: "log"
-  OutputDir: "../data/Dose_dcm/{case_id}"
+  ParentDir: "{base_directory}/data/Outputs_csv/{case_id}"
+  DicomPath: "{base_directory}/data/Outputs_csv/{case_id}/plan"
+  DicomDir: "plan"
+  logFilePath: "{base_directory}/data/Outputs_csv/{case_id}/log"
+  OutputDir: "{base_directory}/data/Dose_dcm/{case_id}"
   GantryNum: 0
   UsingPhantomGeo: true
   TwoCentimeterMode: true
@@ -139,5 +140,8 @@ moqui_tps_parameters:
   ScoreToCTGrid: true
   OutputFormat: dcm
   OverwriteResults: true
-
+  EnableBeamLayerMultiGpu: true
+  BeamLayerMultiGpuAllowedGpuIds: ""
+  BeamLayerMultiGpuMaxWorkers: 0
+  BeamLayerMultiGpuTempRoot: "{base_directory}/moqui_SMC/run_data_g1g2_work_all_mgpu/.beam_layer_multi_gpu"
 

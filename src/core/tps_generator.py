@@ -46,8 +46,7 @@ class TpsGenerator:
             return 0
 
         if multigpu_enabled and beam_uses_all_available_gpus and beam_number is not None:
-            gpu_ids = [str(assignment.get("gpu_id", 0)) for assignment in gpu_assignments]
-            return ",".join(gpu_ids)
+            return gpu_assignments[0].get("gpu_id", 0)
 
         if len(gpu_assignments) == 1:
             return gpu_assignments[0].get("gpu_id", 0)
@@ -58,6 +57,28 @@ class TpsGenerator:
             gpu_id = assignment.get("gpu_id", 0)
             gpu_mapping.append(f"{mapped_beam_number}:{gpu_id}")
         return ",".join(gpu_mapping)
+
+    def _build_multi_gpu_parameters(
+        self, gpu_assignments: List[Dict[str, Any]], beam_number: Optional[int]
+    ) -> Dict[str, Any]:
+        runtime_config = self.settings.get_moqui_runtime_config()
+        if not isinstance(runtime_config, dict):
+            runtime_config = {}
+
+        multigpu_enabled = runtime_config.get("multigpu_enabled", False)
+        beam_uses_all_available_gpus = runtime_config.get("beam_uses_all_available_gpus", False)
+
+        if not (multigpu_enabled and beam_uses_all_available_gpus and beam_number is not None):
+            return {
+                "EnableBeamLayerMultiGpu": False,
+                "BeamLayerMultiGpuAllowedGpuIds": "",
+            }
+
+        gpu_ids = [str(assignment.get("gpu_id", 0)) for assignment in gpu_assignments]
+        return {
+            "EnableBeamLayerMultiGpu": True,
+            "BeamLayerMultiGpuAllowedGpuIds": ",".join(gpu_ids),
+        }
 
     def _resolve_tps_generator_paths(self) -> Dict[str, str]:
         """Resolve TPS generator paths from configuration using Settings.get_path().
@@ -168,6 +189,7 @@ class TpsGenerator:
                 parameters["BeamNumbers"] = beam_count
 
             parameters["GPUID"] = self._format_gpu_parameter(gpu_assignments, beam_number)
+            parameters.update(self._build_multi_gpu_parameters(gpu_assignments, beam_number))
             if not gpu_assignments:
                 parameters["BeamNumbers"] = 1
 
@@ -306,7 +328,7 @@ class TpsGenerator:
             if not required_params:
                 # Default required parameters if not configured
                 required_params = [
-                    'GPUID', 'DicomDir', 'logFilePath', 'OutputDir'
+                    'GPUID', 'DicomPath', 'logFilePath', 'OutputDir'
                 ]
             missing_params = []
             empty_params = []
@@ -352,7 +374,7 @@ class TpsGenerator:
              "MaxHistoriesPerBatch", "Verbosity"],
 
             # Path Configuration
-            ["ParentDir", "DicomDir", "logFilePath"],
+            ["ParentDir", "DicomPath", "DicomDir", "logFilePath"],
 
             # Beam Configuration
             ["GantryNum", "BeamNumbers"],
@@ -372,7 +394,11 @@ class TpsGenerator:
             ["SourceType", "SimulationType", "ParticlesPerHistory"],
 
             # Output Settings
-            ["ScoreToCTGrid", "OutputDir", "OutputFormat", "OverwriteResults"]
+            ["ScoreToCTGrid", "OutputDir", "OutputFormat", "OverwriteResults"],
+
+            # Multi-GPU Settings
+            ["EnableBeamLayerMultiGpu", "BeamLayerMultiGpuAllowedGpuIds",
+             "BeamLayerMultiGpuMaxWorkers", "BeamLayerMultiGpuTempRoot"]
         ]
 
         lines = []

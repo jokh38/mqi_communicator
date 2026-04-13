@@ -34,7 +34,7 @@ def _resolve_treatment_beam_index_from_raw_number(
     return None
 
 
-def _resolve_persisted_beam_number(beam: Any, beam_metadata: List[Dict[str, Any]]) -> Optional[int]:
+def _resolve_raw_dicom_beam_number(beam: Any, beam_metadata: List[Dict[str, Any]]) -> Optional[int]:
     persisted_beam_number = getattr(beam, "beam_number", None)
     beam_candidates = []
     beam_path = getattr(beam, "beam_path", None)
@@ -48,17 +48,21 @@ def _resolve_persisted_beam_number(beam: Any, beam_metadata: List[Dict[str, Any]
 
     for candidate in beam_candidates:
         candidate_key = _normalize_beam_identifier(candidate)
-        for index, metadata in enumerate(beam_metadata, start=1):
+        for metadata in beam_metadata:
             metadata_key = _normalize_beam_identifier(str(metadata.get("beam_name", "")))
             if candidate_key == metadata_key:
-                return index
+                raw_number = metadata.get("beam_number")
+                return int(raw_number) if raw_number is not None else None
 
     if persisted_beam_number is not None:
         treatment_beam_index = _resolve_treatment_beam_index_from_raw_number(
             int(persisted_beam_number), beam_metadata
         )
         if treatment_beam_index is not None:
-            return treatment_beam_index
+            matched_metadata = beam_metadata[treatment_beam_index - 1]
+            raw_number = matched_metadata.get("beam_number")
+            if raw_number is not None:
+                return int(raw_number)
 
     if persisted_beam_number is not None:
         return int(persisted_beam_number)
@@ -363,13 +367,11 @@ def run_case_level_tps_generation(
             )
             for beam in beams:
                 if use_persisted_indices:
-                    beam_number = int(beam.beam_number)
+                    beam_number = int(raw_treatment_numbers[int(beam.beam_number) - 1])
                 elif use_raw_dicom_numbers and getattr(beam, "beam_number", None) is not None:
-                    beam_number = _resolve_treatment_beam_index_from_raw_number(
-                        int(beam.beam_number), beam_metadata
-                    )
+                    beam_number = int(beam.beam_number)
                 else:
-                    beam_number = _resolve_persisted_beam_number(beam, beam_metadata)
+                    beam_number = _resolve_raw_dicom_beam_number(beam, beam_metadata)
                 if beam_number is None:
                     raise ProcessingError(f"Could not resolve beam number for {beam.beam_id}")
                 case_repo.update_beam_number(beam.beam_id, int(beam_number))

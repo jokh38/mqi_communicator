@@ -108,7 +108,7 @@ PHASE_COMPLETED = "COMPLETED"
 # Fixed parameter names expected by MOQUI TPS (cannot be changed)
 TPS_REQUIRED_PARAMS = [
     'GPUID',
-    'DicomDir',
+    'DicomPath',
     'logFilePath',
     'OutputDir',
     'BeamNumbers'

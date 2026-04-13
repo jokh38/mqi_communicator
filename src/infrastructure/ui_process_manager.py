@@ -471,12 +471,18 @@ class UIProcessManager:
                     "attempting direct port reclamation.",
                     {"port": port},
                 )
-            if not self._reclaim_port_without_owner(port):
+            reclaimed = self._reclaim_port_without_owner(port)
+            if not reclaimed:
+                # Some platforms briefly report EADDRINUSE while the previous listener
+                # is still shutting down, even when no owner can be resolved anymore.
                 if self.logger:
-                    self.logger.error("Failed to reclaim occupied UI port", {"port": port})
-                return False
+                    self.logger.warning(
+                        "Could not identify a process to kill for the occupied UI port; "
+                        "waiting for the port to clear before falling back.",
+                        {"port": port},
+                    )
 
-        if not self._wait_for_port_available(port):
+        if not self._wait_for_port_available(port, timeout=15.0):
             if self.logger:
                 self.logger.error("UI port did not clear after terminating occupying process", {
                     "port": port,
@@ -555,6 +561,12 @@ class UIProcessManager:
             commands.append(["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"])
         if shutil.which("fuser"):
             commands.append(["fuser", "-n", "tcp", str(port)])
+        if shutil.which("ss"):
+            commands.append([
+                "bash",
+                "-lc",
+                f"ss -ltnp '( sport = :{port} )' | grep -o 'pid=[0-9]\\+' | head -n 1",
+            ])
 
         for command in commands:
             try:
