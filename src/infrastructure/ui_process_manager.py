@@ -49,7 +49,36 @@ class UIProcessManager:
         self._is_running = False
         self.web_port: Optional[int] = None
         self.log_dir = self.project_root / self.config.get_logging_config()['log_dir']
+        self._pid_file = self.project_root / ".runtime" / "ui_process.pid"
     
+    def _reclaim_stale_ui_process(self) -> None:
+        """Kill any orphaned UI process from a previous run using the saved PID file."""
+        if not self._pid_file.exists():
+            return
+        try:
+            stale_pid = int(self._pid_file.read_text().strip())
+        except (ValueError, OSError):
+            self._pid_file.unlink(missing_ok=True)
+            return
+
+        if not self._pid_exists(stale_pid):
+            self._pid_file.unlink(missing_ok=True)
+            return
+
+        if self.logger:
+            self.logger.info("Reclaiming stale UI process from previous run", {"pid": stale_pid})
+        self._terminate_process_tree(stale_pid)
+        self._pid_file.unlink(missing_ok=True)
+
+    def _save_ui_pid(self, pid: int) -> None:
+        """Persist the UI subprocess PID so it can be reclaimed after an unclean shutdown."""
+        self._pid_file.parent.mkdir(parents=True, exist_ok=True)
+        self._pid_file.write_text(str(pid))
+
+    def _remove_ui_pid(self) -> None:
+        """Remove the UI PID file during clean shutdown."""
+        self._pid_file.unlink(missing_ok=True)
+
     def start(self) -> bool:
         """Starts the UI as an independent process.
 
@@ -65,6 +94,9 @@ class UIProcessManager:
             return False
 
         try:
+            # Kill any orphaned UI process from a previous unclean shutdown
+            self._reclaim_stale_ui_process()
+
             # Check if web mode is enabled
             ui_config = self.config.get_ui_config()
             mode = ui_config.get("mode", "web")
@@ -144,6 +176,7 @@ class UIProcessManager:
             poll_result = self._process.poll()
             if poll_result is None:
                 self._is_running = True
+                self._save_ui_pid(self._process.pid)
                 if self.logger:
                     self.logger.info("UI process started successfully", {
                         "pid": self._process.pid,
@@ -207,8 +240,9 @@ class UIProcessManager:
             
             self._is_running = False
             self._process = None
+            self._remove_ui_pid()
             return True
-            
+
         except Exception as e:
             if self.logger:
                 self.logger.error("Failed to stop UI process", {"error": str(e)})

@@ -1,3 +1,4 @@
+import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 import platform
@@ -7,17 +8,20 @@ from src.config.settings import Settings
 from src.infrastructure.ui_process_manager import UIProcessManager
 
 
-def make_manager():
+def make_manager(tmp_path=None):
     project_root = Path(__file__).resolve().parent.parent
     config_path = project_root / "config/config.yaml"
     settings = Settings(config_path)
     logger = MagicMock()
-    return UIProcessManager(
+    mgr = UIProcessManager(
         database_path="/tmp/mqi_communicator.db",
         config_path=config_path,
         config=settings,
         logger=logger,
     )
+    if tmp_path is not None:
+        mgr._pid_file = tmp_path / "ui_process.pid"
+    return mgr
 
 
 def test_ensure_web_port_ready_reclaims_port():
@@ -53,14 +57,14 @@ def test_ensure_web_port_ready_reclaims_port_without_owner_info():
 @patch("src.infrastructure.ui_process_manager.subprocess.Popen")
 def test_start_web_mode(mock_popen):
     manager = make_manager()
-    
+
     # Mock settings to return web mode
     mock_ui_config = {
         "mode": "web",
         "web": {"port": 8080, "host": "0.0.0.0"}
     }
     manager.config.get_ui_config = MagicMock(return_value=mock_ui_config)
-    
+
     process = MagicMock()
     process.poll.return_value = None
     process.stdout = MagicMock()
@@ -69,6 +73,8 @@ def test_start_web_mode(mock_popen):
     mock_popen.return_value = process
 
     with (
+        patch.object(manager, "_reclaim_stale_ui_process"),
+        patch.object(manager, "_save_ui_pid"),
         patch.object(manager, "_ensure_web_port_ready", return_value=True) as ensure_port_mock,
         patch.object(manager, "_get_ui_command", return_value=["python", "-m", "uvicorn", "src.web.app:app"]),
         patch("src.infrastructure.ui_process_manager.time.sleep")
@@ -97,6 +103,8 @@ def test_start_web_mode_uses_fallback_port_when_reclaim_fails(mock_popen):
     mock_popen.return_value = process
 
     with (
+        patch.object(manager, "_reclaim_stale_ui_process"),
+        patch.object(manager, "_save_ui_pid"),
         patch.object(manager, "_ensure_web_port_ready", return_value=False),
         patch.object(manager, "_find_next_available_web_port", return_value=8081) as fallback_mock,
         patch("src.infrastructure.ui_process_manager.time.sleep")
@@ -106,3 +114,46 @@ def test_start_web_mode_uses_fallback_port_when_reclaim_fails(mock_popen):
     fallback_mock.assert_called_once_with(8081)
     assert manager.get_web_port() == 8081
     mock_popen.assert_called_once()
+
+
+def test_reclaim_stale_ui_process_kills_orphaned_pid(tmp_path):
+    manager = make_manager(tmp_path)
+    pid_file = tmp_path / "ui_process.pid"
+    pid_file.write_text("99999")
+
+    with (
+        patch.object(manager, "_pid_exists", return_value=True),
+        patch.object(manager, "_terminate_process_tree") as kill_mock,
+    ):
+        manager._reclaim_stale_ui_process()
+
+    kill_mock.assert_called_once_with(99999)
+    assert not pid_file.exists()
+
+
+def test_reclaim_stale_ui_process_skips_dead_pid(tmp_path):
+    manager = make_manager(tmp_path)
+    pid_file = tmp_path / "ui_process.pid"
+    pid_file.write_text("99999")
+
+    with patch.object(manager, "_pid_exists", return_value=False):
+        manager._reclaim_stale_ui_process()
+
+    assert not pid_file.exists()
+
+
+def test_reclaim_stale_ui_process_noop_when_no_pid_file(tmp_path):
+    manager = make_manager(tmp_path)
+
+    with patch.object(manager, "_terminate_process_tree") as kill_mock:
+        manager._reclaim_stale_ui_process()
+
+    kill_mock.assert_not_called()
+
+
+def test_save_and_remove_ui_pid(tmp_path):
+    manager = make_manager(tmp_path)
+    manager._save_ui_pid(12345)
+    assert manager._pid_file.read_text() == "12345"
+    manager._remove_ui_pid()
+    assert not manager._pid_file.exists()
