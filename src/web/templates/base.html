@@ -55,6 +55,15 @@
             }).format(timestamp);
         }
 
+        function closeModal() {
+            const modalContainer = document.getElementById('modal-container');
+            if (!modalContainer) {
+                return;
+            }
+
+            modalContainer.replaceChildren();
+        }
+
         function setConnectionState(nextState, details = '') {
             connectionState = nextState;
 
@@ -169,6 +178,23 @@
 
             document.body.addEventListener('htmx:timeout', () => {
                 setConnectionState('disconnected', `Request timed out. Last success at ${formatTimestamp(lastSuccessfulRefreshAt)}.`);
+            });
+
+            document.body.addEventListener('click', (event) => {
+                if (!event.target.closest('[data-close-modal]')) {
+                    return;
+                }
+
+                event.preventDefault();
+                closeModal();
+            });
+
+            document.addEventListener('keydown', (event) => {
+                if (event.key !== 'Escape' || !document.getElementById('log-modal')) {
+                    return;
+                }
+
+                closeModal();
             });
 
             window.addEventListener('offline', () => {
