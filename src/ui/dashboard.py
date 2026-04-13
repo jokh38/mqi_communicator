@@ -24,6 +24,7 @@ import logging
 from src.config.settings import Settings
 from src.infrastructure.logging_handler import StructuredLogger
 from src.database.connection import DatabaseConnection
+from src.handlers.execution_handler import ExecutionHandler
 from src.repositories.case_repo import CaseRepository
 from src.repositories.gpu_repo import GpuRepository
 from src.ui.provider import DashboardDataProvider
@@ -117,9 +118,15 @@ class DashboardProcess:
         try:
             # Setup database components
             case_repo, gpu_repo = self.setup_database_components()
+            execution_handler = ExecutionHandler(settings=self.settings)
             
             # Create data provider
-            provider = DashboardDataProvider(case_repo, gpu_repo, self.logger)
+            provider = DashboardDataProvider(
+                case_repo,
+                gpu_repo,
+                self.logger,
+                execution_handler=execution_handler,
+            )
             
             # Create and start display manager
             self.display_manager = DisplayManager(

@@ -10,6 +10,7 @@ from fastapi.templating import Jinja2Templates
 
 from src.config.settings import Settings
 from src.database.connection import DatabaseConnection
+from src.handlers.execution_handler import ExecutionHandler
 from src.infrastructure.logging_handler import StructuredLogger
 from src.repositories.case_repo import CaseRepository
 from src.repositories.gpu_repo import GpuRepository
@@ -35,7 +36,8 @@ def _build_provider() -> DashboardDataProvider:
     db_connection = DatabaseConnection(db_path, settings, logger)
     case_repo = CaseRepository(db_connection, logger)
     gpu_repo = GpuRepository(db_connection, logger, settings)
-    return DashboardDataProvider(case_repo, gpu_repo, logger)
+    execution_handler = ExecutionHandler(settings=settings)
+    return DashboardDataProvider(case_repo, gpu_repo, logger, execution_handler=execution_handler)
 
 
 def _get_provider(request: Request) -> DashboardDataProvider:

@@ -50,7 +50,8 @@
                             <tr class="hover:bg-gray-50 transition-colors">
                                 <td class="px-3 py-3 whitespace-nowrap text-sm font-bold text-gray-900">GPU {{ gpu.gpu_index }}</td>
                                 <td class="px-3 py-3 whitespace-nowrap">
-                                    <span class="text-xs font-semibold px-2 py-0.5 rounded-full {% if gpu.status.value == 'assigned' %}bg-yellow-100 text-yellow-800{% elif gpu.status.value == 'idle' %}bg-green-100 text-green-800{% else %}bg-gray-200 text-gray-800{% endif %}">
+                                    <span class="text-xs font-semibold px-2 py-0.5 rounded-full {% if gpu.status.value == 'assigned' %}bg-yellow-100 text-yellow-800{% elif gpu.status.value == 'idle' %}bg-green-100 text-green-800{% else %}bg-gray-200 text-gray-800{% endif %}"
+                                          title="{{ gpu.status_detail }}">
                                         {{ gpu.status.value }}
                                     </span>
                                 </td>
