@@ -133,7 +133,7 @@ def test_run_case_level_tps_generation_persists_treatment_beam_indices(
     # W-3 fix: gpu_assignments now include beam_id for proper matching
     if result != [{"gpu_uuid": "gpu-1", "beam_id": "case-1_beam-b"}, {"gpu_uuid": "gpu-2", "beam_id": "case-1_beam-a"}]:
         raise AssertionError(f"Unexpected GPU assignment result: {result!r}")
-    case_repo.update_beam_number.assert_any_call("case-1_beam-b", 1)
+    case_repo.update_beam_number.assert_any_call("case-1_beam-b", 10)
     case_repo.update_beam_number.assert_any_call("case-1_beam-a", 2)
 
 
@@ -182,7 +182,7 @@ def test_run_case_level_tps_generation_releases_gpu_by_uuid_on_generation_failur
     gpu_repo.release_gpu.assert_called_once_with("gpu-1")
 
 
-def test_resolve_persisted_beam_number_prefers_existing_beam_number():
+def test_resolve_raw_dicom_beam_number_prefers_existing_beam_number():
     dispatcher = importlib.import_module("src.core.dispatcher")
     beam = SimpleNamespace(
         beam_id="55061194_2025042401440800",
@@ -190,7 +190,7 @@ def test_resolve_persisted_beam_number_prefers_existing_beam_number():
         beam_number=2,
     )
 
-    result = dispatcher._resolve_persisted_beam_number(
+    result = dispatcher._resolve_raw_dicom_beam_number(
         beam,
         beam_metadata=[{"beam_name": "non_matching_name", "beam_number": 99}],
     )
@@ -199,7 +199,7 @@ def test_resolve_persisted_beam_number_prefers_existing_beam_number():
         raise AssertionError(f"Expected resolved beam number 2, got {result!r}")
 
 
-def test_resolve_persisted_beam_number_uses_treatment_beam_index_for_timestamp_folders():
+def test_resolve_raw_dicom_beam_number_uses_matching_metadata_for_timestamp_folders():
     dispatcher = importlib.import_module("src.core.dispatcher")
     beam = SimpleNamespace(
         beam_id="55061194_2025042401552900",
@@ -207,17 +207,17 @@ def test_resolve_persisted_beam_number_uses_treatment_beam_index_for_timestamp_f
         beam_number=4,
     )
 
-    result = dispatcher._resolve_persisted_beam_number(
+    result = dispatcher._resolve_raw_dicom_beam_number(
         beam,
         beam_metadata=[
-            {"beam_name": "beam a", "beam_number": 2},
-            {"beam_name": "beam b", "beam_number": 3},
-            {"beam_name": "beam c", "beam_number": 4},
+            {"beam_name": "2025042401440800", "beam_number": 2},
+            {"beam_name": "2025042401501400", "beam_number": 3},
+            {"beam_name": "2025042401552900", "beam_number": 4},
         ],
     )
 
-    if result != 3:
-        raise AssertionError(f"Expected resolved beam number 3, got {result!r}")
+    if result != 4:
+        raise AssertionError(f"Expected resolved raw DICOM beam number 4, got {result!r}")
 
 
 def test_run_case_level_tps_generation_uses_treatment_beam_indices_for_timestamp_folders(
@@ -292,9 +292,9 @@ def test_run_case_level_tps_generation_uses_treatment_beam_indices_for_timestamp
     ]
     if result != expected_result:
         raise AssertionError(f"Unexpected GPU assignment result: {result!r}")
-    case_repo.update_beam_number.assert_any_call("55061194_2025042401440800", 1)
-    case_repo.update_beam_number.assert_any_call("55061194_2025042401501400", 2)
-    case_repo.update_beam_number.assert_any_call("55061194_2025042401552900", 3)
+    case_repo.update_beam_number.assert_any_call("55061194_2025042401440800", 2)
+    case_repo.update_beam_number.assert_any_call("55061194_2025042401501400", 3)
+    case_repo.update_beam_number.assert_any_call("55061194_2025042401552900", 4)
 
 
 def test_run_case_level_tps_generation_multigpu_reserves_all_gpus_for_first_beam(
@@ -367,6 +367,60 @@ def test_run_case_level_tps_generation_multigpu_reserves_all_gpus_for_first_beam
         raise AssertionError(f"Expected first beam TPS generation, got {call.kwargs['beam_name']!r}")
     if call.kwargs["gpu_assignments"] != expected_result:
         raise AssertionError(f"Expected multigpu beam assignment list, got {call.kwargs['gpu_assignments']!r}")
+
+
+def test_run_case_level_tps_generation_multigpu_ignores_max_gpu_cap_when_all_available_enabled(
+    mock_settings,
+):
+    dispatcher = importlib.import_module("src.core.dispatcher")
+    logger = MagicMock()
+
+    case_repo = MagicMock()
+    case_repo.db.init_db.return_value = None
+    case_repo.get_beams_for_case.return_value = [
+        SimpleNamespace(beam_id="case-1_beam-a", beam_number=1, beam_path=Path("cases") / "case-1" / "beam-a"),
+    ]
+
+    gpu_repo = MagicMock()
+    gpu_repo.get_available_gpu_count.return_value = 8
+    gpu_repo.find_and_lock_multiple_gpus.return_value = [
+        {"gpu_uuid": f"gpu-{idx}", "gpu_id": idx}
+        for idx in range(8)
+    ]
+
+    validator = MagicMock()
+    validator.get_beam_information.return_value = {
+        "beams": [{"beam_name": "beam-a", "beam_number": 1}]
+    }
+    validator.get_treatment_beam_numbers.return_value = [1]
+
+    tps_generator = MagicMock()
+    tps_generator.generate_tps_file_with_gpu_assignments.return_value = True
+
+    context_manager = MagicMock()
+    context_manager.__enter__.return_value = case_repo
+    context_manager.__exit__.return_value = False
+
+    mock_settings.get_handler_mode.return_value = "local"
+    mock_settings.get_moqui_runtime_config.return_value = {
+        "multigpu_enabled": True,
+        "beam_uses_all_available_gpus": True,
+        "max_gpus_per_beam": 4,
+    }
+
+    with patch.object(dispatcher.LoggerFactory, "get_logger", return_value=logger), \
+         patch.object(dispatcher, "TpsGenerator", return_value=tps_generator), \
+         patch.object(dispatcher, "DataIntegrityValidator", return_value=validator), \
+         patch.object(dispatcher, "GpuRepository", return_value=gpu_repo), \
+         patch.object(dispatcher, "get_db_session", return_value=context_manager):
+        dispatcher.run_case_level_tps_generation(
+            case_id="case-1",
+            case_path=Path("cases") / "case-1",
+            beam_count=1,
+            settings=mock_settings,
+        )
+
+    gpu_repo.find_and_lock_multiple_gpus.assert_called_once_with(case_id="case-1", num_gpus=8)
 
 
 def test_run_case_level_ptn_checker_analysis_records_success_without_failing_case(mock_settings):

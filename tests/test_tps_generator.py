@@ -28,7 +28,7 @@ def test_generate_tps_file_uses_beam_specific_output_dir(tmp_path: Path) -> None
         raise AssertionError(f"Expected TPS generation success, got {success!r}")
     tps_file = output_dir / "moqui_tps_55061194_2025042401552900.in"
     content = tps_file.read_text(encoding="utf-8")
-    expected_line = "OutputDir ../data/Dose_dcm/55061194"
+    expected_line = "OutputDir /home/jokh38/MOQUI_SMC/data/Dose_dcm/55061194"
     if expected_line not in content:
         raise AssertionError(f"Expected line missing from TPS file: {expected_line}")
 
@@ -68,8 +68,10 @@ def test_generate_tps_file_multigpu_single_beam_writes_all_gpu_ids(tmp_path: Pat
     content = tps_file.read_text(encoding="utf-8")
     if "BeamNumbers 7" not in content:
         raise AssertionError(f"Expected BeamNumbers to preserve treatment beam number, content was:\n{content}")
-    if "GPUID 0,2,5" not in content:
-        raise AssertionError(f"Expected GPUID list for multigpu single-beam execution, content was:\n{content}")
+    if "GPUID 0" not in content:
+        raise AssertionError(f"Expected primary GPUID for multigpu single-beam execution, content was:\n{content}")
+    if "BeamLayerMultiGpuAllowedGpuIds 0,2,5" not in content:
+        raise AssertionError(f"Expected explicit BeamLayerMultiGpuAllowedGpuIds list, content was:\n{content}")
 
 
 def test_generate_tps_file_single_gpu_mode_keeps_scalar_gpu_id(tmp_path: Path) -> None:

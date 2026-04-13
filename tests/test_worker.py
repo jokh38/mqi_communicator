@@ -343,3 +343,61 @@ def test_try_allocate_pending_beams_multigpu_dispatches_only_first_waiting_beam(
     remaining_jobs = pending_beams["case-1"]["pending_jobs"]
     if [job["beam_id"] for job in remaining_jobs] != ["beam-02"]:
         raise AssertionError(f"Expected second beam to remain queued, got {remaining_jobs!r}")
+
+
+def test_try_allocate_pending_beams_multigpu_requests_all_available_gpus():
+    settings = MagicMock()
+    settings.get_path.return_value = str(Path("tmp") / "csv_output")
+    settings.get_handler_mode.return_value = "local"
+    settings.get_moqui_runtime_config.return_value = {
+        "multigpu_enabled": True,
+        "beam_uses_all_available_gpus": True,
+        "max_gpus_per_beam": 4,
+    }
+    logger = MagicMock()
+    executor = MagicMock()
+    active_futures = {}
+    pending_beams = {
+        "case-1": {
+            "pending_jobs": [
+                {"beam_id": "beam-01", "beam_path": Path("cases") / "case-1" / "beam-01"},
+            ],
+            "case_path": Path("cases") / "case-1",
+        }
+    }
+
+    case_repo = MagicMock()
+    case_repo.db = object()
+    case_repo.get_beams_for_case.return_value = [
+        SimpleNamespace(beam_id="beam-01", beam_number=1),
+    ]
+
+    repo_context = MagicMock()
+    repo_context.__enter__.return_value = case_repo
+    repo_context.__exit__.return_value = False
+
+    tps_generator = MagicMock()
+    tps_generator.generate_tps_file_with_gpu_assignments.return_value = True
+    gpu_assignments = [
+        {"gpu_uuid": f"gpu-{idx}", "gpu_id": idx}
+        for idx in range(6)
+    ]
+
+    with patch("src.core.worker.allocate_gpus_for_pending_beams", return_value=gpu_assignments) as allocate_mock, \
+         patch("src.core.worker.TpsGenerator", return_value=tps_generator), \
+         patch("src.core.worker.submit_beam_worker"), \
+         patch("src.core.worker.get_db_session", return_value=repo_context), \
+         patch("src.utils.db_context.get_db_session", return_value=repo_context), \
+         patch("src.core.worker.GpuRepository"):
+        worker.try_allocate_pending_beams(
+            pending_beams_by_case=pending_beams,
+            executor=executor,
+            active_futures=active_futures,
+            settings=settings,
+            logger=logger,
+        )
+
+    if allocate_mock.call_args.kwargs["requested_gpu_count"] is not None:
+        raise AssertionError(
+            f"Expected all-available mode to avoid an artificial GPU cap, got {allocate_mock.call_args.kwargs!r}"
+        )

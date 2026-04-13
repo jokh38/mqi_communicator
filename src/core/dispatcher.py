@@ -264,14 +264,13 @@ def run_case_level_tps_generation(
                 runtime_config = {}
             multigpu_enabled = runtime_config.get("multigpu_enabled", False)
             beam_uses_all_available_gpus = runtime_config.get("beam_uses_all_available_gpus", False)
-            max_gpus_per_beam = runtime_config.get("max_gpus_per_beam", 1)
 
             # Check available GPUs and allocate what's possible
             available_gpu_count = gpu_repo.get_available_gpu_count()
             logger.info(f"Checking GPU availability for case {case_id}: {available_gpu_count} idle GPUs, {beam_count} requested")
 
             if multigpu_enabled and beam_uses_all_available_gpus:
-                gpus_to_allocate = min(available_gpu_count, max_gpus_per_beam)
+                gpus_to_allocate = available_gpu_count
             else:
                 gpus_to_allocate = min(beam_count, available_gpu_count)
 
