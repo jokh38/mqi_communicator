@@ -349,7 +349,7 @@ class GpuRepository(BaseRepository):
                     memory_free=row["memory_free"],
                     temperature=row["temperature"],
                     utilization=row["utilization"],
-                    core_clock=row.get("core_clock", 0),
+                    core_clock=row["core_clock"],
                     status=GpuStatus(row["status"]),
                     assigned_case=row["assigned_case"],
                     last_updated=(
@@ -392,7 +392,7 @@ class GpuRepository(BaseRepository):
                 memory_free=row["memory_free"],
                 temperature=row["temperature"],
                 utilization=row["utilization"],
-                core_clock=row.get("core_clock", 0),
+                core_clock=row["core_clock"],
                 status=GpuStatus(row["status"]),
                 assigned_case=row["assigned_case"],
                 last_updated=(
