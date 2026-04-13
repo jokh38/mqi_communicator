@@ -5,7 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MQI Communicator Dashboard</title>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script src="https://unpkg.com/idiomorph/dist/idiomorph-ext.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        document.body.addEventListener('htmx:configRequest', (event) => {
+            // Ensure morph is used for all dashboard updates by default if desired
+            // Or we can just specify it in the templates
+        });
+    </script>
     <style>
         .htmx-indicator{
             display:none;
