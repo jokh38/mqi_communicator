@@ -9,6 +9,8 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         const preservedScrollPositions = new Map();
+        let lastSuccessfulRefreshAt = null;
+        let connectionState = 'connecting';
 
         function getScrollKey(element) {
             return element.dataset.scrollKey || element.id;
@@ -41,19 +43,140 @@
             });
         }
 
+        function formatTimestamp(timestamp) {
+            if (!timestamp) {
+                return 'Never';
+            }
+
+            return new Intl.DateTimeFormat([], {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            }).format(timestamp);
+        }
+
+        function setConnectionState(nextState, details = '') {
+            connectionState = nextState;
+
+            const badge = document.getElementById('connection-status-badge');
+            const label = document.getElementById('connection-status-label');
+            const detail = document.getElementById('connection-status-detail');
+            const banner = document.getElementById('connection-banner');
+            const bannerTitle = document.getElementById('connection-banner-title');
+            const bannerDetail = document.getElementById('connection-banner-detail');
+
+            if (!badge || !label || !detail || !banner || !bannerTitle || !bannerDetail) {
+                return;
+            }
+
+            badge.className = 'text-sm text-white px-2 py-1 rounded-full font-medium';
+
+            if (nextState === 'connecting') {
+                badge.classList.add('bg-yellow-500');
+                label.textContent = 'Connecting';
+                detail.textContent = details || 'Waiting for the first successful refresh.';
+                bannerTitle.textContent = 'Connecting to dashboard';
+                bannerDetail.textContent = details || 'Waiting for the first successful refresh.';
+                banner.classList.remove('hidden');
+                return;
+            }
+
+            if (nextState === 'connected') {
+                badge.classList.add('bg-green-500');
+                label.textContent = 'Connected';
+                detail.textContent = `Last update ${formatTimestamp(lastSuccessfulRefreshAt)}`;
+                banner.classList.add('hidden');
+                return;
+            }
+
+            if (nextState === 'reconnecting') {
+                badge.classList.add('bg-yellow-500');
+                label.textContent = 'Reconnecting';
+                detail.textContent = details || `Last update ${formatTimestamp(lastSuccessfulRefreshAt)}`;
+                bannerTitle.textContent = 'Dashboard connection is unstable';
+                bannerDetail.textContent = details || 'The UI has stopped receiving fresh data and is trying to reconnect.';
+                banner.classList.remove('hidden');
+                return;
+            }
+
+            badge.classList.add('bg-red-600');
+            label.textContent = 'Disconnected';
+            detail.textContent = details || `Last update ${formatTimestamp(lastSuccessfulRefreshAt)}`;
+            bannerTitle.textContent = 'Dashboard disconnected';
+            bannerDetail.textContent = details || 'No fresh data is arriving. The screen may look normal, but it is stale.';
+            banner.classList.remove('hidden');
+        }
+
+        function markSuccessfulRefresh() {
+            lastSuccessfulRefreshAt = new Date();
+            setConnectionState('connected');
+        }
+
+        function evaluateConnectionHealth() {
+            if (navigator.onLine === false) {
+                setConnectionState('disconnected', 'Browser is offline.');
+                return;
+            }
+
+            if (!lastSuccessfulRefreshAt) {
+                setConnectionState('connecting', 'Waiting for the first successful refresh.');
+                return;
+            }
+
+            const ageMs = Date.now() - lastSuccessfulRefreshAt.getTime();
+
+            if (ageMs >= 15000) {
+                setConnectionState('disconnected', `No successful refresh since ${formatTimestamp(lastSuccessfulRefreshAt)}.`);
+            } else if (ageMs >= 7000) {
+                setConnectionState('reconnecting', `Refresh is delayed. Last success at ${formatTimestamp(lastSuccessfulRefreshAt)}.`);
+            } else if (connectionState !== 'connected') {
+                setConnectionState('connected');
+            }
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
             captureScrollPositions(document);
+            evaluateConnectionHealth();
+            window.setInterval(evaluateConnectionHealth, 1000);
 
             document.body.addEventListener('htmx:beforeRequest', () => {
                 captureScrollPositions(document);
+
+                if (lastSuccessfulRefreshAt) {
+                    const ageMs = Date.now() - lastSuccessfulRefreshAt.getTime();
+                    if (ageMs >= 7000) {
+                        setConnectionState('reconnecting', `Refresh is delayed. Last success at ${formatTimestamp(lastSuccessfulRefreshAt)}.`);
+                    }
+                }
             });
 
             document.body.addEventListener('htmx:afterSwap', (event) => {
                 restoreScrollPositions(event.target);
+                markSuccessfulRefresh();
             });
 
             document.body.addEventListener('htmx:afterSettle', (event) => {
                 restoreScrollPositions(event.target);
+            });
+
+            document.body.addEventListener('htmx:responseError', () => {
+                setConnectionState('disconnected', `Request failed. Last success at ${formatTimestamp(lastSuccessfulRefreshAt)}.`);
+            });
+
+            document.body.addEventListener('htmx:sendError', () => {
+                setConnectionState('disconnected', `Network error. Last success at ${formatTimestamp(lastSuccessfulRefreshAt)}.`);
+            });
+
+            document.body.addEventListener('htmx:timeout', () => {
+                setConnectionState('disconnected', `Request timed out. Last success at ${formatTimestamp(lastSuccessfulRefreshAt)}.`);
+            });
+
+            window.addEventListener('offline', () => {
+                setConnectionState('disconnected', 'Browser is offline.');
+            });
+
+            window.addEventListener('online', () => {
+                evaluateConnectionHealth();
             });
         });
     </script>
@@ -75,7 +198,10 @@
     <header class="bg-indigo-900 text-white shadow-md p-4 flex justify-between items-center">
         <div class="flex items-center space-x-4">
             <h1 class="text-xl font-bold">MQI Communicator</h1>
-            <span class="text-sm bg-green-500 text-white px-2 py-1 rounded-full">System: Online</span>
+            <span id="connection-status-badge" class="text-sm text-white px-2 py-1 rounded-full font-medium bg-yellow-500">
+                <span id="connection-status-label">Connecting</span>
+            </span>
+            <span id="connection-status-detail" class="text-xs text-indigo-100">Waiting for the first successful refresh.</span>
         </div>
         
         <nav class="flex space-x-4">
@@ -93,6 +219,22 @@
             </button>
         </nav>
     </header>
+
+    <div id="connection-banner" class="hidden bg-red-50 border-b border-red-200 px-6 py-3 text-red-800">
+        <div class="flex items-start justify-between gap-4">
+            <div>
+                <p id="connection-banner-title" class="text-sm font-semibold">Dashboard disconnected</p>
+                <p id="connection-banner-detail" class="text-sm">No fresh data is arriving. The screen may look normal, but it is stale.</p>
+            </div>
+            <button
+                type="button"
+                class="px-3 py-1.5 bg-red-600 text-white text-sm rounded hover:bg-red-700 transition"
+                hx-get="/ui/workflow"
+                hx-target="#main-dashboard">
+                Retry now
+            </button>
+        </div>
+    </div>
 
     <!-- Main Content Area -->
     <main id="main-dashboard" class="flex-grow p-6 overflow-hidden flex flex-col"
