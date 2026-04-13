@@ -8,9 +8,53 @@
     <script src="https://unpkg.com/idiomorph/dist/idiomorph-ext.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
-        document.body.addEventListener('htmx:configRequest', (event) => {
-            // Ensure morph is used for all dashboard updates by default if desired
-            // Or we can just specify it in the templates
+        const preservedScrollPositions = new Map();
+
+        function getScrollKey(element) {
+            return element.dataset.scrollKey || element.id;
+        }
+
+        function captureScrollPositions(root = document) {
+            root.querySelectorAll('[data-preserve-scroll]').forEach((element) => {
+                const key = getScrollKey(element);
+                if (!key) {
+                    return;
+                }
+
+                preservedScrollPositions.set(key, {
+                    top: element.scrollTop,
+                    left: element.scrollLeft
+                });
+            });
+        }
+
+        function restoreScrollPositions(root = document) {
+            root.querySelectorAll('[data-preserve-scroll]').forEach((element) => {
+                const key = getScrollKey(element);
+                const position = key ? preservedScrollPositions.get(key) : null;
+                if (!position) {
+                    return;
+                }
+
+                element.scrollTop = position.top;
+                element.scrollLeft = position.left;
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            captureScrollPositions(document);
+
+            document.body.addEventListener('htmx:beforeRequest', () => {
+                captureScrollPositions(document);
+            });
+
+            document.body.addEventListener('htmx:afterSwap', (event) => {
+                restoreScrollPositions(event.target);
+            });
+
+            document.body.addEventListener('htmx:afterSettle', (event) => {
+                restoreScrollPositions(event.target);
+            });
         });
     </script>
     <style>
