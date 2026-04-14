@@ -152,12 +152,19 @@ def run_case_level_csv_interpreting(case_id: str, case_path: Path,
             mqi_script = settings.get_executable("mqi_interpreter_script", handler_name="CsvInterpreter")
             mqi_interpreter_dir = settings.get_path("mqi_interpreter_dir", handler_name="CsvInterpreter")
 
-            command = (
-                f"cd {mqi_interpreter_dir} && {python_exe} {mqi_script} "
-                f"--logdir {case_path} --outputdir {csv_output_dir}"
-            )
+            command = [
+                str(python_exe),
+                str(mqi_script),
+                "--logdir",
+                str(case_path),
+                "--outputdir",
+                str(csv_output_dir),
+            ]
 
-            result = execution_handler.execute_command(command, cwd=case_path)
+            result = execution_handler.execute_command(
+                command,
+                cwd=Path(mqi_interpreter_dir),
+            )
 
 
             # Log command output

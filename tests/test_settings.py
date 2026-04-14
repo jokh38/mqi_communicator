@@ -97,3 +97,12 @@ def test_repo_config_exposes_ptn_checker_section() -> None:
         raise AssertionError(f"Unexpected PTN checker path: {ptn_config!r}")
     if ptn_config["output_subdir"] != "ptn_checker_output":
         raise AssertionError(f"Unexpected PTN checker output_subdir: {ptn_config!r}")
+
+
+def test_settings_resolves_repo_relative_config_when_cwd_differs() -> None:
+    settings = Settings(config_path=Path("config/config.yaml"))
+
+    scan_directory = settings.get_case_directories()["scan"]
+
+    if scan_directory != Path("/home/jokh38/MOQUI_SMC/data/Data_G1G2"):
+        raise AssertionError(f"Expected repo-relative config resolution, got {scan_directory!r}")

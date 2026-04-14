@@ -65,9 +65,15 @@ def test_run_case_level_csv_interpreting_success(
     if success is not True:
         raise AssertionError("CSV interpreting should succeed")
     mock_exec_handler_instance.execute_command.assert_called_once_with(
-        f"cd {Path('opt') / 'mqi_interpreter'} && {Path('usr') / 'bin' / 'python3'} {Path('opt') / 'main_cli.py'} "
-        f"--logdir {case_path} --outputdir {Path('tmp') / 'csv_output' / case_id}",
-        cwd=case_path,
+        [
+            str(Path("usr") / "bin" / "python3"),
+            str(Path("opt") / "main_cli.py"),
+            "--logdir",
+            str(case_path),
+            "--outputdir",
+            str(Path("tmp") / "csv_output" / case_id),
+        ],
+        cwd=Path("opt") / "mqi_interpreter",
     )
 
 

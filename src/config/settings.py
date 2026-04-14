@@ -38,8 +38,7 @@ class Settings:
         Raises:
             ValidationError: If configuration validation fails
         """
-        if config_path is None:
-            config_path = Path("config/config.yaml")
+        config_path = self._resolve_config_path(config_path)
 
         self._logger = logger  # Optional injected logger; avoid importing StructuredLogger to prevent cycles
         self._yaml_config: Dict[str, Any] = {}
@@ -62,6 +61,28 @@ class Settings:
         # self.gpu = self.get_gpu_config()
         # self.logging = self.get_logging_config()
         # self.retry_policy = self.get_retry_policy_config()
+
+    @staticmethod
+    def _resolve_config_path(config_path: Optional[Path]) -> Path:
+        """Resolve config paths relative to the communicator package when needed."""
+        package_root = Path(__file__).resolve().parents[2]
+        default_config = package_root / "config" / "config.yaml"
+
+        if config_path is None:
+            return default_config
+
+        candidate = Path(config_path)
+        if candidate.exists():
+            return candidate
+
+        if candidate.is_absolute():
+            return candidate
+
+        package_relative = package_root / candidate
+        if package_relative.exists():
+            return package_relative
+
+        return candidate
 
     def _emit_warning(self, message: str, context: Optional[Dict[str, Any]] = None) -> None:
         try:

@@ -795,8 +795,8 @@ def main() -> NoReturn:
     if len(sys.argv) > 1:
         config_path = Path(sys.argv[1])
     else:
-        # Default config location
-        default_config = Path("config/config.yaml")
+        # Default to the bundled config so startup does not depend on cwd.
+        default_config = Path(__file__).resolve().parent / "config" / "config.yaml"
         if default_config.exists():
             config_path = default_config
     # Create and run application
