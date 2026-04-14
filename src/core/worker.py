@@ -202,15 +202,15 @@ def try_allocate_pending_beams(pending_beams_by_case: Dict, executor: ProcessPoo
             cases_to_remove.append(case_id)
             continue
 
-        # Try to allocate GPUs for pending beams
-        requested_gpu_count = None
-        if multigpu_enabled and beam_uses_all_available_gpus:
-            requested_gpu_count = None
+        # Try to allocate GPUs for pending beams.
+        # In beam-by-beam multigpu mode every sequential beam must get all
+        # available GPUs (not just one per pending beam).
+        use_all_available = multigpu_enabled and beam_uses_all_available_gpus
         new_gpu_assignments = allocate_gpus_for_pending_beams(
             case_id=case_id,
             num_pending_beams=len(pending_jobs),
             settings=settings,
-            requested_gpu_count=requested_gpu_count,
+            use_all_available=use_all_available,
         )
 
         if new_gpu_assignments is None:

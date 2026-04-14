@@ -420,16 +420,17 @@ class MQIApplication:
             case_repo.fail_case(case_id, "TPS generation failed")
             return None
 
-        # Handle partial GPU allocation
-        if len(gpu_assignments) < beam_count:
+        # Handle GPU allocation results — check zero first (0 < beam_count is always True,
+        # making the elif unreachable without this order).
+        if len(gpu_assignments) == 0:
+            self.logger.warning(
+                f"No GPUs available for {case_id}. All beams reset to pending."
+            )
+            case_repo.update_beams_status_by_case_id(case_id, BeamStatus.PENDING.value)
+        elif len(gpu_assignments) < beam_count:
             self.logger.info(
                 f"Partial GPU allocation for {case_id}: {len(gpu_assignments)}/{beam_count} beams can proceed"
             )
-        elif len(gpu_assignments) == 0:
-            self.logger.warning(
-                f"No GPUs available for {case_id}. All beams will remain pending."
-            )
-            case_repo.update_beams_status_by_case_id(case_id, BeamStatus.PENDING.value)
 
         return gpu_assignments
 
@@ -531,6 +532,18 @@ class MQIApplication:
                 run_case_level_ptn_analysis(case_id, case_path, self.settings)
                 return
 
+            # Guard: skip cases that already reached a terminal state.
+            # The file watcher can fire duplicate events for the same directory,
+            # and in serial-multigpu mode those duplicates would block the queue
+            # by reprocessing a completed case.
+            _non_retryable = {CaseStatus.COMPLETED, CaseStatus.FAILED, CaseStatus.CANCELLED}
+            _existing = case_repo.get_case(case_id)
+            if _existing and _existing.status in _non_retryable:
+                self.logger.info(
+                    f"Skipping already-{_existing.status.value} case {case_id}"
+                )
+                return
+
             # Step 1: Discover beams and validate data transfer completion
             result = self._discover_beams(case_id, case_path, case_repo)
             if result.status == "pending":
@@ -564,6 +577,17 @@ class MQIApplication:
         Manages a process pool to handle cases concurrently.
         """
         max_workers = self.settings.get_processing_config().get("max_workers")
+        # Determine if beam-by-beam multi-GPU mode is active (all GPUs used per beam).
+        # In this mode cases must be serialised: only dequeue the next case once all
+        # beams of the current case have finished, otherwise every queued case races
+        # for GPUs simultaneously and all but the first get zero allocations.
+        runtime_config = self.settings.get_moqui_runtime_config()
+        if not isinstance(runtime_config, dict):
+            runtime_config = {}
+        _serial_multigpu = (
+            runtime_config.get("multigpu_enabled", False)
+            and runtime_config.get("beam_uses_all_available_gpus", False)
+        )
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
             self.executor = executor
             self.logger.info(f"Started worker pool with {max_workers} processes")
@@ -572,15 +596,19 @@ class MQIApplication:
             while not self.shutdown_event.is_set():
                 try:
                     case_data = None
-                    # Process new cases from queue
-                    try:
-                        case_data = self.case_queue.get(timeout=1.0)
-                    except mp.queues.Empty:
-                        case_data = None
-                    except Exception as e:
-                        self.logger.error(
-                            f"Error processing case from queue", {"error": str(e)}
-                        )
+                    # In serial multigpu mode only dequeue the next case when all
+                    # workers have finished and no beams are awaiting GPU allocation.
+                    _busy = _serial_multigpu and (active_futures or pending_beams_by_case)
+                    if not _busy:
+                        # Process new cases from queue
+                        try:
+                            case_data = self.case_queue.get(timeout=1.0)
+                        except mp.queues.Empty:
+                            case_data = None
+                        except Exception as e:
+                            self.logger.error(
+                                f"Error processing case from queue", {"error": str(e)}
+                            )
 
                     if case_data is not None:
                         self._process_new_case(

@@ -667,10 +667,24 @@ def prepare_beam_jobs(
 
 
 def allocate_gpus_for_pending_beams(
-    case_id: str, num_pending_beams: int, settings, requested_gpu_count: Optional[int] = None
+    case_id: str,
+    num_pending_beams: int,
+    settings,
+    requested_gpu_count: Optional[int] = None,
+    use_all_available: bool = False,
 ) -> Optional[List[Dict[str, Any]]]:
-    """Attempts to allocate GPUs for pending beams of a case."""
+    """Attempts to allocate GPUs for pending beams of a case.
 
+    Args:
+        case_id: The case identifier.
+        num_pending_beams: Number of beams still waiting for GPU allocation.
+        settings: Application settings.
+        requested_gpu_count: Exact number of GPUs to allocate (capped at available).
+            Ignored when ``use_all_available`` is True.
+        use_all_available: When True, allocate every idle GPU regardless of
+            ``num_pending_beams``.  Used by beam-by-beam multigpu mode so that
+            each sequential beam gets all 10 GPUs via BeamLayerMultiGpu.
+    """
     logger = LoggerFactory.get_logger(f"gpu_allocator_{case_id}")
     handler_name = "CsvInterpreter"
 
@@ -679,7 +693,9 @@ def allocate_gpus_for_pending_beams(
             gpu_repo = GpuRepository(case_repo.db, logger, settings)
 
             available_gpu_count = gpu_repo.get_available_gpu_count()
-            if requested_gpu_count is not None:
+            if use_all_available:
+                gpus_to_allocate = available_gpu_count
+            elif requested_gpu_count is not None:
                 gpus_to_allocate = min(requested_gpu_count, available_gpu_count)
             else:
                 gpus_to_allocate = min(num_pending_beams, available_gpu_count)
