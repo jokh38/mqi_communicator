@@ -46,6 +46,7 @@ def _resolve_raw_dicom_beam_number(beam: Any, beam_metadata: List[Dict[str, Any]
         beam_candidates.append(beam_id.split("_", 1)[-1])
         beam_candidates.append(beam_id)
 
+    # Step 1: match by beam name/path against metadata
     for candidate in beam_candidates:
         candidate_key = _normalize_beam_identifier(candidate)
         for metadata in beam_metadata:
@@ -55,17 +56,23 @@ def _resolve_raw_dicom_beam_number(beam: Any, beam_metadata: List[Dict[str, Any]
                 return int(raw_number) if raw_number is not None else None
 
     if persisted_beam_number is not None:
-        treatment_beam_index = _resolve_treatment_beam_index_from_raw_number(
-            int(persisted_beam_number), beam_metadata
-        )
-        if treatment_beam_index is not None:
-            matched_metadata = beam_metadata[treatment_beam_index - 1]
-            raw_number = matched_metadata.get("beam_number")
+        persisted_int = int(persisted_beam_number)
+        raw_numbers = [
+            int(m["beam_number"])
+            for m in beam_metadata
+            if m.get("beam_number") is not None
+        ]
+
+        # Step 2: if persisted value IS a valid raw DICOM beam number, use it directly
+        if persisted_int in raw_numbers:
+            return persisted_int
+
+        # Step 3: treat persisted value as a 1-indexed treatment beam position
+        # and map to the corresponding raw DICOM beam number
+        if 1 <= persisted_int <= len(beam_metadata):
+            raw_number = beam_metadata[persisted_int - 1].get("beam_number")
             if raw_number is not None:
                 return int(raw_number)
-
-    if persisted_beam_number is not None:
-        return int(persisted_beam_number)
 
     return None
 

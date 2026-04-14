@@ -391,22 +391,28 @@ def prepare_case_delivery_data(
         for delivery_path in fraction.delivery_folders:
             planinfo = _parse_required_planinfo(delivery_path)
             if not planinfo:
-                logger.error(
-                    "Missing or invalid required PlanInfo data",
-                    {"delivery_folder": delivery_path.name},
-                )
-                return CaseDeliveryResult(
-                    beam_jobs=[],
-                    delivery_records=[],
-                    fractions=fractions,
-                    status="ready",
-                    pending_reason="invalid_planinfo",
-                    expected_beam_count=expected_beam_count,
-                    error_detail=(
-                        f"Delivery folder '{delivery_path.name}' is missing required "
-                        "PlanInfo values DICOM_PATIENT_ID or DICOM_BEAM_NUMBER"
-                    ),
-                )
+                # PlanInfo.txt missing or invalid — try folder-based inference
+                matched_metadata = _map_beam_folder_to_metadata(delivery_path, treatment_beams)
+                if matched_metadata:
+                    inferred_beam_number = matched_metadata.get("beam_number")
+                    planinfo = {
+                        "patient_id": rtplan_patient_id,
+                        "beam_number": int(inferred_beam_number) if inferred_beam_number is not None else 0,
+                    }
+                    logger.warning(
+                        "PlanInfo.txt missing; inferred beam from folder metadata",
+                        {
+                            "delivery_folder": delivery_path.name,
+                            "inferred_beam_number": planinfo["beam_number"],
+                        },
+                    )
+                else:
+                    logger.warning(
+                        "PlanInfo.txt missing and folder inference failed",
+                        {"delivery_folder": delivery_path.name},
+                    )
+                    unresolved_folders.append(delivery_path.name)
+                    continue
 
             if rtplan_patient_id and planinfo["patient_id"] != rtplan_patient_id:
                 logger.error(

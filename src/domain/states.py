@@ -209,6 +209,15 @@ class SimulationState(WorkflowState):
             beam_id=context.id,
         )
 
+        # Clear any stale sim log from previous runs to prevent the log
+        # monitor from detecting old ERROR patterns before the new process
+        # has a chance to truncate the file via shell redirect.
+        sim_log = Path(log_path)
+        if sim_log.exists():
+            sim_log.unlink()
+            context.logger.info("Removed stale simulation log",
+                                {"beam_id": context.id, "path": log_path})
+
         # Launch simulation non-blocking so log can be monitored for progress
         sim_process = handler.start_local_process(command)
 
