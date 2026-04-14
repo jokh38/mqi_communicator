@@ -438,16 +438,40 @@ def prepare_case_delivery_data(
                 )
 
             raw_beam_number = int(planinfo["beam_number"])
-            matched_metadata = _match_metadata_by_raw_beam_number(raw_beam_number, treatment_beams)
-            if not matched_metadata:
-                matched_metadata = _map_beam_folder_to_metadata(delivery_path, treatment_beams)
 
-            treatment_beam_index = (
-                _resolve_treatment_beam_index(matched_metadata, treatment_beams)
-                if matched_metadata
-                else None
+            # PlanInfo.txt DICOM_BEAM_NUMBER is the ground truth for beam
+            # identity.  Resolve the treatment beam index directly from this
+            # value — do not override with folder-based heuristics.
+            matched_metadata = _match_metadata_by_raw_beam_number(
+                raw_beam_number, treatment_beams
             )
-            if not matched_metadata or treatment_beam_index is None:
+            if matched_metadata:
+                treatment_beam_index = _resolve_treatment_beam_index(
+                    matched_metadata, treatment_beams
+                )
+            else:
+                # Metadata lookup returned no unique match.  Compute the
+                # treatment index directly from the raw beam number since
+                # PlanInfo is authoritative.
+                treatment_beam_index = None
+                for idx, meta in enumerate(treatment_beams, start=1):
+                    if meta.get("beam_number") == raw_beam_number:
+                        treatment_beam_index = idx
+                        break
+
+                if treatment_beam_index is None:
+                    logger.error(
+                        "PlanInfo beam number not found in DICOM treatment beams",
+                        {
+                            "delivery_folder": delivery_path.name,
+                            "planinfo_beam_number": raw_beam_number,
+                            "dicom_beam_numbers": [
+                                m.get("beam_number") for m in treatment_beams
+                            ],
+                        },
+                    )
+
+            if treatment_beam_index is None:
                 unresolved_folders.append(delivery_path.name)
                 continue
 

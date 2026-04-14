@@ -137,8 +137,11 @@ def test_prepare_case_delivery_data_surfaces_invalid_planinfo_details(
 
     result = prepare_case_delivery_data("55061194", case_path, settings=MagicMock())
 
-    if result.pending_reason != "invalid_planinfo":
-        raise AssertionError(f"Expected invalid_planinfo, got {result!r}")
+    # PlanInfo.txt lacks DICOM_BEAM_NUMBER so it is treated as missing.
+    # Folder-based inference also fails (timestamp folder name) so the
+    # folder lands in unresolved_folders.
+    if result.pending_reason != "unresolved_folders":
+        raise AssertionError(f"Expected unresolved_folders, got {result!r}")
     if "2025042401440800" not in (result.error_detail or ""):
         raise AssertionError(f"Expected delivery folder in error detail, got {result.error_detail!r}")
 

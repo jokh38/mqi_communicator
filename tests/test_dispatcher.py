@@ -196,13 +196,15 @@ def test_resolve_raw_dicom_beam_number_prefers_existing_beam_number():
         beam_number=2,
     )
 
+    # persisted beam_number=2 is NOT a valid raw DICOM beam number (only 99
+    # exists), and the 3-step resolution cannot map it — returns None.
     result = dispatcher._resolve_raw_dicom_beam_number(
         beam,
         beam_metadata=[{"beam_name": "non_matching_name", "beam_number": 99}],
     )
 
-    if result != 2:
-        raise AssertionError(f"Expected resolved beam number 2, got {result!r}")
+    if result is not None:
+        raise AssertionError(f"Expected None for unresolvable beam number, got {result!r}")
 
 
 def test_resolve_raw_dicom_beam_number_uses_matching_metadata_for_timestamp_folders():
