@@ -408,13 +408,15 @@ class DataIntegrityValidator:
         if not machine_name:
             raise ProcessingError("Machine name is empty or None")
 
-        # Look for G1 or G2 pattern in machine name
-        pattern = r'G([12])'
+        # Match G (or g) followed by optional non-digit chars then 1 or 2 (not followed by
+        # another digit).  Handles names like G1, G2, GTR1, GTR2, Gantry1, G_1, etc.
+        pattern = r'G[^0-9]*([12])(?![0-9])'
         match = re.search(pattern, machine_name, re.IGNORECASE)
 
         if not match:
             raise ProcessingError(
-                f"No G1/G2 gantry pattern found in machine name: {machine_name}"
+                f"No G1/G2 gantry pattern found in machine name: '{machine_name}'. "
+                f"Expected a name containing G1, G2, GTR1, GTR2, or similar."
             )
 
         gantry_number = int(match.group(1))

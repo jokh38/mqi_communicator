@@ -344,6 +344,18 @@ class TpsGenerator:
                     "empty_params": empty_params
                 })
                 return False
+
+            # GantryNum must be exactly 1 or 2 — any other value causes moqui_SMC
+            # to silently fall back to G2, producing wrong beam physics.
+            gantry_num = parameters.get("GantryNum")
+            if gantry_num not in (1, 2):
+                self.logger.error("GantryNum validation failed", {
+                    "case_id": case_id,
+                    "GantryNum": gantry_num,
+                    "expected": "1 or 2"
+                })
+                return False
+
             self.logger.debug("TPS parameter validation passed", {
                 "case_id": case_id,
                 "validated_params": list(parameters.keys())
@@ -388,7 +400,7 @@ class TpsGenerator:
              "PhantomPositionX", "PhantomPositionY", "PhantomPositionZ"],
 
             # Scoring Configuration
-            ["Scorer", "SupressStd", "ReadStructure", "ROIName"],
+            ["Scorer", "SupressStd", "ReadStructure", "BodyContourName"],
 
             # Source and Simulation
             ["SourceType", "SimulationType", "ParticlesPerHistory"],

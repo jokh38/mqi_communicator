@@ -100,6 +100,7 @@ tps_generator:
       - 'logFilePath'
       - 'OutputDir'
       - 'BeamNumbers'
+      - 'GantryNum'
   default_paths:
     base_directory: "/home/jokh38/MOQUI_SMC"
     interpreter_outputs_dir: "{paths.local.csv_output_dir}"
@@ -117,7 +118,7 @@ moqui_tps_parameters:
   DicomDir: "plan"
   logFilePath: "{base_directory}/data/Outputs_csv/{case_id}/log"
   OutputDir: "{base_directory}/data/Dose_dcm/{case_id}"
-  GantryNum: 0
+  GantryNum: 2
   UsingPhantomGeo: true
   TwoCentimeterMode: true
   PhantomDimX: 400
@@ -132,7 +133,7 @@ moqui_tps_parameters:
   Scorer: Dose
   SupressStd: true
   ReadStructure: true
-  ROIName: External
+  BodyContourName: External
   SourceType: FluenceMap
   SimulationType: perBeam
   BeamNumbers: 1
