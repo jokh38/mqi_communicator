@@ -166,9 +166,15 @@ def test_monitor_completed_workers_releases_gpu_and_retries_pending_beams():
     executor = MagicMock()
     settings = MagicMock()
     logger = MagicMock()
+    case_repo = MagicMock()
+    case_repo.get_beam.return_value = SimpleNamespace(status=BeamStatus.COMPLETED)
+    repo_context = MagicMock()
+    repo_context.__enter__.return_value = case_repo
+    repo_context.__exit__.return_value = False
     with patch.object(worker, "as_completed", return_value=[future]), \
          patch.object(worker, "_release_beam_gpu_assignment") as release_mock, \
-         patch.object(worker, "try_allocate_pending_beams") as retry_mock:
+         patch.object(worker, "try_allocate_pending_beams") as retry_mock, \
+         patch.object(worker, "get_db_session", return_value=repo_context):
         worker.monitor_completed_workers(
             active_futures=active_futures,
             pending_beams_by_case=pending_beams_by_case,
@@ -243,6 +249,38 @@ def test_monitor_completed_workers_marks_failed_beam_when_worker_crashes():
     aggregate_mock.assert_called_once_with("case-1", case_repo, logger)
 
 
+def test_monitor_completed_workers_logs_failed_status_when_worker_exits_cleanly():
+    future = MagicMock()
+    future.done.return_value = True
+    future.result.return_value = None
+    active_futures = {future: "beam-10"}
+    executor = MagicMock()
+    settings = MagicMock()
+    logger = MagicMock()
+    case_repo = MagicMock()
+    case_repo.get_beam.return_value = SimpleNamespace(status=BeamStatus.FAILED)
+
+    repo_context = MagicMock()
+    repo_context.__enter__.return_value = case_repo
+    repo_context.__exit__.return_value = False
+
+    with patch.object(worker, "_release_beam_gpu_assignment") as release_mock, \
+         patch.object(worker, "try_allocate_pending_beams") as retry_mock, \
+         patch.object(worker, "get_db_session", return_value=repo_context):
+        worker.monitor_completed_workers(
+            active_futures=active_futures,
+            pending_beams_by_case={},
+            executor=executor,
+            settings=settings,
+            logger=logger,
+        )
+
+    release_mock.assert_called_once_with("beam-10", settings, logger)
+    retry_mock.assert_not_called()
+    logger.warning.assert_called_once_with("Beam worker beam-10 finished but beam FAILED")
+    logger.info.assert_not_called()
+
+
 def test_monitor_completed_workers_handles_completed_future_while_others_still_running():
     completed_future = MagicMock()
     completed_future.done.return_value = True
@@ -259,9 +297,15 @@ def test_monitor_completed_workers_handles_completed_future_while_others_still_r
     executor = MagicMock()
     settings = MagicMock()
     logger = MagicMock()
+    case_repo = MagicMock()
+    case_repo.get_beam.return_value = SimpleNamespace(status=BeamStatus.COMPLETED)
+    repo_context = MagicMock()
+    repo_context.__enter__.return_value = case_repo
+    repo_context.__exit__.return_value = False
 
     with patch.object(worker, "_release_beam_gpu_assignment") as release_mock, \
-         patch.object(worker, "try_allocate_pending_beams") as retry_mock:
+         patch.object(worker, "try_allocate_pending_beams") as retry_mock, \
+         patch.object(worker, "get_db_session", return_value=repo_context):
         worker.monitor_completed_workers(
             active_futures=active_futures,
             pending_beams_by_case=pending_beams_by_case,
@@ -397,7 +441,11 @@ def test_try_allocate_pending_beams_multigpu_requests_all_available_gpus():
             logger=logger,
         )
 
-    if allocate_mock.call_args.kwargs["requested_gpu_count"] is not None:
+    if allocate_mock.call_args.kwargs.get("requested_gpu_count") is not None:
         raise AssertionError(
             f"Expected all-available mode to avoid an artificial GPU cap, got {allocate_mock.call_args.kwargs!r}"
+        )
+    if allocate_mock.call_args.kwargs.get("use_all_available") is not True:
+        raise AssertionError(
+            f"Expected all-available mode to set use_all_available=True, got {allocate_mock.call_args.kwargs!r}"
         )

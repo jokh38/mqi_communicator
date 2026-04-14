@@ -162,7 +162,13 @@ def monitor_completed_workers(active_futures: Dict, pending_beams_by_case: Dict,
         try:
             future.result()  # Raise exception if worker failed
             _release_beam_gpu_assignment(beam_id, settings, logger)
-            logger.info(f"Beam worker {beam_id} completed successfully")
+            with get_db_session(settings, logger) as case_repo:
+                beam = case_repo.get_beam(beam_id)
+
+            if beam and beam.status == BeamStatus.FAILED:
+                logger.warning(f"Beam worker {beam_id} finished but beam FAILED")
+            else:
+                logger.info(f"Beam worker {beam_id} completed successfully")
 
             # Check if there are pending beams waiting for GPUs
             if pending_beams_by_case:
