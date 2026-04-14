@@ -37,7 +37,13 @@ def _build_provider() -> DashboardDataProvider:
     case_repo = CaseRepository(db_connection, logger)
     gpu_repo = GpuRepository(db_connection, logger, settings)
     execution_handler = ExecutionHandler(settings=settings)
-    return DashboardDataProvider(case_repo, gpu_repo, logger, execution_handler=execution_handler)
+    return DashboardDataProvider(
+        case_repo,
+        gpu_repo,
+        logger,
+        execution_handler=execution_handler,
+        settings=settings,
+    )
 
 
 def _get_provider(request: Request) -> DashboardDataProvider:

@@ -126,6 +126,7 @@ class DashboardProcess:
                 gpu_repo,
                 self.logger,
                 execution_handler=execution_handler,
+                settings=self.settings,
             )
             
             # Create and start display manager

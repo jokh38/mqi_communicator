@@ -5,6 +5,7 @@
 """Fetches and processes data required for the UI dashboard."""
 
 import csv
+from pathlib import Path
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timezone
 from io import StringIO
@@ -29,6 +30,7 @@ class DashboardDataProvider:
         gpu_repo: GpuRepository,
         logger: StructuredLogger,
         execution_handler: Optional[ExecutionHandler] = None,
+        settings: Optional[Any] = None,
     ):
         """Initializes the provider with injected repositories.
 
@@ -43,6 +45,7 @@ class DashboardDataProvider:
         self.gpu_repo = gpu_repo
         self.logger = logger
         self.execution_handler = execution_handler
+        self.settings = settings
         self._last_update: Optional[datetime] = None
         self._system_stats: Dict[str, Any] = {}
         self._gpu_data: List[Dict[str, Any]] = []
@@ -253,6 +256,7 @@ class DashboardDataProvider:
         for item in raw_data:
             case = item["case_data"]
             beams = item["beams"]
+            result_summary = self._build_result_summary(case)
 
             # Process beam data
             beam_display_data = []
@@ -274,6 +278,7 @@ class DashboardDataProvider:
             case_display = {
                 "case_id": case.case_id,
                 "status": case.status,
+                "status_label": self._format_case_status_label(case.status),
                 "progress": case.progress,
                 "assigned_gpu": case.assigned_gpu,
                 "elapsed_time": (
@@ -282,7 +287,8 @@ class DashboardDataProvider:
                 ),
                 "beam_count": len(beams),
                 "interpreter_done": case.interpreter_completed,
-                "error_message": case.error_message
+                "error_message": case.error_message,
+                "result_summary": result_summary,
             }
 
             processed.append({
@@ -292,3 +298,130 @@ class DashboardDataProvider:
             })
 
         return processed
+
+    def _format_case_status_label(self, status: CaseStatus) -> str:
+        """Return a user-facing case status label."""
+        if status == CaseStatus.COMPLETED:
+            return "Finished"
+        if status == CaseStatus.PROCESSING:
+            return "Processing"
+        if status == CaseStatus.CSV_INTERPRETING:
+            return "CSV Interpreting"
+        if status == CaseStatus.POSTPROCESSING:
+            return "Postprocessing"
+        if status == CaseStatus.FAILED:
+            return "Failed"
+        if status == CaseStatus.PENDING:
+            return "Pending"
+        if status == CaseStatus.CANCELLED:
+            return "Cancelled"
+        return status.value.replace("_", " ").title()
+
+    def _build_result_summary(self, case: CaseData) -> Dict[str, Any]:
+        """Summarize saved result locations for a case.
+
+        The browser uses this to show where output was written even when the
+        terminal workflow state is not obvious from the case list.
+        """
+        output_locations: List[Dict[str, Any]] = []
+        output_candidates = self._resolve_output_candidates(case.case_id, case.case_path)
+
+        for label, path in output_candidates:
+            files = self._collect_files(path, self._patterns_for_output_label(label))
+            if not files:
+                continue
+            output_locations.append({
+                "label": label,
+                "path": str(path),
+                "file_count": len(files),
+                "sample_files": [str(file_path) for file_path in files[:3]],
+            })
+
+        terminal_status = self._format_case_status_label(case.status)
+        if case.status == CaseStatus.COMPLETED:
+            terminal_status = "Finished"
+
+        return {
+            "terminal_status": terminal_status,
+            "has_saved_output": bool(output_locations),
+            "output_locations": output_locations,
+        }
+
+    def _resolve_output_candidates(self, case_id: str, case_path: Path) -> List[tuple[str, Path]]:
+        """Return likely filesystem locations that may contain saved outputs."""
+        candidates: List[tuple[str, Path]] = []
+        if self.settings is None:
+            pass
+        else:
+            try:
+                csv_output_dir = Path(
+                    self.settings.get_path("csv_output_dir", handler_name="CsvInterpreter")
+                ) / case_id
+                candidates.append(("CSV / TPS output", csv_output_dir))
+            except Exception:
+                pass
+
+            for handler_name, path_name, label in (
+                ("PostProcessor", "simulation_output_dir", "Final DICOM output"),
+                ("PostProcessor", "final_dicom_dir", "Final DICOM output"),
+            ):
+                try:
+                    result_dir = Path(
+                        self.settings.get_path(path_name, handler_name=handler_name, case_id=case_id)
+                    )
+                    candidates.append((label, result_dir))
+                except Exception:
+                    continue
+
+        candidates.append(("CSV / TPS output", self._guess_sibling_output_dir(case_path, case_id, "Outputs_csv")))
+        candidates.append(("Final DICOM output", self._guess_sibling_output_dir(case_path, case_id, "Dose_dcm")))
+        candidates.append(("Local upload copy", self._guess_sibling_output_dir(case_path, case_id, "localdata_uploads")))
+
+        deduped: List[tuple[str, Path]] = []
+        seen_paths: set[str] = set()
+        for label, path in candidates:
+            normalized = str(path.resolve()) if path.exists() else str(path)
+            if normalized in seen_paths:
+                continue
+            seen_paths.add(normalized)
+            deduped.append((label, path))
+        return deduped
+
+    def _guess_sibling_output_dir(self, case_path: Path, case_id: str, folder_name: str) -> Path:
+        """Guess an output directory by walking parent directories of the case path."""
+        for parent in [case_path, *case_path.parents]:
+            candidate = parent / folder_name / case_id
+            if candidate.exists():
+                return candidate
+        return case_path.parent / folder_name / case_id
+
+    def _patterns_for_output_label(self, label: str) -> List[str]:
+        """Return file patterns that count as saved output for a label."""
+        lowered = label.lower()
+        if "dicom" in lowered:
+            return ["*.dcm"]
+        if "csv" in lowered or "tps" in lowered:
+            return ["*.csv", "*.in"]
+        if "upload" in lowered:
+            return ["*.dcm", "*.csv", "*.raw", "*.dat", "*.bin", "*.txt", "*.in"]
+        return ["*.dcm", "*.csv", "*.raw", "*.dat", "*.bin", "*.txt", "*.in"]
+
+    def _collect_files(self, directory: Path, patterns: Optional[List[str]] = None) -> List[Path]:
+        """Collect representative files from a directory tree."""
+        if not directory.exists():
+            return []
+
+        if directory.is_file():
+            return [directory]
+
+        patterns = patterns or ["*"]
+        interesting: List[Path] = []
+        for pattern in patterns:
+            interesting.extend([path for path in directory.rglob(pattern) if path.is_file()])
+
+        # Fall back to any files if the output tree uses an unexpected extension.
+        if not interesting:
+            interesting = [path for path in directory.rglob("*") if path.is_file()]
+
+        interesting.sort(key=lambda path: str(path))
+        return interesting

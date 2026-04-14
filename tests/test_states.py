@@ -118,6 +118,34 @@ def test_result_validation_state_stores_final_dicom_path(tmp_path: Path):
     assert type(next_state) is CompletedState
 
 
+def test_result_validation_state_accepts_raw_result_file(tmp_path: Path):
+    manager = MagicMock(spec=WorkflowManager)
+    manager.logger = MagicMock()
+    manager.case_repo = MagicMock()
+    manager.settings = MagicMock()
+    manager.settings.get_progress_tracking_config.return_value = {"coarse_phase_progress": {}}
+    manager.settings.get_handler_mode.return_value = "local"
+    manager.id = "beam-01"
+    manager.shared_context = {}
+
+    beam = SimpleNamespace(beam_id="beam-01", parent_case_id="case-abc", beam_number=10)
+    manager.case_repo.get_beam.return_value = beam
+    manager.case_repo.get_beams_for_case.return_value = [beam]
+
+    simulation_output_dir = tmp_path / "raw-output"
+    simulation_output_dir.mkdir()
+    (simulation_output_dir / "dose.raw").touch()
+    manager.settings.get_path.side_effect = lambda key, **_: {
+        "simulation_output_dir": str(simulation_output_dir),
+    }[key]
+    manager.execution_handler = SimpleNamespace()
+
+    next_state = ResultValidationState().execute(manager)
+
+    assert manager.shared_context["final_result_path"] == str(simulation_output_dir)
+    assert type(next_state) is CompletedState
+
+
 def test_result_validation_state_missing_dir_transitions_to_failed(tmp_path: Path):
     manager = MagicMock(spec=WorkflowManager)
     manager.logger = MagicMock()

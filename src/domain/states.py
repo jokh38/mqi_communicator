@@ -262,7 +262,17 @@ class ResultValidationState(WorkflowState):
                 f"Native DICOM result directory not found at expected path: {local_result_path}"
             )
 
+        result_files = [
+            path for path in local_result_path.rglob("*")
+            if path.is_file() and path.suffix.lower() in {".dcm", ".raw", ".dat", ".bin", ".csv"}
+        ]
+        if not result_files:
+            raise ProcessingError(
+                f"No saved output files were found in result directory: {local_result_path}"
+            )
+
         context.shared_context["final_result_path"] = str(local_result_path)
+        context.shared_context["final_result_files"] = [str(path) for path in result_files]
         context.logger.info("Result validation completed", {"beam_id": context.id})
 
         return CompletedState()
