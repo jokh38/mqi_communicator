@@ -326,6 +326,42 @@ class CaseDetectionHandler(FileSystemEventHandler):
     def _handle_event(self, event) -> None:
         if event.is_directory:
             case_id, case_path = _derive_case_identity(Path(event.src_path))
+            # Defense in depth: the file watcher emits events for every
+            # directory mutation (including ones from our own pipeline writing
+            # CSVs/TPS files into the tree), which can redeliver an already
+            # terminal case to the queue.  In serial multigpu mode those
+            # duplicates block the queue on a case that has nothing to do,
+            # so skip them before they ever reach the worker loop.
+            if self.settings is not None:
+                try:
+                    if self.case_repo is not None:
+                        case_data = self.case_repo.get_case(case_id)
+                    else:
+                        with get_db_session(self.settings, self.logger) as case_repo:
+                            case_data = case_repo.get_case(case_id)
+                except Exception as exc:
+                    self.logger.warning(
+                        "Failed to check case status before queuing; queuing anyway",
+                        {"case_id": case_id, "error": str(exc)},
+                    )
+                    case_data = None
+
+                terminal_statuses = {
+                    CaseStatus.COMPLETED,
+                    CaseStatus.FAILED,
+                    CaseStatus.CANCELLED,
+                }
+                if case_data is not None and getattr(case_data, "status", None) in terminal_statuses:
+                    self.logger.debug(
+                        "Ignoring directory event for terminal case",
+                        {
+                            "case_id": case_id,
+                            "status": case_data.status.value,
+                            "src_path": str(event.src_path),
+                        },
+                    )
+                    return
+
             self.logger.info(f"New case detected: {case_id} at {case_path}")
             _queue_case(case_id, case_path, self.case_queue, self.logger)
             return

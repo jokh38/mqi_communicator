@@ -304,7 +304,19 @@ def run_case_level_tps_generation(
                 )
                 return []  # Return empty list, not None, to indicate partial success
 
-            logger.info(f"Allocating {gpus_to_allocate} GPUs for case {case_id} ({beam_count - gpus_to_allocate} beams will remain pending)")
+            # In beam-by-beam multigpu mode every idle GPU is routed to the
+            # first beam; only one beam leaves this call dispatched regardless
+            # of how many GPUs were allocated.  The remaining beams (if any)
+            # stay pending.  Guard against the underflow that used to produce
+            # nonsensical "-6 beams will remain pending" log lines.
+            if multigpu_enabled and beam_uses_all_available_gpus:
+                beams_pending_after_dispatch = max(0, beam_count - 1)
+            else:
+                beams_pending_after_dispatch = max(0, beam_count - gpus_to_allocate)
+            logger.info(
+                f"Allocating {gpus_to_allocate} GPUs for case {case_id} "
+                f"({beams_pending_after_dispatch} beams will remain pending)"
+            )
             gpu_assignments = gpu_repo.find_and_lock_multiple_gpus(
                 case_id=case_id,
                 num_gpus=gpus_to_allocate
@@ -466,7 +478,15 @@ def run_case_level_tps_generation(
                         return None
 
             allocated_count = len(gpu_assignments)
-            pending_count = beam_count - allocated_count
+            # When beam_uses_all_available_gpus is on, len(gpu_assignments) is the
+            # GPU count (e.g. 10) rather than the beam count.  Only the first beam
+            # is actually dispatched, so expose that in the pending math instead
+            # of letting beam_count - gpu_count go negative.
+            if multigpu_enabled and beam_uses_all_available_gpus:
+                beams_dispatched = 1 if allocated_count else 0
+            else:
+                beams_dispatched = allocated_count
+            pending_count = max(0, beam_count - beams_dispatched)
 
             logger.info(f"Case-level TPS generation completed for: {case_id} ({allocated_count} allocated, {pending_count} pending)")
             case_repo.record_workflow_step(

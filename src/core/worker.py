@@ -4,8 +4,11 @@
 # =====================================================================================
 """Main entry point for a worker process that handles a single beam."""
 
+import csv
+import subprocess
+from io import StringIO
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Set
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 from src.repositories.gpu_repo import GpuRepository
@@ -17,6 +20,49 @@ from src.core.tps_generator import TpsGenerator
 from src.config.settings import Settings
 from src.utils.db_context import get_db_session
 from src.domain.enums import BeamStatus
+
+
+def _query_busy_gpu_uuids(logger: StructuredLogger) -> Set[str]:
+    """Return UUIDs of GPUs that currently have live compute apps.
+
+    Used as a physical-idleness gate before launching a new moqui_SMC
+    invocation: moqui aborts with "No free GPU remains after
+    BeamLayerMultiGpu filtering" when another tps_env process is still
+    holding the device, even if our DB thinks the GPU is free.
+    """
+    try:
+        result = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-compute-apps=pid,gpu_uuid,process_name,used_memory",
+                "--format=csv,noheader,nounits",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        logger.warning(
+            "nvidia-smi compute-apps query failed; assuming GPUs are idle",
+            {"error": str(exc)},
+        )
+        return set()
+
+    if result.returncode != 0:
+        logger.warning(
+            "nvidia-smi compute-apps query returned non-zero exit",
+            {"return_code": result.returncode, "stderr": (result.stderr or "").strip()},
+        )
+        return set()
+
+    busy_uuids: Set[str] = set()
+    for row in csv.reader(StringIO(result.stdout or "")):
+        if len(row) < 2:
+            continue
+        gpu_uuid = row[1].strip()
+        if gpu_uuid:
+            busy_uuids.add(gpu_uuid)
+    return busy_uuids
 
 
 def worker_main(beam_id: str, beam_path: Path, settings: Settings) -> None:
@@ -195,14 +241,31 @@ def try_allocate_pending_beams(pending_beams_by_case: Dict, executor: ProcessPoo
     """
     cases_to_remove = []
 
+    runtime_config = settings.get_moqui_runtime_config()
+    if not isinstance(runtime_config, dict):
+        runtime_config = {}
+    multigpu_enabled = runtime_config.get("multigpu_enabled", False)
+    beam_uses_all_available_gpus = runtime_config.get("beam_uses_all_available_gpus", False)
+
+    # In beam-by-beam multigpu mode the next beam must wait until every GPU
+    # is physically idle.  The DB may say a GPU is IDLE while moqui_SMC is
+    # still holding it (DB-level locking drifts from hardware), in which case
+    # launching the next beam immediately produces the
+    # "No free GPU remains after BeamLayerMultiGpu filtering" crash.  Gate
+    # the entire pending allocation step on a nvidia-smi check here; if any
+    # compute app is still running, skip this pass and try again next tick.
+    if multigpu_enabled and beam_uses_all_available_gpus and pending_beams_by_case:
+        busy_uuids = _query_busy_gpu_uuids(logger)
+        if busy_uuids:
+            logger.debug(
+                "Deferring pending beam dispatch: GPUs still running compute apps",
+                {"busy_gpu_count": len(busy_uuids)},
+            )
+            return
+
     for case_id, pending_data in list(pending_beams_by_case.items()):
         pending_jobs = pending_data["pending_jobs"]
         case_path = pending_data["case_path"]
-        runtime_config = settings.get_moqui_runtime_config()
-        if not isinstance(runtime_config, dict):
-            runtime_config = {}
-        multigpu_enabled = runtime_config.get("multigpu_enabled", False)
-        beam_uses_all_available_gpus = runtime_config.get("beam_uses_all_available_gpus", False)
 
         if not pending_jobs:
             cases_to_remove.append(case_id)
