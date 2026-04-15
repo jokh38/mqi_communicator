@@ -43,6 +43,42 @@
             });
         }
 
+        function applyExpandedWorkflowStateToRoot(root = document) {
+            if (typeof window.expandedWorkflowCases === 'undefined') {
+                return;
+            }
+
+            const expandedCases = window.expandedWorkflowCases;
+            const caseRows = root.querySelectorAll('[data-case-row][data-case-id]');
+            const visibleCaseIds = new Set();
+
+            caseRows.forEach((row) => {
+                const caseId = row.dataset.caseId;
+                if (!caseId) {
+                    return;
+                }
+
+                visibleCaseIds.add(caseId);
+
+                const expanded = expandedCases.has(caseId);
+                const beamRows = root.querySelectorAll(`[data-beam-row][data-case-id="${caseId}"]`);
+                beamRows.forEach((beamRow) => {
+                    beamRow.classList.toggle('hidden', !expanded);
+                });
+
+                const chevron = root.querySelector(`#chevron-${CSS.escape(caseId)}`) || document.getElementById(`chevron-${caseId}`);
+                if (chevron) {
+                    chevron.style.transform = expanded ? 'rotate(90deg)' : 'rotate(0deg)';
+                }
+            });
+
+            Array.from(expandedCases).forEach((caseId) => {
+                if (!visibleCaseIds.has(caseId)) {
+                    expandedCases.delete(caseId);
+                }
+            });
+        }
+
         function formatTimestamp(timestamp) {
             if (!timestamp) {
                 return 'Never';
@@ -159,19 +195,38 @@
                 }
             });
 
+            document.body.addEventListener('htmx:beforeSwap', (event) => {
+                if (!event.detail || typeof event.detail.serverResponse !== 'string' || !window.expandedWorkflowCases?.size) {
+                    return;
+                }
+
+                const target = event.target;
+                const targetId = target?.id || '';
+                const shouldPrepareWorkflow = targetId === 'workflow-dashboard' || targetId === 'main-dashboard';
+                if (!shouldPrepareWorkflow) {
+                    return;
+                }
+
+                const parser = new DOMParser();
+                const responseDocument = parser.parseFromString(event.detail.serverResponse, 'text/html');
+                const workflowRoot = responseDocument.body.firstElementChild;
+                if (!workflowRoot) {
+                    return;
+                }
+
+                applyExpandedWorkflowStateToRoot(workflowRoot);
+                event.detail.serverResponse = responseDocument.body.innerHTML;
+            });
+
             document.body.addEventListener('htmx:afterSwap', (event) => {
                 restoreScrollPositions(event.target);
-                if (typeof restoreExpandedWorkflowCases === 'function') {
-                    restoreExpandedWorkflowCases(event.target);
-                }
+                applyExpandedWorkflowStateToRoot(event.target);
                 markSuccessfulRefresh();
             });
 
             document.body.addEventListener('htmx:afterSettle', (event) => {
                 restoreScrollPositions(event.target);
-                if (typeof restoreExpandedWorkflowCases === 'function') {
-                    restoreExpandedWorkflowCases(event.target);
-                }
+                applyExpandedWorkflowStateToRoot(event.target);
             });
 
             document.body.addEventListener('htmx:responseError', () => {
