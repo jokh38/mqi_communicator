@@ -14,8 +14,11 @@ from src.config.constants import (
 )
 from src.core.case_aggregator import update_case_status_from_beams
 from src.domain.enums import BeamStatus, CaseStatus
-from src.core.retry_policy import mark_retryable_error_message
-from src.domain.errors import ProcessingError, RetryableError
+from src.core.retry_policy import (
+    mark_permanent_error_message,
+    mark_retryable_error_message,
+)
+from src.domain.errors import PermanentFailureError, ProcessingError, RetryableError
 
 if TYPE_CHECKING:
     from src.core.workflow_manager import WorkflowManager
@@ -35,6 +38,8 @@ def handle_state_exceptions(func: Callable[..., Any]) -> Callable[..., Any]:
             error_msg = f"Error in state '{state_name}' for beam '{context.id}': {str(e)}"
             if isinstance(e, RetryableError):
                 error_msg = mark_retryable_error_message(error_msg)
+            elif isinstance(e, PermanentFailureError):
+                error_msg = mark_permanent_error_message(error_msg)
 
             context.logger.error(
                 error_msg, {

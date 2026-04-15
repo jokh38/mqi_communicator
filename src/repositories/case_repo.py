@@ -114,7 +114,8 @@ class CaseRepository(BaseRepository):
 
         query = """
             SELECT case_id, case_path, status, progress, created_at,
-                   updated_at, error_message, assigned_gpu, interpreter_completed,
+                   updated_at, error_message, failure_category, failure_phase,
+                   failure_details, assigned_gpu, interpreter_completed,
                    retry_count, ptn_checker_run_count, ptn_checker_last_run_at, ptn_checker_status
             FROM cases
             WHERE case_id = ?
@@ -140,7 +141,8 @@ class CaseRepository(BaseRepository):
 
         query = """
             SELECT case_id, case_path, status, progress, created_at,
-                   updated_at, error_message, assigned_gpu, interpreter_completed,
+                   updated_at, error_message, failure_category, failure_phase,
+                   failure_details, assigned_gpu, interpreter_completed,
                    retry_count, ptn_checker_run_count, ptn_checker_last_run_at, ptn_checker_status
             FROM cases
             WHERE status = ?
@@ -563,7 +565,8 @@ class CaseRepository(BaseRepository):
         placeholders = ",".join(["?" for _ in active_statuses])
         query = f"""
             SELECT case_id, case_path, status, progress, created_at,
-                   updated_at, error_message, assigned_gpu, interpreter_completed,
+                   updated_at, error_message, failure_category, failure_phase,
+                   failure_details, assigned_gpu, interpreter_completed,
                    retry_count, ptn_checker_run_count, ptn_checker_last_run_at, ptn_checker_status
             FROM cases
             WHERE status IN ({placeholders})
@@ -673,7 +676,8 @@ class CaseRepository(BaseRepository):
         # Get cases
         case_query = f"""
             SELECT case_id, case_path, status, progress, created_at,
-                   updated_at, error_message, assigned_gpu, interpreter_completed,
+                   updated_at, error_message, failure_category, failure_phase,
+                   failure_details, assigned_gpu, interpreter_completed,
                    retry_count, ptn_checker_run_count, ptn_checker_last_run_at, ptn_checker_status
             FROM cases
             WHERE status IN ({placeholders})
@@ -723,7 +727,8 @@ class CaseRepository(BaseRepository):
 
         case_query = """
             SELECT case_id, case_path, status, progress, created_at,
-                   updated_at, error_message, assigned_gpu, interpreter_completed,
+                   updated_at, error_message, failure_category, failure_phase,
+                   failure_details, assigned_gpu, interpreter_completed,
                    retry_count, ptn_checker_run_count, ptn_checker_last_run_at, ptn_checker_status
             FROM cases
             ORDER BY updated_at DESC, created_at DESC, case_id ASC
@@ -897,6 +902,17 @@ class CaseRepository(BaseRepository):
                 else None
             ),
             error_message=row.get("error_message") if hasattr(row, "get") else row["error_message"],
+            failure_category=(
+                row["failure_category"] if "failure_category" in row.keys() else None
+            ),
+            failure_phase=(
+                row["failure_phase"] if "failure_phase" in row.keys() else None
+            ),
+            failure_details=(
+                json.loads(row["failure_details"])
+                if "failure_details" in row.keys() and row["failure_details"]
+                else None
+            ),
             assigned_gpu=row.get("assigned_gpu") if hasattr(row, "get") else row["assigned_gpu"],
             interpreter_completed=bool(row["interpreter_completed"]) if "interpreter_completed" in row.keys() else False,
             retry_count=row["retry_count"] if "retry_count" in row.keys() else 0,
@@ -1000,7 +1016,8 @@ class CaseRepository(BaseRepository):
             conn.execute(
                 """
                 UPDATE cases
-                SET status = ?, progress = 0.0, error_message = '', updated_at = CURRENT_TIMESTAMP
+                SET status = ?, progress = 0.0, error_message = '', failure_category = NULL,
+                    failure_phase = NULL, failure_details = NULL, updated_at = CURRENT_TIMESTAMP
                 WHERE case_id = ?
                 """,
                 (CaseStatus.PENDING.value, case_id),
@@ -1014,7 +1031,14 @@ class CaseRepository(BaseRepository):
                 (BeamStatus.PENDING.value, case_id),
             )
 
-    def fail_case(self, case_id: str, error_message: str) -> None:
+    def fail_case(
+        self,
+        case_id: str,
+        error_message: str,
+        failure_category: Optional[str] = None,
+        failure_phase: Optional[str] = None,
+        failure_details: Optional[Dict[str, Any]] = None,
+    ) -> None:
         """Marks a case and all its beams as failed.
 
         Args:
@@ -1022,8 +1046,31 @@ class CaseRepository(BaseRepository):
             error_message (str): The error message to log.
         """
         self._log_operation("fail_case", case_id, error_message=error_message)
-        self.update_case_status(case_id, CaseStatus.FAILED, error_message=error_message)
-        self.update_beams_status_by_case_id(case_id, BeamStatus.FAILED.value)
+        with self.db.transaction() as conn:
+            conn.execute(
+                """
+                UPDATE cases
+                SET status = ?, error_message = ?, failure_category = ?, failure_phase = ?,
+                    failure_details = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE case_id = ?
+                """,
+                (
+                    CaseStatus.FAILED.value,
+                    error_message,
+                    failure_category,
+                    failure_phase,
+                    json.dumps(failure_details) if failure_details is not None else None,
+                    case_id,
+                ),
+            )
+            conn.execute(
+                """
+                UPDATE beams
+                SET status = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE parent_case_id = ?
+                """,
+                (BeamStatus.FAILED.value, case_id),
+            )
 
     def update_case_and_beams_status(self, case_id: str,
                                      case_status: CaseStatus, beam_status: BeamStatus,

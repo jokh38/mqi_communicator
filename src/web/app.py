@@ -1,14 +1,16 @@
 """FastAPI application for the web dashboard."""
 
 import os
+import time
 from pathlib import Path
 from typing import Any, Dict, List
 
-from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 
 from src.config.settings import Settings
+from src.core.retry_policy import is_retryable_failed_case
 from src.database.connection import DatabaseConnection
 from src.handlers.execution_handler import ExecutionHandler
 from src.infrastructure.logging_handler import StructuredLogger
@@ -52,6 +54,10 @@ def _get_provider(request: Request) -> DashboardDataProvider:
         provider = _build_provider()
         request.app.state.provider = provider
     return provider
+
+
+def _get_case_queue(request: Request):
+    return getattr(request.app.state, "case_queue", None)
 
 
 def _filter_cases(
@@ -179,6 +185,7 @@ def create_app() -> FastAPI:
             case_view = provider._process_cases_with_beams_data(
                 [{"case_data": raw_case, "beams": [beam.__dict__ for beam in beams]}]
             )[0]
+            case_view["case_display"]["retry_eligible"] = is_retryable_failed_case(raw_case)
 
         delivery_view = [
             {
@@ -211,6 +218,30 @@ def create_app() -> FastAPI:
                 "workflow_steps": workflow_steps,
             },
         )
+
+    @app.post("/ui/cases/{case_id}/retry")
+    async def retry_case(request: Request, case_id: str) -> JSONResponse:
+        provider = _get_provider(request)
+        case_queue = _get_case_queue(request)
+        raw_case = provider.case_repo.get_case(case_id)
+        if raw_case is None:
+            raise HTTPException(status_code=404, detail="Case not found")
+        if not is_retryable_failed_case(raw_case):
+            raise HTTPException(status_code=409, detail="Case is not eligible for retry")
+        if case_queue is None:
+            raise HTTPException(status_code=503, detail="Case queue is not available")
+
+        provider.case_repo.reset_case_and_beams_for_retry(case_id)
+        provider.case_repo.increment_retry_count(case_id)
+        case_queue.put(
+            {
+                "case_id": case_id,
+                "case_path": str(raw_case.case_path),
+                "timestamp": time.time(),
+                "reason": "manual_retry",
+            }
+        )
+        return JSONResponse({"status": "queued", "case_id": case_id})
 
     return app
 

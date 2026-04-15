@@ -140,6 +140,9 @@ class DatabaseConnection:
                             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                             error_message TEXT,
+                            failure_category TEXT,
+                            failure_phase TEXT,
+                            failure_details TEXT,
                             assigned_gpu TEXT,
                             interpreter_completed BOOLEAN DEFAULT 0,
                             retry_count INTEGER DEFAULT 0,
@@ -242,6 +245,15 @@ class DatabaseConnection:
                     if 'retry_count' not in case_columns:
                         self.logger.info("Adding retry_count column to cases table")
                         conn.execute("ALTER TABLE cases ADD COLUMN retry_count INTEGER DEFAULT 0")
+                    if 'failure_category' not in case_columns:
+                        self.logger.info("Adding failure_category column to cases table")
+                        conn.execute("ALTER TABLE cases ADD COLUMN failure_category TEXT")
+                    if 'failure_phase' not in case_columns:
+                        self.logger.info("Adding failure_phase column to cases table")
+                        conn.execute("ALTER TABLE cases ADD COLUMN failure_phase TEXT")
+                    if 'failure_details' not in case_columns:
+                        self.logger.info("Adding failure_details column to cases table")
+                        conn.execute("ALTER TABLE cases ADD COLUMN failure_details TEXT")
                     if 'ptn_checker_run_count' not in case_columns:
                         self.logger.info("Adding ptn_checker_run_count column to cases table")
                         conn.execute("ALTER TABLE cases ADD COLUMN ptn_checker_run_count INTEGER DEFAULT 0")

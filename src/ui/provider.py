@@ -16,6 +16,7 @@ from src.repositories.gpu_repo import GpuRepository
 from src.infrastructure.logging_handler import StructuredLogger
 from src.domain.models import CaseData, GpuResource
 from src.domain.enums import CaseStatus, GpuStatus
+from src.core.retry_policy import is_retryable_failed_case
 
 
 class DashboardDataProvider:
@@ -145,6 +146,20 @@ class DashboardDataProvider:
             "available_gpus": available_gpus,
             "last_update": self._last_update
         })
+
+        metrics["retryable_failed"] = sum(1 for case in cases if is_retryable_failed_case(case))
+        metrics["permanent_failed"] = sum(
+            1
+            for case in cases
+            if case.status == CaseStatus.FAILED and not is_retryable_failed_case(case)
+        )
+        failure_phases: Dict[str, int] = {}
+        for case in cases:
+            phase = getattr(case, "failure_phase", None)
+            if case.status != CaseStatus.FAILED or not phase:
+                continue
+            failure_phases[phase] = failure_phases.get(phase, 0) + 1
+        metrics["failure_phases"] = failure_phases
 
         return metrics
 
@@ -288,6 +303,11 @@ class DashboardDataProvider:
                 "beam_count": len(beams),
                 "interpreter_done": case.interpreter_completed,
                 "error_message": case.error_message,
+                "failure_category": getattr(case, "failure_category", None),
+                "failure_phase": getattr(case, "failure_phase", None),
+                "failure_details": getattr(case, "failure_details", None),
+                "retry_count": getattr(case, "retry_count", 0),
+                "retry_eligible": is_retryable_failed_case(case),
                 "result_summary": result_summary,
             }
 

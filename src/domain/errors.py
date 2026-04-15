@@ -48,3 +48,8 @@ class ValidationError(MQIError):
 class RetryableError(MQIError):
     """Exception raised for errors that can be safely retried."""
     pass
+
+
+class PermanentFailureError(MQIError):
+    """Exception raised for errors that should not be retried automatically."""
+    pass

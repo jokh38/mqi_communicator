@@ -114,3 +114,55 @@ def test_provider_surfaces_finished_result_output_locations(tmp_path: Path):
         raise AssertionError(f"Missing CSV output location, got {result_summary!r}")
     if str(dicom_case_dir) not in output_paths:
         raise AssertionError(f"Missing DICOM output location, got {result_summary!r}")
+
+
+def test_provider_includes_structured_failure_fields_in_case_display(tmp_path: Path):
+    case_repo = MagicMock()
+    gpu_repo = MagicMock()
+    logger = MagicMock()
+
+    case_repo.get_all_active_cases_with_beams.return_value = [
+        {
+            "case_data": SimpleNamespace(
+                case_id="case-failed",
+                case_path=tmp_path / "case-failed",
+                status=CaseStatus.FAILED,
+                progress=30.0,
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
+                error_message="TPS generation failed",
+                failure_category="retryable",
+                failure_phase="tps_generation",
+                failure_details={
+                    "summary": "Beam matching failed",
+                    "beam_errors": [{"beam_id": "beam-2", "message": "Beam 2 failed"}],
+                },
+                assigned_gpu=None,
+                interpreter_completed=True,
+                retry_count=2,
+            ),
+            "beams": [
+                {
+                    "beam_id": "beam-2",
+                    "status": CaseStatus.FAILED,
+                    "progress": 30.0,
+                    "created_at": datetime.now(timezone.utc),
+                    "updated_at": datetime.now(timezone.utc),
+                    "hpc_job_id": None,
+                    "error_message": "Beam 2 failed",
+                }
+            ],
+        }
+    ]
+    gpu_repo.get_all_gpu_resources.return_value = []
+
+    provider = DashboardDataProvider(case_repo, gpu_repo, logger)
+    provider.refresh_all_data()
+
+    case_display = provider.get_cases_with_beams_data()[0]["case_display"]
+
+    assert case_display["error_message"] == "TPS generation failed"
+    assert case_display["failure_category"] == "retryable"
+    assert case_display["failure_phase"] == "tps_generation"
+    assert case_display["failure_details"]["summary"] == "Beam matching failed"
+    assert case_display["retry_count"] == 2
