@@ -221,12 +221,18 @@
             document.body.addEventListener('htmx:afterSwap', (event) => {
                 restoreScrollPositions(event.target);
                 applyExpandedWorkflowStateToRoot(event.target);
+                if (typeof initializeLiveCaseTrackerColumnResize === 'function') {
+                    initializeLiveCaseTrackerColumnResize(event.target);
+                }
                 markSuccessfulRefresh();
             });
 
             document.body.addEventListener('htmx:afterSettle', (event) => {
                 restoreScrollPositions(event.target);
                 applyExpandedWorkflowStateToRoot(event.target);
+                if (typeof initializeLiveCaseTrackerColumnResize === 'function') {
+                    initializeLiveCaseTrackerColumnResize(event.target);
+                }
             });
 
             document.body.addEventListener('htmx:responseError', () => {

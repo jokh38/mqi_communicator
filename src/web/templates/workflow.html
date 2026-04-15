@@ -82,13 +82,30 @@
         <div class="w-2/3 bg-white rounded shadow p-4 border border-gray-200 flex flex-col overflow-hidden">
             <h2 class="text-sm font-semibold mb-3 text-gray-700 uppercase tracking-wide border-b pb-1 flex-shrink-0">Live Case Tracker</h2>
             <div id="case-tracker-scroll" data-scroll-key="case-tracker-scroll" data-preserve-scroll class="flex-grow overflow-auto">
-                <table class="min-w-full divide-y divide-gray-200">
+                <table id="case-tracker-table" data-resizable-table="live-case-tracker" class="min-w-full divide-y divide-gray-200" style="table-layout: fixed; width: 100%;">
+                    <colgroup>
+                        <col data-case-tracker-col="case-id" style="width: 28%; min-width: 180px;">
+                        <col data-case-tracker-col="stage" style="width: 22%; min-width: 150px;">
+                        <col data-case-tracker-col="elapsed-time" style="width: 16%; min-width: 120px;">
+                        <col data-case-tracker-col="progress" style="width: 34%; min-width: 220px;">
+                    </colgroup>
                     <thead class="bg-gray-50 sticky top-0 z-10">
                         <tr>
-                            <th class="px-6 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Case ID</th>
-                            <th class="px-6 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Stage</th>
-                            <th class="px-6 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Elapsed Time</th>
-                            <th class="px-6 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Progress</th>
+                            <th class="relative px-6 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                <span>Case ID</span>
+                                <div class="absolute top-0 right-0 h-full w-3 cursor-col-resize select-none" data-column-resize-handle data-column-key="case-id" title="Drag to resize column"></div>
+                            </th>
+                            <th class="relative px-6 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                <span>Stage</span>
+                                <div class="absolute top-0 right-0 h-full w-3 cursor-col-resize select-none" data-column-resize-handle data-column-key="stage" title="Drag to resize column"></div>
+                            </th>
+                            <th class="relative px-6 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                <span>Elapsed Time</span>
+                                <div class="absolute top-0 right-0 h-full w-3 cursor-col-resize select-none" data-column-resize-handle data-column-key="elapsed-time" title="Drag to resize column"></div>
+                            </th>
+                            <th class="relative px-6 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                <span>Progress</span>
+                            </th>
                         </tr>
                     </thead>
                     {% for case in cases %}
@@ -174,6 +191,13 @@
     </div>
     <script>
         window.expandedWorkflowCases = window.expandedWorkflowCases || new Set();
+        window.liveCaseTrackerColumnWidths = window.liveCaseTrackerColumnWidths || (() => {
+            try {
+                return JSON.parse(localStorage.getItem('liveCaseTrackerColumnWidths') || '{}');
+            } catch (error) {
+                return {};
+            }
+        })();
 
         function getBeamRows(caseId) {
             return document.querySelectorAll(`[data-beam-row][data-case-id="${caseId}"]`);
@@ -221,6 +245,70 @@
             });
         }
 
+        function persistLiveCaseTrackerColumnWidths() {
+            localStorage.setItem('liveCaseTrackerColumnWidths', JSON.stringify(window.liveCaseTrackerColumnWidths));
+        }
+
+        function applyLiveCaseTrackerColumnWidths(root = document) {
+            const widths = window.liveCaseTrackerColumnWidths || {};
+            root.querySelectorAll('[data-case-tracker-col]').forEach((column) => {
+                const key = column.dataset.caseTrackerCol;
+                const width = widths[key];
+                if (!key || !width) {
+                    return;
+                }
+
+                column.style.width = width;
+            });
+        }
+
+        function initializeLiveCaseTrackerColumnResize(root = document) {
+            const table = root.querySelector('#case-tracker-table');
+            if (!table || table.dataset.columnResizeInitialized === 'true') {
+                applyLiveCaseTrackerColumnWidths(root);
+                return;
+            }
+
+            applyLiveCaseTrackerColumnWidths(root);
+
+            table.querySelectorAll('[data-column-resize-handle]').forEach((handle) => {
+                handle.addEventListener('mousedown', (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+
+                    const columnKey = handle.dataset.columnKey;
+                    const column = table.querySelector(`[data-case-tracker-col="${columnKey}"]`);
+                    if (!column) {
+                        return;
+                    }
+
+                    const startX = event.clientX;
+                    const startWidth = column.getBoundingClientRect().width;
+                    const minWidth = parseFloat(column.style.minWidth || window.getComputedStyle(column).minWidth) || 120;
+
+                    const onMouseMove = (moveEvent) => {
+                        const nextWidth = Math.max(minWidth, startWidth + (moveEvent.clientX - startX));
+                        const nextWidthPx = `${Math.round(nextWidth)}px`;
+                        column.style.width = nextWidthPx;
+                        window.liveCaseTrackerColumnWidths[columnKey] = nextWidthPx;
+                    };
+
+                    const onMouseUp = () => {
+                        persistLiveCaseTrackerColumnWidths();
+                        document.body.classList.remove('select-none');
+                        document.removeEventListener('mousemove', onMouseMove);
+                        document.removeEventListener('mouseup', onMouseUp);
+                    };
+
+                    document.body.classList.add('select-none');
+                    document.addEventListener('mousemove', onMouseMove);
+                    document.addEventListener('mouseup', onMouseUp);
+                });
+            });
+
+            table.dataset.columnResizeInitialized = 'true';
+        }
+
         function toggleBeams(caseId) {
             const rows = getBeamRows(caseId);
             if (!rows.length) {
@@ -232,5 +320,6 @@
         }
 
         restoreExpandedWorkflowCases();
+        initializeLiveCaseTrackerColumnResize();
     </script>
 </div>
