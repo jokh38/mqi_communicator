@@ -21,6 +21,9 @@ class CaseData:
     created_at: datetime
     updated_at: Optional[datetime] = None
     error_message: Optional[str] = None
+    failure_category: Optional[str] = None
+    failure_phase: Optional[str] = None
+    failure_details: Optional[Dict[str, Any]] = None
     assigned_gpu: Optional[str] = None
     interpreter_completed: bool = False
     retry_count: int = 0

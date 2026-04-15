@@ -51,6 +51,7 @@
                         <tr>
                             <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Case ID</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Error</th>
                         </tr>
                     </thead>
                     <tbody class="bg-white divide-y divide-gray-200">
@@ -68,10 +69,19 @@
                                         <span class="text-blue-600 font-semibold">{{ case.case_display.status_label }}</span>
                                     {% endif %}
                                 </td>
+                                <td class="px-4 py-4 text-sm text-gray-600">
+                                    {% if case.case_display.error_message %}
+                                        <div class="max-w-xs truncate" title="{{ case.case_display.error_message }}">
+                                            {{ case.case_display.error_message }}
+                                        </div>
+                                    {% else %}
+                                        <span class="text-gray-400">-</span>
+                                    {% endif %}
+                                </td>
                             </tr>
                         {% else %}
                             <tr>
-                                <td colspan="2" class="px-4 py-4 text-center text-sm text-gray-500">No cases found matching filters.</td>
+                                <td colspan="3" class="px-4 py-4 text-center text-sm text-gray-500">No cases found matching filters.</td>
                             </tr>
                         {% endfor %}
                     </tbody>

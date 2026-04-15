@@ -19,6 +19,14 @@
                 <h3 class="text-xs text-gray-500 uppercase tracking-wide">Total GPUs</h3>
                 <p class="text-xl font-bold text-blue-600">{{ stats.total_gpus }}</p>
             </div>
+            <div>
+                <h3 class="text-xs text-gray-500 uppercase tracking-wide">Retryable Failures</h3>
+                <p class="text-xl font-bold text-amber-600">{{ stats.get('retryable_failed', 0) }}</p>
+            </div>
+            <div>
+                <h3 class="text-xs text-gray-500 uppercase tracking-wide">Permanent Failures</h3>
+                <p class="text-xl font-bold text-red-600">{{ stats.get('permanent_failed', 0) }}</p>
+            </div>
         </div>
         <div class="text-right">
             <h3 class="text-xs text-gray-500 uppercase tracking-wide">Wall Time</h3>
@@ -27,6 +35,19 @@
             </p>
         </div>
     </div>
+
+    {% if stats.get('failure_phases') %}
+    <div class="bg-white p-4 rounded shadow border border-gray-200 flex-shrink-0">
+        <h3 class="text-xs text-gray-500 uppercase tracking-wide mb-3">Failure Phases</h3>
+        <div class="flex flex-wrap gap-3">
+            {% for phase, count in stats.get('failure_phases', {}).items() %}
+                <div class="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900">
+                    <span class="font-medium">{{ phase }}</span>: {{ count }}
+                </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
 
     <!-- Main Content Area: Side-by-Side -->
     <div class="flex-grow flex flex-row space-x-4 min-h-0">
