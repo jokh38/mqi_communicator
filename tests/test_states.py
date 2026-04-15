@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from src.core.workflow_manager import WorkflowManager
+from src.domain.errors import RetryableError
 from src.domain.states import (
     CompletedState,
     ResultValidationState,
@@ -168,3 +169,28 @@ def test_result_validation_state_missing_dir_transitions_to_failed(tmp_path: Pat
     next_state = ResultValidationState().execute(manager)
 
     assert type(next_state) is FailedState
+
+
+def test_retryable_error_marks_failed_beam_with_retryable_prefix(mock_workflow_manager, tmp_path):
+    state = SimulationState()
+    mock_workflow_manager.execution_handler = MagicMock(spec=ExecutionHandler)
+    mock_workflow_manager.execution_handler.start_local_process.side_effect = RetryableError(
+        "CSV interpreting failed"
+    )
+
+    sim_output_dir = str(tmp_path / "Dose_dcm" / "case-abc")
+    mock_workflow_manager.settings.get_path.side_effect = lambda key, **_: {
+        "tps_input_file": "/tmp/input.in",
+        "mqi_run_dir": "/tmp/mqi",
+        "log_path": "/tmp/log.txt",
+        "simulation_output_dir": sim_output_dir,
+    }[key]
+    mock_workflow_manager.settings.get_command.return_value = "sim_command"
+    mock_workflow_manager.settings.get_handler_mode.return_value = "local"
+
+    next_state = state.execute(mock_workflow_manager)
+
+    assert type(next_state) is FailedState
+    failed_call = mock_workflow_manager.case_repo.update_beam_status.call_args_list[-1]
+    assert failed_call.args[1].value == "failed"
+    assert failed_call.kwargs["error_message"].startswith("[RETRYABLE] ")

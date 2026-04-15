@@ -8,7 +8,7 @@ from src.domain.enums import CaseStatus
 from src.core.workflow_manager import CaseDetectionHandler, scan_existing_cases
 
 
-def _case(case_id: str, status: CaseStatus, retry_count: int = 0):
+def _case(case_id: str, status: CaseStatus, retry_count: int = 0, error_message: str = None):
     return SimpleNamespace(
         case_id=case_id,
         case_path=Path(f"/cases/{case_id}"),
@@ -16,7 +16,7 @@ def _case(case_id: str, status: CaseStatus, retry_count: int = 0):
         progress=0.0,
         created_at=datetime(2026, 1, 1, 0, 0, 0),
         updated_at=datetime(2026, 1, 1, 0, 0, 0),
-        error_message=None,
+        error_message=error_message,
         assigned_gpu=None,
         interpreter_completed=False,
         retry_count=retry_count,
@@ -24,7 +24,7 @@ def _case(case_id: str, status: CaseStatus, retry_count: int = 0):
 
 
 def test_scan_existing_cases_skips_failed_case(tmp_path):
-    """W-4 fix: FAILED cases are non-retryable and should be skipped."""
+    """Non-retryable FAILED cases should remain skipped."""
     case_path = tmp_path / "55061194"
     case_path.mkdir()
 
@@ -45,6 +45,36 @@ def test_scan_existing_cases_skips_failed_case(tmp_path):
         scan_existing_cases(case_queue, settings, logger)
 
     queue_mock.assert_not_called()
+
+
+def test_scan_existing_cases_requeues_retryable_failed_case_without_incrementing_retry_count(tmp_path):
+    case_path = tmp_path / "55061194"
+    case_path.mkdir()
+
+    settings = MagicMock()
+    settings.get_case_directories.return_value = {"scan": tmp_path}
+    settings.get_processing_config.return_value = {"max_case_retries": 3}
+    logger = MagicMock()
+    case_queue = MagicMock()
+    case_repo = MagicMock()
+    case_repo.get_all_case_ids.return_value = ["55061194"]
+    case_repo.get_case.return_value = _case(
+        "55061194",
+        CaseStatus.FAILED,
+        retry_count=1,
+        error_message="[RETRYABLE] CSV interpreting failed",
+    )
+
+    context_manager = MagicMock()
+    context_manager.__enter__.return_value = case_repo
+    context_manager.__exit__.return_value = False
+
+    with patch("src.core.workflow_manager.get_db_session", return_value=context_manager), \
+         patch("src.core.workflow_manager._queue_case", return_value=True) as queue_mock:
+        scan_existing_cases(case_queue, settings, logger)
+
+    queue_mock.assert_called_once_with("55061194", case_path, case_queue, logger)
+    case_repo.increment_retry_count.assert_not_called()
 
 
 def test_scan_existing_cases_skips_completed_case(tmp_path):
@@ -143,6 +173,46 @@ def test_case_detection_handler_ignores_non_completed_case_ptn_event(tmp_path):
             handler.on_created(event)
 
     queue_mock.assert_not_called()
+
+
+def test_case_detection_handler_ignores_non_retryable_failed_directory_event(tmp_path):
+    case_queue = MagicMock()
+    logger = MagicMock()
+    handler = CaseDetectionHandler(case_queue, logger)
+    handler.settings = MagicMock()
+    handler.case_repo = MagicMock()
+    handler.case_repo.get_case.return_value = _case("55061194", CaseStatus.FAILED)
+
+    case_path = tmp_path / "55061194"
+    case_path.mkdir()
+    event = SimpleNamespace(is_directory=True, src_path=str(case_path))
+
+    with patch("src.core.workflow_manager._queue_case", return_value=True) as queue_mock:
+        handler.on_created(event)
+
+    queue_mock.assert_not_called()
+
+
+def test_case_detection_handler_allows_retryable_failed_directory_event(tmp_path):
+    case_queue = MagicMock()
+    logger = MagicMock()
+    handler = CaseDetectionHandler(case_queue, logger)
+    handler.settings = MagicMock()
+    handler.case_repo = MagicMock()
+    handler.case_repo.get_case.return_value = _case(
+        "55061194",
+        CaseStatus.FAILED,
+        error_message="Could not match delivery folders to RT plan beams",
+    )
+
+    case_path = tmp_path / "55061194"
+    case_path.mkdir()
+    event = SimpleNamespace(is_directory=True, src_path=str(case_path))
+
+    with patch("src.core.workflow_manager._queue_case", return_value=True) as queue_mock:
+        handler.on_created(event)
+
+    queue_mock.assert_called_once_with("55061194", case_path, case_queue, logger)
 
 
 def test_scan_existing_cases_discovers_nested_study_directories(tmp_path):

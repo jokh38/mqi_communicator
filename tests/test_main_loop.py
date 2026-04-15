@@ -1,10 +1,12 @@
 import multiprocessing as mp
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 import unittest
 from unittest.mock import MagicMock, patch
 
 from main import MQIApplication
+from src.domain.enums import CaseStatus
 from src.core.fraction_grouper import CaseDeliveryResult
 
 
@@ -165,3 +167,103 @@ def test_discover_beams_uses_detailed_delivery_failure_message():
         "55061194",
         "Delivery folder '2025042401440800' is missing required PlanInfo values",
     )
+
+
+def _existing_case(status: CaseStatus, retry_count: int = 0, error_message: str = None):
+    return SimpleNamespace(
+        case_id="55061194",
+        case_path=Path("/cases/55061194"),
+        status=status,
+        retry_count=retry_count,
+        error_message=error_message,
+    )
+
+
+def test_process_new_case_skips_non_retryable_failed_case():
+    app = MQIApplication(config_path=Path("config/config.yaml"))
+    app.logger = MagicMock()
+    app.settings = _mock_settings()
+    app.fraction_tracker = MagicMock()
+
+    case_repo = MagicMock()
+    case_repo.get_case.return_value = _existing_case(CaseStatus.FAILED, error_message="beam(s) failed")
+    repo_context = MagicMock()
+    repo_context.__enter__.return_value = case_repo
+    repo_context.__exit__.return_value = False
+
+    with patch("main.get_db_session", return_value=repo_context):
+        app._process_new_case(
+            {"case_id": "55061194", "case_path": "/cases/55061194"},
+            MagicMock(),
+            {},
+            {},
+        )
+
+    case_repo.reset_case_and_beams_for_retry.assert_not_called()
+    case_repo.increment_retry_count.assert_not_called()
+
+
+def test_process_new_case_resets_and_retries_retryable_failed_case_under_limit():
+    app = MQIApplication(config_path=Path("config/config.yaml"))
+    app.logger = MagicMock()
+    app.settings = _mock_settings()
+    app.settings.get_processing_config.return_value = {"max_case_retries": 3}
+    app.fraction_tracker = MagicMock()
+    app._discover_beams = MagicMock(
+        return_value=CaseDeliveryResult(
+            beam_jobs=[],
+            delivery_records=[],
+            fractions=[],
+            status="ready",
+        )
+    )
+
+    case_repo = MagicMock()
+    case_repo.get_case.return_value = _existing_case(
+        CaseStatus.FAILED,
+        retry_count=1,
+        error_message="[RETRYABLE] CSV interpreting failed",
+    )
+    repo_context = MagicMock()
+    repo_context.__enter__.return_value = case_repo
+    repo_context.__exit__.return_value = False
+
+    with patch("main.get_db_session", return_value=repo_context):
+        app._process_new_case(
+            {"case_id": "55061194", "case_path": "/cases/55061194"},
+            MagicMock(),
+            {},
+            {},
+        )
+
+    case_repo.reset_case_and_beams_for_retry.assert_called_once_with("55061194")
+    case_repo.increment_retry_count.assert_called_once_with("55061194")
+
+
+def test_process_new_case_skips_retryable_failed_case_at_retry_limit():
+    app = MQIApplication(config_path=Path("config/config.yaml"))
+    app.logger = MagicMock()
+    app.settings = _mock_settings()
+    app.settings.get_processing_config.return_value = {"max_case_retries": 3}
+    app.fraction_tracker = MagicMock()
+
+    case_repo = MagicMock()
+    case_repo.get_case.return_value = _existing_case(
+        CaseStatus.FAILED,
+        retry_count=3,
+        error_message="Could not match delivery folders to RT plan beams",
+    )
+    repo_context = MagicMock()
+    repo_context.__enter__.return_value = case_repo
+    repo_context.__exit__.return_value = False
+
+    with patch("main.get_db_session", return_value=repo_context):
+        app._process_new_case(
+            {"case_id": "55061194", "case_path": "/cases/55061194"},
+            MagicMock(),
+            {},
+            {},
+        )
+
+    case_repo.reset_case_and_beams_for_retry.assert_not_called()
+    case_repo.increment_retry_count.assert_not_called()

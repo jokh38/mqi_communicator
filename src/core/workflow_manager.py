@@ -20,6 +20,7 @@ from src.domain.enums import BeamStatus, CaseStatus
 from src.domain.states import WorkflowState, InitialState
 from src.utils.db_context import get_db_session
 from src.core.case_aggregator import queue_case as _queue_case
+from src.core.retry_policy import is_retryable_failed_case
 
 
 def _looks_like_case_directory(path: Path) -> bool:
@@ -238,18 +239,13 @@ def scan_existing_cases(case_queue: mp.Queue,
                 f"Found {len(filesystem_cases)} case directories in scan directory"
             )
 
-            # W-4 fix: Get max retry limit from config
-            processing_config = settings.get_processing_config()
-            max_retries = processing_config.get("max_case_retries", 3)
-
             retryable_statuses = {
                 CaseStatus.PENDING,
                 CaseStatus.CSV_INTERPRETING,
                 CaseStatus.PROCESSING,
                 CaseStatus.POSTPROCESSING,
             }
-            # W-4 fix: Don't automatically retry FAILED or CANCELLED cases
-            non_retryable_statuses = {CaseStatus.COMPLETED, CaseStatus.FAILED, CaseStatus.CANCELLED}
+            non_retryable_statuses = {CaseStatus.COMPLETED, CaseStatus.CANCELLED}
 
             new_cases = []
             for case_id, case_path in filesystem_cases:
@@ -259,21 +255,17 @@ def scan_existing_cases(case_queue: mp.Queue,
 
                 case_data = case_repo.get_case(case_id)
                 case_status = getattr(case_data, "status", None)
-                retry_count = getattr(case_data, "retry_count", 0)
 
-                # W-4 fix: Check retry limit
                 if case_status in retryable_statuses:
-                    if retry_count >= max_retries:
-                        logger.warning(
-                            f"Case {case_id} has exceeded max retries ({retry_count}/{max_retries}). Skipping.",
-                            {"case_id": case_id, "status": case_status.value, "retry_count": retry_count}
-                        )
-                        continue
-                    # W-4 fix: Increment retry count for retryable cases
-                    case_repo.increment_retry_count(case_id)
                     logger.info(
-                        f"Found retryable case during startup scan: {case_id} (retry {retry_count + 1}/{max_retries})",
-                        {"case_id": case_id, "status": case_status.value, "retry_count": retry_count + 1}
+                        f"Found retryable in-flight case during startup scan: {case_id}",
+                        {"case_id": case_id, "status": case_status.value}
+                    )
+                    new_cases.append((case_id, case_path))
+                elif is_retryable_failed_case(case_data):
+                    logger.info(
+                        f"Found retryable failed case during startup scan: {case_id}",
+                        {"case_id": case_id, "status": case_status.value}
                     )
                     new_cases.append((case_id, case_path))
                 elif case_status in non_retryable_statuses:
@@ -346,17 +338,17 @@ class CaseDetectionHandler(FileSystemEventHandler):
                     )
                     case_data = None
 
-                terminal_statuses = {
-                    CaseStatus.COMPLETED,
-                    CaseStatus.FAILED,
-                    CaseStatus.CANCELLED,
-                }
-                if case_data is not None and getattr(case_data, "status", None) in terminal_statuses:
+                status = getattr(case_data, "status", None) if case_data is not None else None
+                terminal_statuses = {CaseStatus.COMPLETED, CaseStatus.CANCELLED}
+                failed_and_non_retryable = (
+                    status == CaseStatus.FAILED and not is_retryable_failed_case(case_data)
+                )
+                if status in terminal_statuses or failed_and_non_retryable:
                     self.logger.debug(
                         "Ignoring directory event for terminal case",
                         {
                             "case_id": case_id,
-                            "status": case_data.status.value,
+                            "status": status.value,
                             "src_path": str(event.src_path),
                         },
                     )

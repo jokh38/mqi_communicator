@@ -992,6 +992,28 @@ class CaseRepository(BaseRepository):
         """
         self._execute_query(query, (case_id,))
 
+    def reset_case_and_beams_for_retry(self, case_id: str) -> None:
+        """Reset case and beam workflow state to a clean retryable baseline."""
+        self._log_operation("reset_case_and_beams_for_retry", case_id)
+
+        with self.db.transaction() as conn:
+            conn.execute(
+                """
+                UPDATE cases
+                SET status = ?, progress = 0.0, error_message = '', updated_at = CURRENT_TIMESTAMP
+                WHERE case_id = ?
+                """,
+                (CaseStatus.PENDING.value, case_id),
+            )
+            conn.execute(
+                """
+                UPDATE beams
+                SET status = ?, progress = 0.0, error_message = '', updated_at = CURRENT_TIMESTAMP
+                WHERE parent_case_id = ?
+                """,
+                (BeamStatus.PENDING.value, case_id),
+            )
+
     def fail_case(self, case_id: str, error_message: str) -> None:
         """Marks a case and all its beams as failed.
 

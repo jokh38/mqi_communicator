@@ -48,6 +48,7 @@ from src.core.dispatcher import (
 from src.core.case_aggregator import prepare_case_delivery_data
 from src.core.fraction_grouper import FractionTracker, ReadyCase
 from src.core.workflow_manager import scan_existing_cases, CaseDetectionHandler
+from src.core.retry_policy import is_retryable_failed_case
 from src.domain.enums import CaseStatus, BeamStatus
 from src.utils.db_context import get_db_session
 
@@ -532,17 +533,43 @@ class MQIApplication:
                 run_case_level_ptn_analysis(case_id, case_path, self.settings)
                 return
 
-            # Guard: skip cases that already reached a terminal state.
-            # The file watcher can fire duplicate events for the same directory,
-            # and in serial-multigpu mode those duplicates would block the queue
-            # by reprocessing a completed case.
-            _non_retryable = {CaseStatus.COMPLETED, CaseStatus.FAILED, CaseStatus.CANCELLED}
             _existing = case_repo.get_case(case_id)
-            if _existing and _existing.status in _non_retryable:
-                self.logger.info(
-                    f"Skipping already-{_existing.status.value} case {case_id}"
-                )
-                return
+            if _existing:
+                if _existing.status in {CaseStatus.COMPLETED, CaseStatus.CANCELLED}:
+                    self.logger.info(
+                        f"Skipping already-{_existing.status.value} case {case_id}"
+                    )
+                    return
+
+                if _existing.status == CaseStatus.FAILED:
+                    if not is_retryable_failed_case(_existing):
+                        self.logger.info(
+                            f"Skipping non-retryable failed case {case_id}"
+                        )
+                        return
+
+                    max_retries = self.settings.get_processing_config().get("max_case_retries", 3)
+                    if getattr(_existing, "retry_count", 0) >= max_retries:
+                        self.logger.warning(
+                            f"Skipping retryable failed case {case_id}; retry limit reached",
+                            {
+                                "case_id": case_id,
+                                "retry_count": getattr(_existing, "retry_count", 0),
+                                "max_case_retries": max_retries,
+                            },
+                        )
+                        return
+
+                    case_repo.reset_case_and_beams_for_retry(case_id)
+                    case_repo.increment_retry_count(case_id)
+                    self.logger.info(
+                        f"Retrying failed case {case_id}",
+                        {
+                            "case_id": case_id,
+                            "retry_count": getattr(_existing, "retry_count", 0) + 1,
+                            "max_case_retries": max_retries,
+                        },
+                    )
 
             # Step 1: Discover beams and validate data transfer completion
             result = self._discover_beams(case_id, case_path, case_repo)
