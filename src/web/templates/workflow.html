@@ -95,6 +95,8 @@
                         {% set display = case.case_display %}
                         <!-- Case header row (always visible, clickable) -->
                         <tr class="hover:bg-indigo-50 transition-colors cursor-pointer select-none"
+                            data-case-row
+                            data-case-id="{{ display.case_id }}"
                             onclick="toggleBeams('{{ display.case_id }}')">
                             <td class="px-6 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
                                 <span id="chevron-{{ display.case_id }}" class="inline-block transition-transform duration-200 mr-1 text-gray-400" style="transform: rotate(0deg)">&#9654;</span>
@@ -132,7 +134,7 @@
                         {% for beam in case.beams %}
                         {% set beam_name = beam.beam_id.split('_')[-1] if '_' in beam.beam_id else beam.beam_id %}
                         {% set beam_status = beam.status.value if beam.status else 'unknown' %}
-                        <tr id="beams-{{ display.case_id }}" class="bg-gray-50 hover:bg-gray-100 transition-colors hidden">
+                        <tr id="beams-{{ display.case_id }}" data-beam-row data-case-id="{{ display.case_id }}" class="bg-gray-50 hover:bg-gray-100 transition-colors hidden">
                             <td class="px-6 py-2 whitespace-nowrap text-xs text-gray-500 pl-10">
                                 <span class="text-gray-400 mr-1">&#9492;&#9472;</span>
                                 <span class="font-medium text-gray-600">{{ beam_name }}</span>
@@ -171,19 +173,64 @@
         </div>
     </div>
     <script>
-        function toggleBeams(caseId) {
-            const rows = document.querySelectorAll('#beams-' + caseId);
+        window.expandedWorkflowCases = window.expandedWorkflowCases || new Set();
+
+        function getBeamRows(caseId) {
+            return document.querySelectorAll(`[data-beam-row][data-case-id="${caseId}"]`);
+        }
+
+        function setBeamsExpanded(caseId, expanded) {
+            const rows = getBeamRows(caseId);
             const chevron = document.getElementById('chevron-' + caseId);
-            if (!rows.length || !chevron) return;
-            const isHidden = rows[0].classList.contains('hidden');
-            rows.forEach(row => {
-                if (isHidden) {
-                    row.classList.remove('hidden');
-                } else {
-                    row.classList.add('hidden');
+
+            if (!rows.length || !chevron) {
+                return;
+            }
+
+            rows.forEach((row) => {
+                row.classList.toggle('hidden', !expanded);
+            });
+
+            chevron.style.transform = expanded ? 'rotate(90deg)' : 'rotate(0deg)';
+
+            if (expanded) {
+                window.expandedWorkflowCases.add(caseId);
+            } else {
+                window.expandedWorkflowCases.delete(caseId);
+            }
+        }
+
+        function restoreExpandedWorkflowCases(root = document) {
+            const caseRows = root.querySelectorAll('[data-case-row][data-case-id]');
+            const visibleCaseIds = new Set();
+
+            caseRows.forEach((row) => {
+                const caseId = row.dataset.caseId;
+                if (!caseId) {
+                    return;
+                }
+
+                visibleCaseIds.add(caseId);
+                setBeamsExpanded(caseId, window.expandedWorkflowCases.has(caseId));
+            });
+
+            Array.from(window.expandedWorkflowCases).forEach((caseId) => {
+                if (!visibleCaseIds.has(caseId)) {
+                    window.expandedWorkflowCases.delete(caseId);
                 }
             });
-            chevron.style.transform = isHidden ? 'rotate(90deg)' : 'rotate(0deg)';
         }
+
+        function toggleBeams(caseId) {
+            const rows = getBeamRows(caseId);
+            if (!rows.length) {
+                return;
+            }
+
+            const isExpanded = !rows[0].classList.contains('hidden');
+            setBeamsExpanded(caseId, !isExpanded);
+        }
+
+        restoreExpandedWorkflowCases();
     </script>
 </div>

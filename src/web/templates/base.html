@@ -161,11 +161,17 @@
 
             document.body.addEventListener('htmx:afterSwap', (event) => {
                 restoreScrollPositions(event.target);
+                if (typeof restoreExpandedWorkflowCases === 'function') {
+                    restoreExpandedWorkflowCases(event.target);
+                }
                 markSuccessfulRefresh();
             });
 
             document.body.addEventListener('htmx:afterSettle', (event) => {
                 restoreScrollPositions(event.target);
+                if (typeof restoreExpandedWorkflowCases === 'function') {
+                    restoreExpandedWorkflowCases(event.target);
+                }
             });
 
             document.body.addEventListener('htmx:responseError', () => {
