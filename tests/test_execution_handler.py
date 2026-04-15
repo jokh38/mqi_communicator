@@ -32,6 +32,7 @@ def test_execute_command_local_mode_uses_argument_list_and_shell_false(mock_run)
         capture_output=True,
         text=True,
         cwd=None,
+        timeout=30,
     )
 
 

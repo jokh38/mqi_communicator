@@ -1,5 +1,6 @@
 """FastAPI application for the web dashboard."""
 
+import asyncio
 import os
 import time
 from pathlib import Path
@@ -103,7 +104,7 @@ def create_app() -> FastAPI:
     @app.get("/ui/workflow", response_class=HTMLResponse)
     async def workflow(request: Request) -> HTMLResponse:
         provider = _get_provider(request)
-        provider.refresh_all_data()
+        await asyncio.to_thread(provider.refresh_all_data)
         return templates.TemplateResponse(
             "workflow.html",
             {
@@ -123,9 +124,9 @@ def create_app() -> FastAPI:
         date_end: str = "",
     ) -> HTMLResponse:
         provider = _get_provider(request)
-        provider.refresh_all_data()
+        await asyncio.to_thread(provider.refresh_all_data)
 
-        raw_cases = provider.case_repo.get_all_cases_with_beams()
+        raw_cases = await asyncio.to_thread(provider.case_repo.get_all_cases_with_beams)
         processed_cases = provider._process_cases_with_beams_data(raw_cases)
         filtered_cases = _filter_cases(
             processed_cases,

@@ -227,7 +227,8 @@ class ExecutionHandler:
 
     def execute_command(self,
                         command: Any,
-                        cwd: Optional[Path] = None) -> ExecutionResult:
+                        cwd: Optional[Path] = None,
+                        timeout: int = 30) -> ExecutionResult:
         """
         Executes a command locally.
         """
@@ -238,11 +239,17 @@ class ExecutionHandler:
                                     check=True,
                                     capture_output=True,
                                     text=True,
-                                    cwd=cwd)
+                                    cwd=cwd,
+                                    timeout=timeout)
             return ExecutionResult(success=True,
                                    output=result.stdout,
                                    error=result.stderr,
                                    return_code=result.returncode)
+        except subprocess.TimeoutExpired:
+            return ExecutionResult(success=False,
+                                   output="",
+                                   error=f"Command timed out after {timeout}s",
+                                   return_code=-1)
         except subprocess.CalledProcessError as e:
             return ExecutionResult(success=False,
                                    output=e.stdout,
