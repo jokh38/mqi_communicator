@@ -148,17 +148,20 @@ def create_app() -> FastAPI:
         workflow_steps = provider.case_repo.get_workflow_steps(case_id)
 
         case_display = None
+        beam_display = []
         if raw_case is not None:
-            # Reusing the existing data processor for cases
-            case_display = provider._process_cases_with_beams_data(
-                [{"case_data": raw_case, "beams": []}]
-            )[0]["case_display"]
+            processed = provider._process_cases_with_beams_data(
+                [{"case_data": raw_case, "beams": [beam.__dict__ for beam in provider.case_repo.get_beams_for_case(case_id)]}]
+            )[0]
+            case_display = processed["case_display"]
+            beam_display = processed["beams"]
 
         return templates.TemplateResponse(
             "modal_logs.html",
             {
                 "request": request,
                 "case_display": case_display,
+                "beams": beam_display,
                 "workflow_steps": workflow_steps,
             },
         )

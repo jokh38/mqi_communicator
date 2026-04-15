@@ -22,7 +22,7 @@ paths:
 
 executables:
   local:
-    python: "/usr/bin/python3"
+    python: "/home/jokh38/MOQUI_SMC/mqi_communicator/.venv/bin/python3"
     mqi_interpreter_script: "{base_directory}/mqi_interpreter/main_cli.py"
     raw_to_dicom_script: "{base_directory}/RawToDCM/moqui_raw2dicom.py"
 

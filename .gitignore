@@ -124,3 +124,7 @@ monitoring_report_*.md
 <MagicMock*>
 .runtime/
 config/*.bak*
+
+# Local generated artifacts
+logs/
+*.bak

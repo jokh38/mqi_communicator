@@ -1,7 +1,7 @@
 <div id="workflow-dashboard"
      class="h-full flex flex-col space-y-4" 
      hx-get="/ui/workflow" 
-     hx-trigger="every 3s [!document.getElementById('log-modal')]" 
+     hx-trigger="every 3s [!document.getElementById('log-modal')]"
      hx-ext="morph"
      hx-swap="morph:outerHTML">
     <!-- Top Banner: System Metrics & Wall Time -->
@@ -91,45 +91,99 @@
                             <th class="px-6 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Progress</th>
                         </tr>
                     </thead>
-                    <tbody class="bg-white divide-y divide-gray-200">
-                        {% for case in cases %}
-                            {% set display = case.case_display %}
-                            <tr class="hover:bg-gray-50 transition-colors">
-                                <td class="px-6 py-3 whitespace-nowrap text-sm font-medium text-gray-900">{{ display.case_id }}</td>
-                                <td class="px-6 py-3 whitespace-nowrap text-sm text-gray-500">
-                                    <button 
-                                        hx-get="/ui/logs/{{ display.case_id }}" 
-                                        hx-target="#modal-container"
-                                        hx-swap="innerHTML"
-                                        class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full 
-                                        {% if display.status.value == 'failed' %}bg-red-100 text-red-800 hover:bg-red-200 focus:ring-red-500
-                                        {% elif display.status.value == 'completed' %}bg-green-100 text-green-800 hover:bg-green-200 focus:ring-green-500
-                                        {% elif display.status.value == 'processing' or display.status.value == 'csv_interpreting' or display.status.value == 'postprocessing' %}bg-blue-100 text-blue-800 hover:bg-blue-200 focus:ring-blue-500
-                                        {% elif display.status.value == 'pending' %}bg-gray-100 text-gray-800 hover:bg-gray-200 focus:ring-gray-500
-                                        {% else %}bg-yellow-100 text-yellow-800 hover:bg-yellow-200 focus:ring-yellow-500{% endif %}
-                                        focus:outline-none focus:ring-2 focus:ring-offset-2 cursor-pointer shadow-sm transition-transform active:scale-95"
-                                        title="Click to view detailed logs">
-                                        {{ display.status.value }}
-                                    </button>
-                                </td>
-                                <td class="px-6 py-3 whitespace-nowrap text-sm text-gray-500 font-mono">{{ display.elapsed_time | round(1) }}s</td>
-                                <td class="px-6 py-3 whitespace-nowrap text-sm text-gray-500 w-1/3">
-                                    <div class="flex items-center">
-                                        <div class="w-full bg-gray-200 rounded-full h-2 mr-2 overflow-hidden border border-gray-300">
-                                            <div class="bg-blue-600 h-2 rounded-full transition-all duration-500 ease-in-out" style="width: {{ display.progress }}%"></div>
-                                        </div>
-                                        <span class="font-mono text-xs w-10 text-right">{{ display.progress | round(1) }}%</span>
+                    {% for case in cases %}
+                        {% set display = case.case_display %}
+                        <!-- Case header row (always visible, clickable) -->
+                        <tr class="hover:bg-indigo-50 transition-colors cursor-pointer select-none"
+                            onclick="toggleBeams('{{ display.case_id }}')">
+                            <td class="px-6 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
+                                <span id="chevron-{{ display.case_id }}" class="inline-block transition-transform duration-200 mr-1 text-gray-400" style="transform: rotate(0deg)">&#9654;</span>
+                                {{ display.case_id }}
+                                <span class="text-xs text-gray-400 ml-1 font-normal">({{ display.beam_count }} beams)</span>
+                            </td>
+                            <td class="px-6 py-3 whitespace-nowrap text-sm text-gray-500">
+                                <button 
+                                    hx-get="/ui/logs/{{ display.case_id }}" 
+                                    hx-target="#modal-container"
+                                    hx-swap="innerHTML"
+                                    class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full 
+                                    {% if display.status.value == 'failed' %}bg-red-100 text-red-800 hover:bg-red-200 focus:ring-red-500
+                                    {% elif display.status.value == 'completed' %}bg-green-100 text-green-800 hover:bg-green-200 focus:ring-green-500
+                                    {% elif display.status.value == 'processing' or display.status.value == 'csv_interpreting' or display.status.value == 'postprocessing' %}bg-blue-100 text-blue-800 hover:bg-blue-200 focus:ring-blue-500
+                                    {% elif display.status.value == 'pending' %}bg-gray-100 text-gray-800 hover:bg-gray-200 focus:ring-gray-500
+                                    {% else %}bg-yellow-100 text-yellow-800 hover:bg-yellow-200 focus:ring-yellow-500{% endif %}
+                                    focus:outline-none focus:ring-2 focus:ring-offset-2 cursor-pointer shadow-sm transition-transform active:scale-95"
+                                    onclick="event.stopPropagation()"
+                                    title="Click to view detailed logs">
+                                    {{ display.status.value }}
+                                </button>
+                            </td>
+                            <td class="px-6 py-3 whitespace-nowrap text-sm text-gray-500 font-mono">{{ display.elapsed_time | round(1) }}s</td>
+                            <td class="px-6 py-3 whitespace-nowrap text-sm text-gray-500 w-1/3">
+                                <div class="flex items-center">
+                                    <div class="w-full bg-gray-200 rounded-full h-2 mr-2 overflow-hidden border border-gray-300">
+                                        <div class="bg-blue-600 h-2 rounded-full transition-all duration-500 ease-in-out" style="width: {{ display.progress }}%"></div>
                                     </div>
-                                </td>
-                            </tr>
-                        {% else %}
-                            <tr>
-                                <td colspan="4" class="px-6 py-8 text-center text-sm text-gray-500">No active cases currently processing.</td>
-                            </tr>
+                                    <span class="font-mono text-xs w-10 text-right">{{ display.progress | round(1) }}%</span>
+                                </div>
+                            </td>
+                        </tr>
+                        <!-- Beam sub-rows (collapsed by default) -->
+                        {% for beam in case.beams %}
+                        {% set beam_name = beam.beam_id.split('_')[-1] if '_' in beam.beam_id else beam.beam_id %}
+                        {% set beam_status = beam.status.value if beam.status else 'unknown' %}
+                        <tr id="beams-{{ display.case_id }}" class="bg-gray-50 hover:bg-gray-100 transition-colors hidden">
+                            <td class="px-6 py-2 whitespace-nowrap text-xs text-gray-500 pl-10">
+                                <span class="text-gray-400 mr-1">&#9492;&#9472;</span>
+                                <span class="font-medium text-gray-600">{{ beam_name }}</span>
+                            </td>
+                            <td class="px-6 py-2 whitespace-nowrap text-xs">
+                                <span class="px-1.5 py-0.5 inline-flex text-xs leading-4 font-medium rounded
+                                    {% if beam_status == 'completed' %}bg-green-50 text-green-700
+                                    {% elif beam_status == 'failed' %}bg-red-50 text-red-700
+                                    {% elif beam_status == 'simulation_running' %}bg-blue-50 text-blue-700
+                                    {% elif beam_status == 'pending' %}bg-gray-100 text-gray-600
+                                    {% else %}bg-yellow-50 text-yellow-700{% endif %}">
+                                    {{ beam_status }}
+                                </span>
+                            </td>
+                            <td class="px-6 py-2 whitespace-nowrap text-xs text-gray-400 font-mono">{{ beam.elapsed_time | round(1) }}s</td>
+                            <td class="px-6 py-2 whitespace-nowrap text-xs text-gray-500 w-1/3">
+                                <div class="flex items-center">
+                                    <div class="w-full bg-gray-200 rounded-full h-1.5 mr-2 overflow-hidden">
+                                        <div class="{% if beam_status == 'completed' %}bg-green-500{% elif beam_status == 'failed' %}bg-red-500{% else %}bg-blue-400{% endif %} h-1.5 rounded-full transition-all duration-500 ease-in-out" style="width: {{ beam.progress }}%"></div>
+                                    </div>
+                                    <span class="font-mono text-xs w-10 text-right text-gray-400">{{ beam.progress | round(1) }}%</span>
+                                </div>
+                                {% if beam.error_message %}
+                                <div class="text-xs text-red-500 mt-0.5 truncate" title="{{ beam.error_message }}">{{ beam.error_message[:60] }}</div>
+                                {% endif %}
+                            </td>
+                        </tr>
                         {% endfor %}
-                    </tbody>
+                    {% else %}
+                        <tr>
+                            <td colspan="4" class="px-6 py-8 text-center text-sm text-gray-500">No active cases currently processing.</td>
+                        </tr>
+                    {% endfor %}
                 </table>
             </div>
         </div>
     </div>
+    <script>
+        function toggleBeams(caseId) {
+            const rows = document.querySelectorAll('#beams-' + caseId);
+            const chevron = document.getElementById('chevron-' + caseId);
+            if (!rows.length || !chevron) return;
+            const isHidden = rows[0].classList.contains('hidden');
+            rows.forEach(row => {
+                if (isHidden) {
+                    row.classList.remove('hidden');
+                } else {
+                    row.classList.add('hidden');
+                }
+            });
+            chevron.style.transform = isHidden ? 'rotate(90deg)' : 'rotate(0deg)';
+        }
+    </script>
 </div>
