@@ -46,6 +46,7 @@ class UIProcessManager:
         self.project_root = Path(__file__).parent.parent.parent
         self._process: Optional[subprocess.Popen] = None
         self._stdout_log_file: Optional[IO[str]] = None
+        self._stderr_log_file: Optional[IO[str]] = None
         self._is_running = False
         self.web_port: Optional[int] = None
         self.log_dir = self.project_root / self.config.get_logging_config()['log_dir']
@@ -134,11 +135,23 @@ class UIProcessManager:
                 # Web mode: Run as background process, setting an env var for the db path
                 env = os.environ.copy()
                 env["DB_PATH"] = str(self.database_path)
-                
+
+                # Redirect stdout/stderr to log files instead of PIPE.
+                # Using PIPE with no reader causes a deadlock once the OS pipe
+                # buffer (~64 KB) fills: uvicorn blocks on write and stops
+                # serving requests entirely.
+                self.log_dir.mkdir(parents=True, exist_ok=True)
+                self._stdout_log_file = open(
+                    self.log_dir / "web_dashboard_stdout.log", "a", encoding="utf-8"
+                )
+                self._stderr_log_file = open(
+                    self.log_dir / "web_dashboard_stderr.log", "a", encoding="utf-8"
+                )
+
                 popen_kwargs = {
                     "cwd": self.project_root,
-                    "stdout": subprocess.PIPE,
-                    "stderr": subprocess.PIPE,
+                    "stdout": self._stdout_log_file,
+                    "stderr": self._stderr_log_file,
                     "env": env,
                 }
 
@@ -186,17 +199,33 @@ class UIProcessManager:
             else:
                 # Process failed to start
                 if self.logger:
-                    # Capture stdout and stderr for web mode debugging
                     stdout_str, stderr_str = "", ""
-                    if web_enabled and self._process.stdout and self._process.stderr:
-                        stdout_str = self._process.stdout.read().decode('utf-8', errors='ignore')
-                        stderr_str = self._process.stderr.read().decode('utf-8', errors='ignore')
+                    if web_enabled and self._stdout_log_file and self._stderr_log_file:
+                        # Flush and read back the log files we redirected to
+                        try:
+                            self._stdout_log_file.flush()
+                            self._stderr_log_file.flush()
+                            stdout_path = self.log_dir / "web_dashboard_stdout.log"
+                            stderr_path = self.log_dir / "web_dashboard_stderr.log"
+                            stdout_str = stdout_path.read_text(encoding="utf-8", errors="ignore")[-2000:]
+                            stderr_str = stderr_path.read_text(encoding="utf-8", errors="ignore")[-2000:]
+                        except Exception:
+                            pass
                     
                     self.logger.error("UI process failed to start.", {
                         "return_code": poll_result,
                         "stdout": stdout_str,
                         "stderr": stderr_str
                     })
+                # Close log file handles on failure
+                for fh in (self._stdout_log_file, self._stderr_log_file):
+                    if fh is not None:
+                        try:
+                            fh.close()
+                        except Exception:
+                            pass
+                self._stdout_log_file = None
+                self._stderr_log_file = None
                 self._process = None
                 return False
 
@@ -216,6 +245,15 @@ class UIProcessManager:
             bool: True if the process stopped successfully, False otherwise.
         """
         # No file handles to close since we removed stderr logging
+        # Close stdout/stderr log file handles opened in web mode
+        for fh in (self._stdout_log_file, self._stderr_log_file):
+            if fh is not None:
+                try:
+                    fh.close()
+                except Exception:
+                    pass
+        self._stdout_log_file = None
+        self._stderr_log_file = None
 
         if not self._is_running or not self._process:
             return True
