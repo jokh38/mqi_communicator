@@ -9,7 +9,7 @@ ExecutionHandler:
 paths:
   base_directory: "/home/jokh38/MOQUI_SMC"
   local:
-    scan_directory: "{base_directory}/data/Data_G1G2"
+    scan_directory: "{base_directory}/data/SHI_log"
     csv_output_dir: "{base_directory}/data/Outputs_csv"
     simulation_output_dir: "{base_directory}/data/Dose_dcm/{case_id}"
     final_dicom_dir: "{base_directory}/data/Dose_dcm/{case_id}"
