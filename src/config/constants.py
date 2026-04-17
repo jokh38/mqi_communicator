@@ -25,11 +25,7 @@ TPS_OUTPUT_FILE_PATTERN = "dose_*.raw"
 LOG_FILE_EXTENSIONS = [".log", ".out", ".err"]
 
 # Required input files for case processing
-REQUIRED_CASE_FILES = [
-    "input.dat",
-    "geometry.dcm",
-    "structure.dcm"
-]
+REQUIRED_CASE_FILES = ["input.dat", "geometry.dcm", "structure.dcm"]
 
 # ===== COMMAND TEMPLATES =====
 # Fixed command patterns used throughout the application
@@ -49,7 +45,7 @@ WORKFLOW_STEPS = [
     "SIMULATION_RUNNING",
     "POSTPROCESSING",
     "COMPLETED",
-    "FAILED"
+    "FAILED",
 ]
 
 # ===== VALIDATION CONSTANTS =====
@@ -66,7 +62,9 @@ ERROR_MSG_GPU_NOT_AVAILABLE = "No available GPU found for case '{case_id}'"
 ERROR_MSG_INVALID_CASE_PATH = (
     "Invalid case path: '{path}' does not exist or is not accessible"
 )
-ERROR_MSG_TPS_GENERATION_FAILED = "TPS generation failed for case '{case_id}': {details}"
+ERROR_MSG_TPS_GENERATION_FAILED = (
+    "TPS generation failed for case '{case_id}': {details}"
+)
 
 # ===== UI DISPLAY CONSTANTS =====
 # Fixed UI layout and formatting values
@@ -81,7 +79,7 @@ STATUS_COLORS = {
     "RUNNING": "blue",
     "COMPLETED": "green",
     "FAILED": "red",
-    "CANCELLED": "orange"
+    "CANCELLED": "orange",
 }
 
 # ===== SYSTEM RESOURCE LIMITS =====
@@ -106,25 +104,19 @@ PHASE_COMPLETED = "COMPLETED"
 
 # ===== MOQUI TPS PARAMETER NAMES =====
 # Fixed parameter names expected by MOQUI TPS (cannot be changed)
-TPS_REQUIRED_PARAMS = [
-    'GPUID',
-    'DicomPath',
-    'logFilePath',
-    'OutputDir',
-    'BeamNumbers'
-]
+TPS_REQUIRED_PARAMS = ["GPUID", "DicomPath", "logFilePath", "OutputDir", "BeamNumbers"]
 
 TPS_FIXED_PARAMS = {
-    'RandomSeed': -1932780356,
-    'UseAbsolutePath': True,
-    'Verbosity': 0,
-    'UsingPhantomGeo': True,
-    'Scorer': 'Dose',
-    'SourceType': 'FluenceMap',
-    'SimulationType': 'perBeam',
-    'ScoreToCTGrid': True,
-    'OutputFormat': 'raw',
-    'OverwriteResults': True,
-    'ParticlesPerHistory': 1,
-    'TwoCentimeterMode': True
+    "RandomSeed": -1932780356,
+    "UseAbsolutePath": True,
+    "Verbosity": 0,
+    "UsingPhantomGeo": True,
+    "Scorer": "Dose",
+    "SourceType": "FluenceMap",
+    "SimulationType": "perBeam",
+    "ScoreToCTGrid": True,
+    "OutputFormat": "raw",
+    "OverwriteResults": True,
+    "NormalizeTotalHistories": 500000000,
+    "TwoCentimeterMode": True,
 }

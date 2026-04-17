@@ -1,4 +1,4 @@
-﻿ExecutionHandler:
+ExecutionHandler:
   GpuMonitor: "local"
   CsvInterpreter: "local"
   HpcFileHandler: "local"
@@ -137,7 +137,7 @@ moqui_tps_parameters:
   SourceType: FluenceMap
   SimulationType: perBeam
   BeamNumbers: 1
-  ParticlesPerHistory: 0.1
+  NormalizeTotalHistories: 500000000
   ScoreToCTGrid: true
   OutputFormat: dcm
   OverwriteResults: true

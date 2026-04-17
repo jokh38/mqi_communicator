@@ -35,17 +35,25 @@ class TpsGenerator:
         # Fetch and resolve TPS generator paths from configuration
         self.resolved_paths = self._resolve_tps_generator_paths()
 
-    def _format_gpu_parameter(self, gpu_assignments: List[Dict[str, Any]], beam_number: Optional[int]) -> Any:
+    def _format_gpu_parameter(
+        self, gpu_assignments: List[Dict[str, Any]], beam_number: Optional[int]
+    ) -> Any:
         runtime_config = self.settings.get_moqui_runtime_config()
         if not isinstance(runtime_config, dict):
             runtime_config = {}
         multigpu_enabled = runtime_config.get("multigpu_enabled", False)
-        beam_uses_all_available_gpus = runtime_config.get("beam_uses_all_available_gpus", False)
+        beam_uses_all_available_gpus = runtime_config.get(
+            "beam_uses_all_available_gpus", False
+        )
 
         if not gpu_assignments:
             return 0
 
-        if multigpu_enabled and beam_uses_all_available_gpus and beam_number is not None:
+        if (
+            multigpu_enabled
+            and beam_uses_all_available_gpus
+            and beam_number is not None
+        ):
             return gpu_assignments[0].get("gpu_id", 0)
 
         if len(gpu_assignments) == 1:
@@ -66,9 +74,15 @@ class TpsGenerator:
             runtime_config = {}
 
         multigpu_enabled = runtime_config.get("multigpu_enabled", False)
-        beam_uses_all_available_gpus = runtime_config.get("beam_uses_all_available_gpus", False)
+        beam_uses_all_available_gpus = runtime_config.get(
+            "beam_uses_all_available_gpus", False
+        )
 
-        if not (multigpu_enabled and beam_uses_all_available_gpus and beam_number is not None):
+        if not (
+            multigpu_enabled
+            and beam_uses_all_available_gpus
+            and beam_number is not None
+        ):
             return {
                 "EnableBeamLayerMultiGpu": False,
                 "BeamLayerMultiGpuAllowedGpuIds": "",
@@ -108,14 +122,20 @@ class TpsGenerator:
                     try:
                         # Resolve the path template, which may still contain runtime placeholders like {case_id}
                         # These will be resolved later when the actual case_id is available
-                        resolved_path = self.settings.get_path(path_name, handler_name="CsvInterpreter")
+                        resolved_path = self.settings.get_path(
+                            path_name, handler_name="CsvInterpreter"
+                        )
                         resolved[key] = resolved_path
-                        self.logger.debug(f"Resolved TPS path template '{key}': {resolved_path}")
+                        self.logger.debug(
+                            f"Resolved TPS path template '{key}': {resolved_path}"
+                        )
                     except (KeyError, ValueError, IndexError) as e:
                         # This happens when the path contains runtime placeholders like {case_id}
                         # that aren't known at initialization time - this is expected and normal
                         # Store the original placeholder reference for later resolution
-                        self.logger.debug(f"Path '{key}' contains runtime placeholders, will be resolved at generation time")
+                        self.logger.debug(
+                            f"Path '{key}' contains runtime placeholders, will be resolved at generation time"
+                        )
                         resolved[key] = path_template
                 else:
                     resolved[key] = path_template
@@ -132,7 +152,7 @@ class TpsGenerator:
         execution_mode: str = "local",
         output_dir: Optional[Path] = None,
         beam_name: Optional[str] = None,
-        beam_number: Optional[int] = None
+        beam_number: Optional[int] = None,
     ) -> bool:
         """Generate moqui_tps.in file for a case with multiple beam-to-GPU assignments.
 
@@ -149,19 +169,23 @@ class TpsGenerator:
             bool: True if file was generated successfully, False otherwise.
         """
         try:
-            self.logger.info("Generating moqui_tps.in file with dynamic GPU assignments", {
-                "case_id": case_id,
-                "case_path": str(case_path),
-                "gpu_assignments": gpu_assignments,
-                "execution_mode": execution_mode
-            })
+            self.logger.info(
+                "Generating moqui_tps.in file with dynamic GPU assignments",
+                {
+                    "case_id": case_id,
+                    "case_path": str(case_path),
+                    "gpu_assignments": gpu_assignments,
+                    "execution_mode": execution_mode,
+                },
+            )
 
             # Start with base parameters from config
             parameters = self.base_parameters.copy()
 
             # Get format context (base_directory, case_id, rtplan_dir)
             format_context = self._generate_dynamic_paths(
-                case_path, case_id, execution_mode)
+                case_path, case_id, execution_mode
+            )
 
             # Format path templates in base_parameters with runtime data
             for key, value in parameters.items():
@@ -169,7 +193,9 @@ class TpsGenerator:
                     try:
                         parameters[key] = value.format(**format_context)
                     except KeyError as e:
-                        self.logger.warning(f"Could not format parameter '{key}': missing {e}")
+                        self.logger.warning(
+                            f"Could not format parameter '{key}': missing {e}"
+                        )
 
             # Extract case-specific data (gantry number and beam count)
             try:
@@ -188,8 +214,12 @@ class TpsGenerator:
             else:
                 parameters["BeamNumbers"] = beam_count
 
-            parameters["GPUID"] = self._format_gpu_parameter(gpu_assignments, beam_number)
-            parameters.update(self._build_multi_gpu_parameters(gpu_assignments, beam_number))
+            parameters["GPUID"] = self._format_gpu_parameter(
+                gpu_assignments, beam_number
+            )
+            parameters.update(
+                self._build_multi_gpu_parameters(gpu_assignments, beam_number)
+            )
             if not gpu_assignments:
                 parameters["BeamNumbers"] = 1
 
@@ -214,31 +244,34 @@ class TpsGenerator:
                 output_filename = "moqui_tps.in"
 
             output_file = output_directory / output_filename
-            with open(output_file, 'w', encoding='utf-8') as f:
+            with open(output_file, "w", encoding="utf-8") as f:
                 f.write(content)
 
-            self.logger.info("moqui_tps.in file generated successfully with GPU assignments", {
-                "case_id": case_id,
-                "output_file": str(output_file),
-                "parameters_count": len(parameters),
-                "beam_count": beam_count,
-                "gpu_assignments": gpu_assignments
-            })
+            self.logger.info(
+                "moqui_tps.in file generated successfully with GPU assignments",
+                {
+                    "case_id": case_id,
+                    "output_file": str(output_file),
+                    "parameters_count": len(parameters),
+                    "beam_count": beam_count,
+                    "gpu_assignments": gpu_assignments,
+                },
+            )
             return True
         except Exception as e:
-            self.logger.error("Failed to generate moqui_tps.in file with GPU assignments", {
-                "case_id": case_id,
-                "case_path": str(case_path),
-                "error": str(e),
-                "exception_type": type(e).__name__
-            })
+            self.logger.error(
+                "Failed to generate moqui_tps.in file with GPU assignments",
+                {
+                    "case_id": case_id,
+                    "case_path": str(case_path),
+                    "error": str(e),
+                    "exception_type": type(e).__name__,
+                },
+            )
             return False
 
     def _generate_dynamic_paths(
-        self,
-        case_path: Path,
-        case_id: str,
-        execution_mode: str
+        self, case_path: Path, case_id: str, execution_mode: str
     ) -> Dict[str, Any]:
         """Generate format context for config template substitution.
 
@@ -251,14 +284,13 @@ class TpsGenerator:
             Dict[str, Any]: Dictionary containing format context for templates.
         """
         # Get base_directory from config
-        base_dir = self.settings._yaml_config.get("paths", {}).get("base_directory", "/home/jokh38/MOQUI_SMC")
+        base_dir = self.settings._yaml_config.get("paths", {}).get(
+            "base_directory", "/home/jokh38/MOQUI_SMC"
+        )
 
         # Return format context - all paths defined in config.yaml
         # DICOM files are copied to {base_directory}/data/Outputs_csv/{case_id}/rtplan by dispatcher
-        return {
-            "base_directory": base_dir,
-            "case_id": case_id
-        }
+        return {"base_directory": base_dir, "case_id": case_id}
 
     def _extract_case_data(self, case_path: Path, case_id: str) -> Dict[str, Any]:
         """Extract case-specific data from DICOM files or other sources.
@@ -298,19 +330,16 @@ class TpsGenerator:
             if beam_count > 0:
                 case_data["BeamNumbers"] = beam_count
 
-            self.logger.debug("Extracted case-specific data", {
-                "case_id": case_id,
-                "beam_count": beam_count,
-                "case_data": case_data
-            })
+            self.logger.debug(
+                "Extracted case-specific data",
+                {"case_id": case_id, "beam_count": beam_count, "case_data": case_data},
+            )
         except Exception as e:
             self.logger.error(f"Case data extraction failed for {case_id}: {e}")
             raise  # Fail the case
         return case_data
 
-
-    def _validate_parameters(self, parameters: Dict[str, Any],
-                             case_id: str) -> bool:
+    def _validate_parameters(self, parameters: Dict[str, Any], case_id: str) -> bool:
         """Validate that all required parameters are present and valid.
 
         Args:
@@ -322,14 +351,12 @@ class TpsGenerator:
         """
         try:
             # Get required parameters from config
-            tps_config = self.settings._yaml_config.get('tps_generator', {})
-            validation_config = tps_config.get('validation', {})
-            required_params = validation_config.get('required_params', [])
+            tps_config = self.settings._yaml_config.get("tps_generator", {})
+            validation_config = tps_config.get("validation", {})
+            required_params = validation_config.get("required_params", [])
             if not required_params:
                 # Default required parameters if not configured
-                required_params = [
-                    'GPUID', 'DicomPath', 'logFilePath', 'OutputDir'
-                ]
+                required_params = ["GPUID", "DicomPath", "logFilePath", "OutputDir"]
             missing_params = []
             empty_params = []
             for param in required_params:
@@ -338,36 +365,38 @@ class TpsGenerator:
                 elif not parameters[param] and parameters[param] != 0:  # Allow GPUID=0
                     empty_params.append(param)
             if missing_params or empty_params:
-                self.logger.error("TPS parameter validation failed", {
-                    "case_id": case_id,
-                    "missing_params": missing_params,
-                    "empty_params": empty_params
-                })
+                self.logger.error(
+                    "TPS parameter validation failed",
+                    {
+                        "case_id": case_id,
+                        "missing_params": missing_params,
+                        "empty_params": empty_params,
+                    },
+                )
                 return False
 
             # GantryNum must be exactly 1 or 2 — any other value causes moqui_SMC
             # to silently fall back to G2, producing wrong beam physics.
             gantry_num = parameters.get("GantryNum")
             if gantry_num not in (1, 2):
-                self.logger.error("GantryNum validation failed", {
-                    "case_id": case_id,
-                    "GantryNum": gantry_num,
-                    "expected": "1 or 2"
-                })
+                self.logger.error(
+                    "GantryNum validation failed",
+                    {"case_id": case_id, "GantryNum": gantry_num, "expected": "1 or 2"},
+                )
                 return False
 
-            self.logger.debug("TPS parameter validation passed", {
-                "case_id": case_id,
-                "validated_params": list(parameters.keys())
-            })
+            self.logger.debug(
+                "TPS parameter validation passed",
+                {"case_id": case_id, "validated_params": list(parameters.keys())},
+            )
             return True
         except Exception as e:
-            self.logger.error("Error during parameter validation", {
-                "case_id": case_id,
-                "error": str(e)
-            })
+            self.logger.error(
+                "Error during parameter validation",
+                {"case_id": case_id, "error": str(e)},
+            )
             return False
-    
+
     def _format_parameters_to_string(self, parameters: Dict[str, Any]) -> str:
         """Format parameters dictionary into the moqui_tps.in file format with logical groupings.
 
@@ -382,35 +411,45 @@ class TpsGenerator:
         # Define parameter groups in order
         parameter_groups = [
             # GPU and Core Settings
-            ["GPUID", "RandomSeed", "UseAbsolutePath", "TotalThreads",
-             "MaxHistoriesPerBatch", "Verbosity"],
-
+            [
+                "GPUID",
+                "RandomSeed",
+                "UseAbsolutePath",
+                "TotalThreads",
+                "MaxHistoriesPerBatch",
+                "Verbosity",
+            ],
             # Path Configuration
             ["ParentDir", "DicomPath", "DicomDir", "logFilePath"],
-
             # Beam Configuration
             ["GantryNum", "BeamNumbers"],
-
             # Phantom Geometry Settings
             ["UsingPhantomGeo", "TwoCentimeterMode"],
-
             # Phantom Dimensions and Position
-            ["PhantomDimX", "PhantomDimY", "PhantomDimZ",
-             "PhantomUnitX", "PhantomUnitY", "PhantomUnitZ",
-             "PhantomPositionX", "PhantomPositionY", "PhantomPositionZ"],
-
+            [
+                "PhantomDimX",
+                "PhantomDimY",
+                "PhantomDimZ",
+                "PhantomUnitX",
+                "PhantomUnitY",
+                "PhantomUnitZ",
+                "PhantomPositionX",
+                "PhantomPositionY",
+                "PhantomPositionZ",
+            ],
             # Scoring Configuration
             ["Scorer", "SupressStd", "ReadStructure", "BodyContourName"],
-
             # Source and Simulation
-            ["SourceType", "SimulationType", "ParticlesPerHistory"],
-
+            ["SourceType", "SimulationType", "NormalizeTotalHistories"],
             # Output Settings
             ["ScoreToCTGrid", "OutputDir", "OutputFormat", "OverwriteResults"],
-
             # Multi-GPU Settings
-            ["EnableBeamLayerMultiGpu", "BeamLayerMultiGpuAllowedGpuIds",
-             "BeamLayerMultiGpuMaxWorkers", "BeamLayerMultiGpuTempRoot"]
+            [
+                "EnableBeamLayerMultiGpu",
+                "BeamLayerMultiGpuAllowedGpuIds",
+                "BeamLayerMultiGpuMaxWorkers",
+                "BeamLayerMultiGpuTempRoot",
+            ],
         ]
 
         lines = []
