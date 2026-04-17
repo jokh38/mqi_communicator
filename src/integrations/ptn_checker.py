@@ -24,19 +24,17 @@ class PtnCheckerResult:
 class PtnCheckerIntegration:
     """Load and invoke the external PTN checker without modifying that project."""
 
-    def __init__(self, ptn_checker_path: Path, output_subdir: str) -> None:
+    def __init__(self, ptn_checker_path: Path) -> None:
         self.ptn_checker_path = Path(ptn_checker_path)
-        self.output_subdir = output_subdir
 
     def run_analysis(
         self,
         log_dir: Path,
         dcm_file: Optional[Path],
-        case_path: Path,
+        output_dir: Path,
     ) -> PtnCheckerResult:
         log_dir = Path(log_dir)
-        case_path = Path(case_path)
-        output_dir = case_path / self.output_subdir
+        output_dir = Path(output_dir)
 
         if dcm_file is None:
             return PtnCheckerResult(

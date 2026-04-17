@@ -225,6 +225,9 @@ class Settings:
                         base_dir = self._yaml_config.get("paths", {}).get("base_directory", "")
                         current = current.replace(f"{{{p_name}}}", base_dir)
                         made_a_change = True
+                    elif p_name in {"room", "room_path"}:
+                        current = current.replace(f"{{{p_name}}}", "")
+                        made_a_change = True
             if not made_a_change:
                 break
 

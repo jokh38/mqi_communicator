@@ -16,14 +16,24 @@ def mock_settings():
     settings.get_database_path.return_value = "dummy.db"
     settings.database = {}
     csv_output_dir = Path("tmp") / "csv_output"
+    daily_output_dir = Path("tmp") / "Daily"
     mqi_interpreter_dir = Path("opt") / "mqi_interpreter"
     python_executable = Path("usr") / "bin" / "python3"
     interpreter_script = Path("opt") / "main_cli.py"
-    settings.get_path.side_effect = lambda key, **_: {
-        "database_path": "dummy.db",
-        "csv_output_dir": str(csv_output_dir),
-        "mqi_interpreter_dir": str(mqi_interpreter_dir),
-    }[key]
+    def _get_path(key, **kwargs):
+        if key == "database_path":
+            return "dummy.db"
+        if key == "csv_output_dir":
+            return str(csv_output_dir)
+        if key == "ptn_checker_output_dir":
+            if kwargs.get("room"):
+                return str(daily_output_dir / kwargs["room"] / kwargs["case_id"])
+            return str(daily_output_dir / kwargs["case_id"])
+        if key == "mqi_interpreter_dir":
+            return str(mqi_interpreter_dir)
+        raise KeyError(key)
+
+    settings.get_path.side_effect = _get_path
     settings.get_executable.side_effect = lambda key, **_: {
         "python": str(python_executable),
         "mqi_interpreter_script": str(interpreter_script),
@@ -487,7 +497,7 @@ def test_run_case_level_ptn_checker_analysis_records_success_without_failing_cas
         success=True,
         status_code="SUCCESS",
         error_message=None,
-        output_dir=Path("cases") / "case-1" / "ptn_checker_output",
+        output_dir=Path("tmp") / "Daily" / "case-1",
     )
 
     with patch.object(dispatcher.LoggerFactory, "get_logger", return_value=logger), \
@@ -504,6 +514,43 @@ def test_run_case_level_ptn_checker_analysis_records_success_without_failing_cas
         raise AssertionError(f"Expected PTN analysis success, got {result!r}")
     case_repo.record_ptn_checker_result.assert_called_once()
     case_repo.update_case_status.assert_not_called()
+
+
+def test_run_case_level_ptn_checker_analysis_uses_grouped_daily_output_dir(mock_settings):
+    dispatcher = importlib.import_module("src.core.dispatcher")
+    logger = MagicMock()
+    case_repo = MagicMock()
+    context_manager = MagicMock()
+    context_manager.__enter__.return_value = case_repo
+    context_manager.__exit__.return_value = False
+
+    validator = MagicMock()
+    validator.find_rtplan_file.return_value = Path("cases") / "G1" / "case-1" / "RP.test.dcm"
+    validator.find_ptn_files.return_value = [Path("cases") / "G1" / "case-1" / "beam-1" / "delivered.ptn"]
+    integration = MagicMock()
+    integration.run_analysis.return_value = dispatcher.PtnCheckerResult(
+        success=True,
+        status_code="SUCCESS",
+        error_message=None,
+        output_dir=Path("tmp") / "Daily" / "G1" / "case-1",
+    )
+    mock_settings.get_case_directories.return_value = {"scan": Path("cases")}
+
+    with patch.object(dispatcher.LoggerFactory, "get_logger", return_value=logger), \
+         patch.object(dispatcher, "get_db_session", return_value=context_manager), \
+         patch.object(dispatcher, "DataIntegrityValidator", return_value=validator), \
+         patch.object(dispatcher, "create_ptn_checker_integration", return_value=integration):
+        result = dispatcher.run_case_level_ptn_analysis(
+            case_id="case-1",
+            case_path=Path("cases") / "G1" / "case-1",
+            settings=mock_settings,
+        )
+
+    if result.output_dir != Path("tmp") / "Daily" / "G1" / "case-1":
+        raise AssertionError(f"Expected grouped Daily output dir, got {result.output_dir!r}")
+    integration.run_analysis.assert_called_once()
+    if integration.run_analysis.call_args.kwargs["output_dir"] != Path("tmp") / "Daily" / "G1" / "case-1":
+        raise AssertionError(f"Expected integration output_dir under Daily/G1, got {integration.run_analysis.call_args!r}")
 
 
 def test_run_case_level_ptn_checker_analysis_records_failure_in_ptn_fields_only(mock_settings):

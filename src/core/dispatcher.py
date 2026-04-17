@@ -534,7 +534,19 @@ def create_ptn_checker_integration(settings: Settings) -> PtnCheckerIntegration:
     ptn_config = settings.get_ptn_checker_config()
     return PtnCheckerIntegration(
         ptn_checker_path=Path(ptn_config["path"]),
-        output_subdir=ptn_config["output_subdir"],
+    )
+
+
+def resolve_ptn_checker_output_dir(case_id: str, case_path: Path, settings: Settings) -> Path:
+    room = derive_room_from_case_path(case_path, settings)
+    return Path(
+        settings.get_path(
+            "ptn_checker_output_dir",
+            handler_name="PostProcessor",
+            case_id=case_id,
+            room=room,
+            room_path=f"{room}/" if room else "",
+        )
     )
 
 
@@ -583,8 +595,7 @@ def run_case_level_ptn_analysis(
     logger = LoggerFactory.get_logger(f"ptn_dispatcher_{case_id}")
     validator = DataIntegrityValidator(logger)
     integration = create_ptn_checker_integration(settings)
-    ptn_config = settings.get_ptn_checker_config()
-    default_output_dir = case_path / ptn_config["output_subdir"]
+    default_output_dir = resolve_ptn_checker_output_dir(case_id, case_path, settings)
     rtplan_path = validator.find_rtplan_file(case_path)
     with get_db_session(settings, logger, handler_name="CsvInterpreter") as case_repo:
         deliveries = list(case_repo.get_deliveries_for_case(case_id) or [])
@@ -634,7 +645,7 @@ def run_case_level_ptn_analysis(
                 fallback_result = integration.run_analysis(
                     log_dir=ptn_files[0].parent,
                     dcm_file=rtplan_path,
-                    case_path=case_path,
+                    output_dir=default_output_dir,
                 )
                 metrics = _summarize_point_gamma_metrics(fallback_result.analysis_data)
                 case_repo.record_ptn_checker_result(
@@ -691,7 +702,7 @@ def run_case_level_ptn_analysis(
             result = integration.run_analysis(
                 log_dir=delivery.delivery_path,
                 dcm_file=rtplan_path,
-                case_path=case_path,
+                output_dir=default_output_dir,
             )
             metrics = _summarize_point_gamma_metrics(result.analysis_data)
             case_repo.record_delivery_analysis_result(

@@ -99,6 +99,30 @@ def test_repo_config_exposes_ptn_checker_section() -> None:
         raise AssertionError(f"Unexpected PTN checker output_subdir: {ptn_config!r}")
 
 
+def test_repo_config_resolves_ptn_checker_output_dir_with_room_grouping() -> None:
+    settings = Settings(config_path=Path("config/config.yaml"))
+
+    grouped_output = settings.get_path(
+        "ptn_checker_output_dir",
+        handler_name="PostProcessor",
+        case_id="55061194",
+        room="G1",
+        room_path="G1/",
+    )
+    flat_output = settings.get_path(
+        "ptn_checker_output_dir",
+        handler_name="PostProcessor",
+        case_id="55061194",
+        room="",
+        room_path="",
+    )
+
+    if grouped_output != "/home/jokh38/MOQUI_SMC/data/Daily/G1/55061194":
+        raise AssertionError(f"Unexpected grouped PTN checker output dir: {grouped_output}")
+    if flat_output != "/home/jokh38/MOQUI_SMC/data/Daily/55061194":
+        raise AssertionError(f"Unexpected flat PTN checker output dir: {flat_output}")
+
+
 def test_settings_resolves_repo_relative_config_when_cwd_differs() -> None:
     settings = Settings(config_path=Path("config/config.yaml"))
 

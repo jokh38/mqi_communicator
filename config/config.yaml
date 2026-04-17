@@ -11,6 +11,7 @@ paths:
   local:
     scan_directory: "{base_directory}/data/SHI_log"
     csv_output_dir: "{base_directory}/data/Outputs_csv"
+    ptn_checker_output_dir: "{base_directory}/data/Daily/{room_path}{case_id}"
     simulation_output_dir: "{base_directory}/data/Dose_dcm/{room_path}{case_id}"
     final_dicom_dir: "{base_directory}/data/Dose_dcm/{room_path}{case_id}"
     database_path: "{base_directory}/data/mqi_communicator.db"
