@@ -17,6 +17,7 @@ from src.infrastructure.logging_handler import StructuredLogger
 from src.domain.models import CaseData, GpuResource
 from src.domain.enums import CaseStatus, GpuStatus
 from src.core.retry_policy import is_retryable_failed_case
+from src.core.workflow_manager import derive_room_from_path
 
 
 class DashboardDataProvider:
@@ -374,7 +375,10 @@ class DashboardDataProvider:
             pass
         else:
             try:
+                room = derive_room_from_path(case_path, self.settings)
                 csv_output_dir = Path(
+                    self.settings.get_path("csv_output_dir", handler_name="CsvInterpreter")
+                ) / room / case_id if room else Path(
                     self.settings.get_path("csv_output_dir", handler_name="CsvInterpreter")
                 ) / case_id
                 candidates.append(("CSV / TPS output", csv_output_dir))
@@ -386,8 +390,15 @@ class DashboardDataProvider:
                 ("PostProcessor", "final_dicom_dir", "Final DICOM output"),
             ):
                 try:
+                    room = derive_room_from_path(case_path, self.settings)
                     result_dir = Path(
-                        self.settings.get_path(path_name, handler_name=handler_name, case_id=case_id)
+                        self.settings.get_path(
+                            path_name,
+                            handler_name=handler_name,
+                            case_id=case_id,
+                            room=room,
+                            room_path=f"{room}/" if room else "",
+                        )
                     )
                     candidates.append((label, result_dir))
                 except Exception:
@@ -409,10 +420,17 @@ class DashboardDataProvider:
 
     def _guess_sibling_output_dir(self, case_path: Path, case_id: str, folder_name: str) -> Path:
         """Guess an output directory by walking parent directories of the case path."""
+        room = derive_room_from_path(case_path, self.settings)
         for parent in [case_path, *case_path.parents]:
+            if room:
+                candidate = parent / folder_name / room / case_id
+                if candidate.exists():
+                    return candidate
             candidate = parent / folder_name / case_id
             if candidate.exists():
                 return candidate
+        if room:
+            return case_path.parent / folder_name / room / case_id
         return case_path.parent / folder_name / case_id
 
     def _patterns_for_output_label(self, label: str) -> List[str]:

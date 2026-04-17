@@ -188,6 +188,46 @@ def test_run_case_level_tps_generation_releases_gpu_by_uuid_on_generation_failur
     gpu_repo.release_gpu.assert_called_once_with("gpu-1")
 
 
+@patch("src.core.dispatcher.get_db_session")
+@patch("src.core.dispatcher.ExecutionHandler")
+def test_run_case_level_csv_interpreting_writes_grouped_room_output(
+    mock_exec_handler_cls,
+    mock_get_db_session,
+    mock_settings,
+):
+    dispatcher = importlib.import_module("src.core.dispatcher")
+    mock_exec_handler_instance = MagicMock(spec=ExecutionHandler)
+    mock_exec_handler_instance.execute_command.return_value = ExecutionResult(
+        success=True, output="", error="", return_code=0
+    )
+    mock_exec_handler_cls.return_value = mock_exec_handler_instance
+    mock_case_repo = MagicMock()
+    context_manager = MagicMock()
+    context_manager.__enter__.return_value = mock_case_repo
+    context_manager.__exit__.return_value = False
+    mock_get_db_session.return_value = context_manager
+    mock_settings.get_case_directories.return_value = {"scan": Path("dummypath")}
+
+    case_id = "test_case_01"
+    case_path = Path("dummypath") / "G1" / case_id
+
+    success = dispatcher.run_case_level_csv_interpreting(case_id, case_path, mock_settings)
+
+    if success is not True:
+        raise AssertionError("CSV interpreting should succeed")
+    mock_exec_handler_instance.execute_command.assert_called_once_with(
+        [
+            str(Path("usr") / "bin" / "python3"),
+            str(Path("opt") / "main_cli.py"),
+            "--logdir",
+            str(case_path),
+            "--outputdir",
+            str(Path("tmp") / "csv_output" / "G1" / case_id),
+        ],
+        cwd=Path("opt") / "mqi_interpreter",
+    )
+
+
 def test_resolve_raw_dicom_beam_number_prefers_existing_beam_number():
     dispatcher = importlib.import_module("src.core.dispatcher")
     beam = SimpleNamespace(

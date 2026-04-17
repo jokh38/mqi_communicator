@@ -166,3 +166,21 @@ def test_provider_includes_structured_failure_fields_in_case_display(tmp_path: P
     assert case_display["failure_phase"] == "tps_generation"
     assert case_display["failure_details"]["summary"] == "Beam matching failed"
     assert case_display["retry_count"] == 2
+
+
+def test_provider_guesses_grouped_room_output_location(tmp_path: Path):
+    provider = DashboardDataProvider(
+        case_repo=MagicMock(),
+        gpu_repo=MagicMock(),
+        logger=MagicMock(),
+        settings=None,
+    )
+
+    case_path = tmp_path / "data" / "SHI_log" / "G1" / "04198922" / "1.2.3.4"
+    grouped_output = tmp_path / "data" / "Outputs_csv" / "G1" / "04198922"
+    grouped_output.mkdir(parents=True)
+    case_path.mkdir(parents=True)
+
+    resolved = provider._guess_sibling_output_dir(case_path, "04198922", "Outputs_csv")
+
+    assert resolved == grouped_output

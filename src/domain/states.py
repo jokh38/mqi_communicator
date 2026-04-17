@@ -24,6 +24,14 @@ if TYPE_CHECKING:
     from src.core.workflow_manager import WorkflowManager
 
 
+def _resolve_room_context(context: 'WorkflowManager') -> dict[str, str]:
+    """Resolve room placeholders from the current beam path."""
+    from src.core.workflow_manager import derive_room_from_path
+
+    room = derive_room_from_path(Path(context.path), context.settings)
+    return {"room": room, "room_path": f"{room}/" if room else ""}
+
+
 def handle_state_exceptions(func: Callable[..., Any]) -> Callable[..., Any]:
     """A decorator to handle common exceptions in WorkflowState execute methods."""
 
@@ -138,8 +146,13 @@ class InitialState(WorkflowState):
             raise ProcessingError(f"Could not retrieve beam data for beam_id: {context.id}")
 
         # TPS files are stored in csv_output_dir/case_id/moqui_tps_{beam_id}.in
+        room = _resolve_room_context(context)["room"]
         csv_output_base = context.settings.get_path("csv_output_dir", handler_name="CsvInterpreter")
-        tps_output_dir = Path(csv_output_base) / beam.parent_case_id
+        tps_output_dir = (
+            Path(csv_output_base) / room / beam.parent_case_id
+            if room
+            else Path(csv_output_base) / beam.parent_case_id
+        )
         tps_file = tps_output_dir / f"moqui_tps_{context.id}.in"
 
         if not tps_file.exists():
@@ -172,12 +185,15 @@ class SimulationState(WorkflowState):
 
         handler_name = "HpcJobSubmitter"
 
+        room_context = _resolve_room_context(context)
+
         # Get TPS input file path from settings
         tps_input_file = context.settings.get_path(
             "tps_input_file",
             handler_name=handler_name,
             case_id=beam.parent_case_id,
-            beam_id=context.id
+            beam_id=context.id,
+            **room_context,
         )
 
         # Get mqi_run_dir and log_path for command template
@@ -195,7 +211,8 @@ class SimulationState(WorkflowState):
             simulation_output_dir = context.settings.get_path(
                 "simulation_output_dir",
                 handler_name=handler_name,
-                case_id=beam.parent_case_id
+                case_id=beam.parent_case_id,
+                **room_context,
             )
             beam_output_dir = Path(simulation_output_dir)
             beam_output_dir.mkdir(parents=True, exist_ok=True)
@@ -265,7 +282,8 @@ class ResultValidationState(WorkflowState):
         local_result_base = context.settings.get_path(
             "simulation_output_dir",
             handler_name=handler_name,
-            case_id=beam.parent_case_id
+            case_id=beam.parent_case_id,
+            **_resolve_room_context(context),
         )
 
         beam_number = beam.beam_number

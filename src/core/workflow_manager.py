@@ -84,6 +84,34 @@ def _discover_case_directories(scan_directory: Path) -> List[tuple[str, Path]]:
     return fallback
 
 
+def derive_room_from_case_path(case_path: Path, settings: Any) -> str:
+    """Derive room grouping from a case path relative to the scan directory."""
+    try:
+        case_dirs = settings.get_case_directories()
+        scan_dir = case_dirs.get("scan")
+        if scan_dir:
+            relative = case_path.resolve().relative_to(Path(scan_dir).resolve())
+            if len(relative.parts) > 1 and relative.parts[0] in {"G1", "G2"}:
+                return relative.parts[0]
+    except Exception:
+        pass
+    return ""
+
+
+def derive_room_from_path(case_path: Path, settings: Any | None = None) -> str:
+    """Derive room grouping from a case, study, or beam path."""
+    room = ""
+    if settings is not None:
+        room = derive_room_from_case_path(case_path, settings)
+        if room:
+            return room
+
+    for candidate in (case_path, *case_path.parents):
+        if candidate.name in {"G1", "G2"}:
+            return candidate.name
+    return ""
+
+
 def should_route_case_to_ptn_checker(
     case_data: Any,
     case_path: Path,

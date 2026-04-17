@@ -15,7 +15,7 @@ from src.repositories.gpu_repo import GpuRepository
 from src.handlers.execution_handler import ExecutionHandler
 from src.infrastructure.logging_handler import StructuredLogger, LoggerFactory
 from src.core.case_aggregator import allocate_gpus_for_pending_beams, update_case_status_from_beams
-from src.core.workflow_manager import WorkflowManager
+from src.core.workflow_manager import WorkflowManager, derive_room_from_case_path
 from src.core.tps_generator import TpsGenerator
 from src.config.settings import Settings
 from src.utils.db_context import get_db_session
@@ -307,8 +307,9 @@ def try_allocate_pending_beams(pending_beams_by_case: Dict, executor: ProcessPoo
         from src.utils.db_context import get_db_session
         with get_db_session(settings, logger, handler_name="HpcJobSubmitter") as case_repo:
             beams = case_repo.get_beams_for_case(case_id)
+            room = derive_room_from_case_path(case_path, settings)
             csv_output_base = settings.get_path("csv_output_dir", handler_name="CsvInterpreter")
-            tps_output_dir = Path(csv_output_base) / case_id
+            tps_output_dir = Path(csv_output_base) / room / case_id if room else Path(csv_output_base) / case_id
 
             gpu_repo_inst = GpuRepository(case_repo.db, logger, settings)
 

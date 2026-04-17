@@ -125,6 +125,54 @@ def test_try_allocate_pending_beams_uses_case_repo_db_for_gpu_updates():
         )
 
 
+def test_try_allocate_pending_beams_writes_grouped_room_tps_files():
+    settings = MagicMock()
+    settings.get_path.return_value = str(Path("tmp") / "csv_output")
+    settings.get_handler_mode.return_value = "local"
+    settings.get_case_directories.return_value = {"scan": Path("cases")}
+    logger = MagicMock()
+    executor = MagicMock()
+    active_futures = {}
+    pending_beams = {
+        "case-1": {
+            "pending_jobs": [{"beam_id": "beam-10", "beam_path": Path("cases") / "G1" / "case-1" / "beam-10"}],
+            "case_path": Path("cases") / "G1" / "case-1",
+        }
+    }
+
+    case_repo = MagicMock()
+    case_repo.db = object()
+    case_repo.get_beams_for_case.return_value = [
+        SimpleNamespace(beam_id="beam-10", beam_number=10),
+    ]
+
+    repo_context = MagicMock()
+    repo_context.__enter__.return_value = case_repo
+    repo_context.__exit__.return_value = False
+
+    tps_generator = MagicMock()
+    tps_generator.generate_tps_file_with_gpu_assignments.return_value = True
+
+    with patch("src.core.worker.allocate_gpus_for_pending_beams", return_value=[{"gpu_uuid": "gpu-1"}]), \
+         patch("src.core.worker.TpsGenerator", return_value=tps_generator), \
+         patch("src.core.worker.submit_beam_worker"), \
+         patch("src.core.worker.get_db_session", return_value=repo_context), \
+         patch("src.utils.db_context.get_db_session", return_value=repo_context), \
+         patch("src.core.worker.GpuRepository", return_value=MagicMock()):
+        worker.try_allocate_pending_beams(
+            pending_beams_by_case=pending_beams,
+            executor=executor,
+            active_futures=active_futures,
+            settings=settings,
+            logger=logger,
+        )
+
+    assert (
+        tps_generator.generate_tps_file_with_gpu_assignments.call_args.kwargs["output_dir"]
+        == Path("tmp") / "csv_output" / "G1" / "case-1"
+    )
+
+
 def test_worker_main_does_not_initialize_database_schema():
     settings = MagicMock()
     settings.execution_handler = {"Workflow": "local"}

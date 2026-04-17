@@ -18,7 +18,11 @@ from src.utils.db_context import get_db_session
 from src.core.case_aggregator import ensure_logger as _ensure_logger
 from src.core.case_aggregator import _normalize_beam_identifier
 from src.core.case_aggregator import prepare_case_delivery_data
-from src.core.workflow_manager import scan_existing_cases, CaseDetectionHandler
+from src.core.workflow_manager import (
+    scan_existing_cases,
+    CaseDetectionHandler,
+    derive_room_from_case_path,
+)
 from src.integrations.ptn_checker import PtnCheckerIntegration, PtnCheckerResult
 
 def _resolve_treatment_beam_index_from_raw_number(
@@ -151,8 +155,11 @@ def run_case_level_csv_interpreting(case_id: str, case_path: Path,
             )
 
             # Resolve CSV output directory using settings path
+            room = derive_room_from_case_path(case_path, settings)
             csv_output_base = settings.get_path("csv_output_dir", handler_name="CsvInterpreter")
-            csv_output_dir = str(Path(csv_output_base) / case_id)
+            csv_output_dir = str(
+                Path(csv_output_base) / room / case_id if room else Path(csv_output_base) / case_id
+            )
 
             # Build command using config-defined Python and script paths
             python_exe = settings.get_executable("python", handler_name="CsvInterpreter")
@@ -403,8 +410,9 @@ def run_case_level_tps_generation(
                 beam.beam_number = int(beam_number)
 
             # Get output directory for TPS files
+            room = derive_room_from_case_path(case_path, settings)
             csv_output_base = settings.get_path("csv_output_dir", handler_name="CsvInterpreter")
-            tps_output_dir = Path(csv_output_base) / case_id
+            tps_output_dir = Path(csv_output_base) / room / case_id if room else Path(csv_output_base) / case_id
 
             tps_generator = TpsGenerator(settings, logger)
 

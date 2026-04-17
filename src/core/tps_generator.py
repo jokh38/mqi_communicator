@@ -287,10 +287,18 @@ class TpsGenerator:
         base_dir = self.settings._yaml_config.get("paths", {}).get(
             "base_directory", "/home/jokh38/MOQUI_SMC"
         )
+        from src.core.workflow_manager import derive_room_from_path
+
+        room = derive_room_from_path(case_path, self.settings)
 
         # Return format context - all paths defined in config.yaml
         # DICOM files are copied to {base_directory}/data/Outputs_csv/{case_id}/rtplan by dispatcher
-        return {"base_directory": base_dir, "case_id": case_id}
+        return {
+            "base_directory": base_dir,
+            "case_id": case_id,
+            "room": room,
+            "room_path": f"{room}/" if room else "",
+        }
 
     def _extract_case_data(self, case_path: Path, case_id: str) -> Dict[str, Any]:
         """Extract case-specific data from DICOM files or other sources.

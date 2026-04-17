@@ -8,6 +8,7 @@ from src.core.workflow_manager import WorkflowManager
 from src.domain.errors import PermanentFailureError, RetryableError
 from src.domain.states import (
     CompletedState,
+    InitialState,
     ResultValidationState,
     SimulationState,
     FailedState,
@@ -99,6 +100,8 @@ def test_result_validation_state_stores_final_dicom_path(tmp_path: Path):
     manager.settings.get_progress_tracking_config.return_value = {"coarse_phase_progress": {}}
     manager.settings.get_handler_mode.return_value = "local"
     manager.id = "beam-01"
+    manager.path = tmp_path / "G1" / "case-abc" / "beam-01"
+    manager.path.mkdir(parents=True)
     manager.shared_context = {}
 
     beam = SimpleNamespace(beam_id="beam-01", parent_case_id="case-abc", beam_number=10)
@@ -127,6 +130,8 @@ def test_result_validation_state_accepts_raw_result_file(tmp_path: Path):
     manager.settings.get_progress_tracking_config.return_value = {"coarse_phase_progress": {}}
     manager.settings.get_handler_mode.return_value = "local"
     manager.id = "beam-01"
+    manager.path = tmp_path / "G1" / "case-abc" / "beam-01"
+    manager.path.mkdir(parents=True)
     manager.shared_context = {}
 
     beam = SimpleNamespace(beam_id="beam-01", parent_case_id="case-abc", beam_number=10)
@@ -221,3 +226,37 @@ def test_permanent_failure_error_marks_failed_beam_with_permanent_prefix(
     failed_call = mock_workflow_manager.case_repo.update_beam_status.call_args_list[-1]
     assert failed_call.args[1].value == "failed"
     assert failed_call.kwargs["error_message"].startswith("[PERMANENT] ")
+
+
+def test_initial_state_reads_grouped_room_tps_file(tmp_path: Path):
+    manager = MagicMock(spec=WorkflowManager)
+    manager.logger = MagicMock()
+    manager.case_repo = MagicMock()
+    manager.settings = MagicMock()
+    manager.settings.get_progress_tracking_config.return_value = {"coarse_phase_progress": {}}
+    manager.id = "beam-01"
+    manager.path = tmp_path / "G1" / "case-abc" / "beam-01"
+    manager.path.mkdir(parents=True)
+    manager.shared_context = {}
+
+    manager.case_repo.get_beam.return_value = SimpleNamespace(
+        beam_id="beam-01",
+        parent_case_id="case-abc",
+        beam_number=10,
+    )
+    manager.case_repo.get_case.return_value = SimpleNamespace(
+        case_id="case-abc",
+        case_path=tmp_path / "G1" / "case-abc",
+    )
+
+    csv_root = tmp_path / "Outputs_csv"
+    tps_dir = csv_root / "G1" / "case-abc"
+    tps_dir.mkdir(parents=True)
+    expected_tps_file = tps_dir / "moqui_tps_beam-01.in"
+    expected_tps_file.write_text("test", encoding="utf-8")
+    manager.settings.get_path.return_value = str(csv_root)
+
+    next_state = InitialState().execute(manager)
+
+    assert manager.shared_context["tps_file_path"] == expected_tps_file
+    assert type(next_state).__name__ == "SimulationState"

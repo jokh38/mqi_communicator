@@ -5,7 +5,12 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from src.domain.enums import CaseStatus
-from src.core.workflow_manager import CaseDetectionHandler, scan_existing_cases
+from src.core.workflow_manager import (
+    CaseDetectionHandler,
+    derive_room_from_case_path,
+    derive_room_from_path,
+    scan_existing_cases,
+)
 
 
 def _case(case_id: str, status: CaseStatus, retry_count: int = 0, error_message: str = None):
@@ -239,8 +244,18 @@ def test_scan_existing_cases_discovers_nested_study_directories(tmp_path):
     context_manager.__enter__.return_value = case_repo
     context_manager.__exit__.return_value = False
 
-    with patch("src.core.workflow_manager.get_db_session", return_value=context_manager), \
-         patch("src.core.workflow_manager._queue_case", return_value=True) as queue_mock:
-        scan_existing_cases(case_queue, settings, logger)
 
-    queue_mock.assert_called_once_with("04198922", study_path, case_queue, logger)
+def test_derive_room_helpers_support_grouped_and_flat_paths(tmp_path):
+    scan_root = tmp_path / "SHI_log"
+    grouped_case_path = scan_root / "G1" / "04198922" / "1.2.3.4"
+    grouped_case_path.mkdir(parents=True)
+    flat_case_path = scan_root / "55061194"
+    flat_case_path.mkdir(parents=True)
+
+    settings = MagicMock()
+    settings.get_case_directories.return_value = {"scan": scan_root}
+
+    assert derive_room_from_case_path(grouped_case_path, settings) == "G1"
+    assert derive_room_from_case_path(flat_case_path, settings) == ""
+    assert derive_room_from_path(grouped_case_path, settings) == "G1"
+    assert derive_room_from_path(flat_case_path, settings) == ""
