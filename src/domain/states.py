@@ -145,13 +145,13 @@ class InitialState(WorkflowState):
         if not beam:
             raise ProcessingError(f"Could not retrieve beam data for beam_id: {context.id}")
 
-        # TPS files are stored in csv_output_dir/case_id/moqui_tps_{beam_id}.in
+        # TPS files are stored under Output/{room}/{case_id}/Log_csv/.
         room = _resolve_room_context(context)["room"]
         csv_output_base = context.settings.get_path("csv_output_dir", handler_name="CsvInterpreter")
         tps_output_dir = (
-            Path(csv_output_base) / room / beam.parent_case_id
+            Path(csv_output_base) / room / beam.parent_case_id / "Log_csv"
             if room
-            else Path(csv_output_base) / beam.parent_case_id
+            else Path(csv_output_base) / beam.parent_case_id / "Log_csv"
         )
         tps_file = tps_output_dir / f"moqui_tps_{context.id}.in"
 

@@ -51,7 +51,7 @@ def test_simulation_state_uses_injected_handler(mock_workflow_manager, tmp_path)
     mock_workflow_manager.execution_handler = mock_handler
     state = SimulationState()
 
-    sim_output_dir = str(tmp_path / "Dose_dcm" / "case-abc")
+    sim_output_dir = str(tmp_path / "Output" / "case-abc" / "Dose")
     mock_workflow_manager.settings.get_path.side_effect = lambda key, **_: {
         "tps_input_file": "/tmp/input.in",
         "mqi_run_dir": "/tmp/mqi",
@@ -77,7 +77,7 @@ def test_simulation_state_failure_transitions_to_failed_state(mock_workflow_mana
     mock_workflow_manager.execution_handler = mock_handler
     state = SimulationState()
 
-    sim_output_dir = str(tmp_path / "Dose_dcm" / "case-abc")
+    sim_output_dir = str(tmp_path / "Output" / "case-abc" / "Dose")
     mock_workflow_manager.settings.get_path.side_effect = lambda key, **_: {
         "tps_input_file": "/tmp/input.in",
         "mqi_run_dir": "/tmp/mqi",
@@ -183,7 +183,7 @@ def test_retryable_error_marks_failed_beam_with_retryable_prefix(mock_workflow_m
         "CSV interpreting failed"
     )
 
-    sim_output_dir = str(tmp_path / "Dose_dcm" / "case-abc")
+    sim_output_dir = str(tmp_path / "Output" / "case-abc" / "Dose")
     mock_workflow_manager.settings.get_path.side_effect = lambda key, **_: {
         "tps_input_file": "/tmp/input.in",
         "mqi_run_dir": "/tmp/mqi",
@@ -210,7 +210,7 @@ def test_permanent_failure_error_marks_failed_beam_with_permanent_prefix(
         "Input validation failed"
     )
 
-    sim_output_dir = str(tmp_path / "Dose_dcm" / "case-abc")
+    sim_output_dir = str(tmp_path / "Output" / "case-abc" / "Dose")
     mock_workflow_manager.settings.get_path.side_effect = lambda key, **_: {
         "tps_input_file": "/tmp/input.in",
         "mqi_run_dir": "/tmp/mqi",
@@ -249,12 +249,12 @@ def test_initial_state_reads_grouped_room_tps_file(tmp_path: Path):
         case_path=tmp_path / "G1" / "case-abc",
     )
 
-    csv_root = tmp_path / "Outputs_csv"
-    tps_dir = csv_root / "G1" / "case-abc"
+    output_root = tmp_path / "Output"
+    tps_dir = output_root / "G1" / "case-abc" / "Log_csv"
     tps_dir.mkdir(parents=True)
     expected_tps_file = tps_dir / "moqui_tps_beam-01.in"
     expected_tps_file.write_text("test", encoding="utf-8")
-    manager.settings.get_path.return_value = str(csv_root)
+    manager.settings.get_path.return_value = str(output_root)
 
     next_state = InitialState().execute(manager)
 

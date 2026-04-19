@@ -13,7 +13,7 @@ def test_generate_tps_file_uses_beam_specific_output_dir(tmp_path: Path) -> None
     case_path.mkdir()
     output_dir = tmp_path / "out"
 
-    with patch.object(TpsGenerator, "_extract_case_data", return_value={"GantryNum": 0}):
+    with patch.object(TpsGenerator, "_extract_case_data", return_value={"GantryNum": 1}):
         success = generator.generate_tps_file_with_gpu_assignments(
             case_path=case_path,
             case_id="55061194",
@@ -28,7 +28,7 @@ def test_generate_tps_file_uses_beam_specific_output_dir(tmp_path: Path) -> None
         raise AssertionError(f"Expected TPS generation success, got {success!r}")
     tps_file = output_dir / "moqui_tps_55061194_2025042401552900.in"
     content = tps_file.read_text(encoding="utf-8")
-    expected_line = "OutputDir /home/jokh38/MOQUI_SMC/data/Dose_dcm/55061194"
+    expected_line = "OutputDir /home/jokh38/MOQUI_SMC/data/Output/55061194/Dose"
     if expected_line not in content:
         raise AssertionError(f"Expected line missing from TPS file: {expected_line}")
 
@@ -46,7 +46,7 @@ def test_generate_tps_file_multigpu_single_beam_writes_all_gpu_ids(tmp_path: Pat
     case_path.mkdir()
     output_dir = tmp_path / "out"
 
-    with patch.object(TpsGenerator, "_extract_case_data", return_value={"GantryNum": 0}):
+    with patch.object(TpsGenerator, "_extract_case_data", return_value={"GantryNum": 1}):
         success = generator.generate_tps_file_with_gpu_assignments(
             case_path=case_path,
             case_id="55061194",
@@ -87,7 +87,7 @@ def test_generate_tps_file_single_gpu_mode_keeps_scalar_gpu_id(tmp_path: Path) -
     case_path.mkdir()
     output_dir = tmp_path / "out"
 
-    with patch.object(TpsGenerator, "_extract_case_data", return_value={"GantryNum": 0}):
+    with patch.object(TpsGenerator, "_extract_case_data", return_value={"GantryNum": 1}):
         success = generator.generate_tps_file_with_gpu_assignments(
             case_path=case_path,
             case_id="55061194",

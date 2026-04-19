@@ -158,7 +158,9 @@ def run_case_level_csv_interpreting(case_id: str, case_path: Path,
             room = derive_room_from_case_path(case_path, settings)
             csv_output_base = settings.get_path("csv_output_dir", handler_name="CsvInterpreter")
             csv_output_dir = str(
-                Path(csv_output_base) / room / case_id if room else Path(csv_output_base) / case_id
+                Path(csv_output_base) / room / case_id / "Log_csv"
+                if room
+                else Path(csv_output_base) / case_id / "Log_csv"
             )
 
             # Build command using config-defined Python and script paths

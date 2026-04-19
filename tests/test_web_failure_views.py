@@ -158,10 +158,9 @@ def test_case_detail_renders_grouped_room_output_locations(tmp_path: Path):
     case_path = scan_root / "G1" / case_id / "1.2.3.4"
     case_path.mkdir(parents=True)
 
-    csv_root = tmp_path / "data" / "Outputs_csv"
-    dicom_root = tmp_path / "data" / "Dose_dcm"
-    csv_case_dir = csv_root / "G1" / case_id
-    dicom_case_dir = dicom_root / "G1" / case_id
+    output_root = tmp_path / "data" / "Output"
+    csv_case_dir = output_root / "G1" / case_id / "Log_csv"
+    dicom_case_dir = output_root / "G1" / case_id / "Dose"
     csv_case_dir.mkdir(parents=True)
     dicom_case_dir.mkdir(parents=True)
     (csv_case_dir / "moqui_tps_beam-1.in").write_text("tps", encoding="utf-8")
@@ -169,16 +168,16 @@ def test_case_detail_renders_grouped_room_output_locations(tmp_path: Path):
 
     settings = MagicMock()
     settings.get_path.side_effect = lambda path_name, handler_name=None, **kwargs: {
-        ("CsvInterpreter", "csv_output_dir"): str(csv_root),
+        ("CsvInterpreter", "csv_output_dir"): str(output_root),
         ("PostProcessor", "simulation_output_dir"): str(
-            dicom_root / kwargs.get("room", "") / kwargs["case_id"]
+            output_root / kwargs.get("room", "") / kwargs["case_id"] / "Dose"
             if kwargs.get("room")
-            else dicom_root / kwargs["case_id"]
+            else output_root / kwargs["case_id"] / "Dose"
         ),
         ("PostProcessor", "final_dicom_dir"): str(
-            dicom_root / kwargs.get("room", "") / kwargs["case_id"]
+            output_root / kwargs.get("room", "") / kwargs["case_id"] / "Dose"
             if kwargs.get("room")
-            else dicom_root / kwargs["case_id"]
+            else output_root / kwargs["case_id"] / "Dose"
         ),
     }[(handler_name, path_name)]
     settings.get_case_directories.return_value = {"scan": scan_root}

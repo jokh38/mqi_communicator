@@ -61,11 +61,10 @@ def test_provider_surfaces_finished_result_output_locations(tmp_path: Path):
     gpu_repo = MagicMock()
     logger = MagicMock()
 
-    csv_root = tmp_path / "Outputs_csv"
-    dicom_root = tmp_path / "Dose_dcm"
+    output_root = tmp_path / "Output"
     case_id = "case-123"
-    csv_case_dir = csv_root / case_id
-    dicom_case_dir = dicom_root / case_id
+    csv_case_dir = output_root / case_id / "Log_csv"
+    dicom_case_dir = output_root / case_id / "Dose"
     csv_case_dir.mkdir(parents=True)
     dicom_case_dir.mkdir(parents=True)
     (csv_case_dir / "moqui_tps_beam-1.in").write_text("tps", encoding="utf-8")
@@ -73,9 +72,9 @@ def test_provider_surfaces_finished_result_output_locations(tmp_path: Path):
 
     settings = MagicMock()
     settings.get_path.side_effect = lambda path_name, handler_name=None, **kwargs: {
-        ("CsvInterpreter", "csv_output_dir"): str(csv_root),
-        ("PostProcessor", "simulation_output_dir"): str(dicom_root / kwargs["case_id"]),
-        ("PostProcessor", "final_dicom_dir"): str(dicom_root / kwargs["case_id"]),
+        ("CsvInterpreter", "csv_output_dir"): str(output_root),
+        ("PostProcessor", "simulation_output_dir"): str(output_root / kwargs["case_id"] / "Dose"),
+        ("PostProcessor", "final_dicom_dir"): str(output_root / kwargs["case_id"] / "Dose"),
     }[(handler_name, path_name)]
 
     case_repo.get_all_active_cases_with_beams.return_value = [
@@ -177,10 +176,10 @@ def test_provider_guesses_grouped_room_output_location(tmp_path: Path):
     )
 
     case_path = tmp_path / "data" / "SHI_log" / "G1" / "04198922" / "1.2.3.4"
-    grouped_output = tmp_path / "data" / "Outputs_csv" / "G1" / "04198922"
+    grouped_output = tmp_path / "data" / "Output" / "G1" / "04198922" / "Log_csv"
     grouped_output.mkdir(parents=True)
     case_path.mkdir(parents=True)
 
-    resolved = provider._guess_sibling_output_dir(case_path, "04198922", "Outputs_csv")
+    resolved = provider._guess_case_output_subdir(case_path, "04198922", "Log_csv")
 
     assert resolved == grouped_output

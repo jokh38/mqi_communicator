@@ -309,7 +309,11 @@ def try_allocate_pending_beams(pending_beams_by_case: Dict, executor: ProcessPoo
             beams = case_repo.get_beams_for_case(case_id)
             room = derive_room_from_case_path(case_path, settings)
             csv_output_base = settings.get_path("csv_output_dir", handler_name="CsvInterpreter")
-            tps_output_dir = Path(csv_output_base) / room / case_id if room else Path(csv_output_base) / case_id
+            tps_output_dir = (
+                Path(csv_output_base) / room / case_id / "Log_csv"
+                if room
+                else Path(csv_output_base) / case_id / "Log_csv"
+            )
 
             gpu_repo_inst = GpuRepository(case_repo.db, logger, settings)
 

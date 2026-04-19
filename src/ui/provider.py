@@ -376,11 +376,11 @@ class DashboardDataProvider:
         else:
             try:
                 room = derive_room_from_path(case_path, self.settings)
-                csv_output_dir = Path(
-                    self.settings.get_path("csv_output_dir", handler_name="CsvInterpreter")
-                ) / room / case_id if room else Path(
-                    self.settings.get_path("csv_output_dir", handler_name="CsvInterpreter")
-                ) / case_id
+                csv_output_dir = self._configured_case_output_subdir(
+                    case_id,
+                    case_path,
+                    "Log_csv",
+                )
                 candidates.append(("CSV / TPS output", csv_output_dir))
             except Exception:
                 pass
@@ -404,8 +404,8 @@ class DashboardDataProvider:
                 except Exception:
                     continue
 
-        candidates.append(("CSV / TPS output", self._guess_sibling_output_dir(case_path, case_id, "Outputs_csv")))
-        candidates.append(("Final DICOM output", self._guess_sibling_output_dir(case_path, case_id, "Dose_dcm")))
+        candidates.append(("CSV / TPS output", self._guess_case_output_subdir(case_path, case_id, "Log_csv")))
+        candidates.append(("Final DICOM output", self._guess_case_output_subdir(case_path, case_id, "Dose")))
         candidates.append(("Local upload copy", self._guess_sibling_output_dir(case_path, case_id, "localdata_uploads")))
 
         deduped: List[tuple[str, Path]] = []
@@ -432,6 +432,31 @@ class DashboardDataProvider:
         if room:
             return case_path.parent / folder_name / room / case_id
         return case_path.parent / folder_name / case_id
+
+    def _configured_case_output_subdir(self, case_id: str, case_path: Path, subdir_name: str) -> Path:
+        """Resolve a configured case output subdirectory under the Output root."""
+        room = derive_room_from_path(case_path, self.settings)
+        output_root = Path(
+            self.settings.get_path("csv_output_dir", handler_name="CsvInterpreter")
+        )
+        if room:
+            return output_root / room / case_id / subdir_name
+        return output_root / case_id / subdir_name
+
+    def _guess_case_output_subdir(self, case_path: Path, case_id: str, subdir_name: str) -> Path:
+        """Guess an output directory under Output/{room}/{case_id}/{subdir_name}."""
+        room = derive_room_from_path(case_path, self.settings)
+        for parent in [case_path, *case_path.parents]:
+            if room:
+                candidate = parent / "Output" / room / case_id / subdir_name
+                if candidate.exists():
+                    return candidate
+            candidate = parent / "Output" / case_id / subdir_name
+            if candidate.exists():
+                return candidate
+        if room:
+            return case_path.parent / "Output" / room / case_id / subdir_name
+        return case_path.parent / "Output" / case_id / subdir_name
 
     def _patterns_for_output_label(self, label: str) -> List[str]:
         """Return file patterns that count as saved output for a label."""
