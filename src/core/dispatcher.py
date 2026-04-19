@@ -414,7 +414,11 @@ def run_case_level_tps_generation(
             # Get output directory for TPS files
             room = derive_room_from_case_path(case_path, settings)
             csv_output_base = settings.get_path("csv_output_dir", handler_name="CsvInterpreter")
-            tps_output_dir = Path(csv_output_base) / room / case_id if room else Path(csv_output_base) / case_id
+            tps_output_dir = (
+                Path(csv_output_base) / room / case_id / "Log_csv"
+                if room
+                else Path(csv_output_base) / case_id / "Log_csv"
+            )
 
             tps_generator = TpsGenerator(settings, logger)
 
