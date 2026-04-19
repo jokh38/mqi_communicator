@@ -2,13 +2,16 @@
 
 import asyncio
 import os
+import shutil
+import tempfile
 import time
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
+from starlette.background import BackgroundTask
 
 from src.config.settings import Settings
 from src.core.retry_policy import is_retryable_failed_case
@@ -59,6 +62,34 @@ def _get_provider(request: Request) -> DashboardDataProvider:
 
 def _get_case_queue(request: Request):
     return getattr(request.app.state, "case_queue", None)
+
+
+def _find_delivery(provider: DashboardDataProvider, case_id: str, delivery_id: str) -> Optional[Dict[str, Any]]:
+    """Resolve a single delivery view row for a case."""
+    deliveries = provider.case_repo.get_deliveries_for_case(case_id)
+    for delivery in deliveries:
+        if delivery.delivery_id == delivery_id:
+            return {
+                "delivery_id": delivery.delivery_id,
+                "delivery_path": delivery.delivery_path,
+                "report_path": delivery.report_path,
+            }
+    return None
+
+
+def _resolve_case_dicom_output_dir(provider: DashboardDataProvider, case_id: str) -> Optional[Path]:
+    """Locate the final DICOM output directory for a case, if one exists."""
+    raw_case = provider.case_repo.get_case(case_id)
+    if raw_case is None:
+        return None
+
+    for label, path in provider._resolve_output_candidates(case_id, raw_case.case_path):
+        if "dicom" not in label.lower():
+            continue
+        files = provider._collect_files(path, ["*.dcm"])
+        if files:
+            return path
+    return None
 
 
 def _filter_cases(
@@ -122,6 +153,7 @@ def create_app() -> FastAPI:
         status: str = "all",
         date_start: str = "",
         date_end: str = "",
+        selected_case_id: str = "",
     ) -> HTMLResponse:
         provider = _get_provider(request)
         await asyncio.to_thread(provider.refresh_all_data)
@@ -145,6 +177,7 @@ def create_app() -> FastAPI:
                 "status": status,
                 "date_start": date_start,
                 "date_end": date_end,
+                "selected_case_id": selected_case_id,
             },
         )
 
@@ -243,6 +276,48 @@ def create_app() -> FastAPI:
             }
         )
         return JSONResponse({"status": "queued", "case_id": case_id})
+
+    @app.get("/ui/cases/{case_id}/deliveries/{delivery_id}/report")
+    async def open_delivery_report(
+        request: Request,
+        case_id: str,
+        delivery_id: str,
+        download: bool = False,
+    ) -> FileResponse:
+        provider = _get_provider(request)
+        delivery = _find_delivery(provider, case_id, delivery_id)
+        if delivery is None:
+            raise HTTPException(status_code=404, detail="Delivery not found")
+
+        report_path = delivery["report_path"]
+        if report_path is None or not Path(report_path).exists():
+            raise HTTPException(status_code=404, detail="Report PDF not found")
+
+        report_file = Path(report_path)
+        return FileResponse(
+            path=report_file,
+            media_type="application/pdf",
+            filename=report_file.name,
+            content_disposition_type="attachment" if download else "inline",
+        )
+
+    @app.get("/ui/cases/{case_id}/outputs/final-dicom")
+    async def download_case_dicom_output(request: Request, case_id: str) -> FileResponse:
+        provider = _get_provider(request)
+        output_dir = _resolve_case_dicom_output_dir(provider, case_id)
+        if output_dir is None or not output_dir.exists():
+            raise HTTPException(status_code=404, detail="Final DICOM output not found")
+
+        temp_dir = Path(tempfile.mkdtemp(prefix=f"{case_id}_dicom_"))
+        archive_base = temp_dir / f"{case_id}_final_dicom"
+        archive_path = Path(shutil.make_archive(str(archive_base), "zip", root_dir=str(output_dir)))
+
+        return FileResponse(
+            path=archive_path,
+            media_type="application/zip",
+            filename=archive_path.name,
+            background=BackgroundTask(shutil.rmtree, temp_dir, ignore_errors=True),
+        )
 
     return app
 
