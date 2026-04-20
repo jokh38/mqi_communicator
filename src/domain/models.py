@@ -67,6 +67,7 @@ class DeliveryData:
     gamma_max: Optional[float] = None
     evaluated_points: Optional[int] = None
     report_path: Optional[Path] = None
+    report_paths: Optional[List[Path]] = None
     error_message: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None

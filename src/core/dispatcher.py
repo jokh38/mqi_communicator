@@ -732,6 +732,7 @@ def run_case_level_ptn_analysis(
                 gamma_max=metrics.get("gamma_max"),
                 evaluated_points=metrics.get("evaluated_points"),
                 report_path=result.report_path,
+                report_paths=result.report_paths,
                 error_message=result.error_message,
             )
             if result.success:

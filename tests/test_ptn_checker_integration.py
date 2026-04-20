@@ -75,6 +75,50 @@ def test_ptn_checker_wrapper_uses_report_path_returned_by_subprocess(tmp_path: P
     }
 
 
+def test_ptn_checker_wrapper_preserves_all_report_paths_returned_by_subprocess(tmp_path: Path) -> None:
+    from src.integrations.ptn_checker import PtnCheckerIntegration
+
+    ptn_checker_path = tmp_path / "ptn_checker"
+    ptn_checker_path.mkdir()
+    (ptn_checker_path / "main.py").write_text(
+        "from pathlib import Path\n"
+        "def run_analysis(log_dir, dcm_file, output_dir):\n"
+        "    output = Path(output_dir)\n"
+        "    output.mkdir(parents=True, exist_ok=True)\n"
+        "    summary = output / 'beam_2_summary.pdf'\n"
+        "    detail = output / 'beam_2_detail.pdf'\n"
+        "    summary.write_text('pdf', encoding='utf-8')\n"
+        "    detail.write_text('pdf', encoding='utf-8')\n"
+        "    return {\n"
+        "        'Beam 2': {'layers': []},\n"
+        "        '_report_path': summary,\n"
+        "        '_report_paths': [summary, detail],\n"
+        "    }\n",
+        encoding="utf-8",
+    )
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    (log_dir / "delivered.ptn").write_text("stable", encoding="utf-8")
+    dcm_file = tmp_path / "RP.test.dcm"
+    dcm_file.write_text("dicom", encoding="utf-8")
+    output_dir = tmp_path / "output"
+
+    integration = PtnCheckerIntegration(ptn_checker_path=ptn_checker_path)
+
+    result = integration.run_analysis(
+        log_dir=log_dir,
+        dcm_file=dcm_file,
+        output_dir=output_dir,
+    )
+
+    assert result.success is True
+    assert result.report_path == output_dir / "beam_2_summary.pdf"
+    assert result.report_paths == [
+        output_dir / "beam_2_summary.pdf",
+        output_dir / "beam_2_detail.pdf",
+    ]
+
+
 def test_ptn_checker_wrapper_reports_missing_dicom(tmp_path: Path) -> None:
     from src.integrations.ptn_checker import PtnCheckerIntegration
 

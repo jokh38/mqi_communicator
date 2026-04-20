@@ -179,21 +179,26 @@
                                     <td class="px-3 py-2 text-gray-700 font-mono text-xs break-all">
                                         {% if delivery.report_path %}
                                             <div class="space-y-1">
-                                                <div class="text-gray-600">{{ delivery.report_path }}</div>
-                                                <div class="flex flex-wrap gap-2 font-sans">
-                                                    <a
-                                                        href="/ui/cases/{{ case.case_display.case_id }}/deliveries/{{ delivery.delivery_id }}/report"
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        class="inline-flex items-center rounded bg-indigo-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-indigo-700">
-                                                        Open PDF
-                                                    </a>
-                                                    <a
-                                                        href="/ui/cases/{{ case.case_display.case_id }}/deliveries/{{ delivery.delivery_id }}/report?download=true"
-                                                        class="inline-flex items-center rounded bg-gray-700 px-2.5 py-1 text-xs font-semibold text-white hover:bg-gray-800">
-                                                        Download PDF
-                                                    </a>
-                                                </div>
+                                                {% set delivery_reports = delivery.report_paths if delivery.report_paths else [delivery.report_path] %}
+                                                {% for report_path in delivery_reports %}
+                                                    <div class="space-y-1 rounded border border-gray-200 bg-gray-50 p-2">
+                                                        <div class="text-gray-600">{{ report_path }}</div>
+                                                        <div class="flex flex-wrap gap-2 font-sans">
+                                                            <a
+                                                                href="/ui/cases/{{ case.case_display.case_id }}/deliveries/{{ delivery.delivery_id }}/report?report_index={{ loop.index0 }}"
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                class="inline-flex items-center rounded bg-indigo-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-indigo-700">
+                                                                Open PDF
+                                                            </a>
+                                                            <a
+                                                                href="/ui/cases/{{ case.case_display.case_id }}/deliveries/{{ delivery.delivery_id }}/report?download=true&report_index={{ loop.index0 }}"
+                                                                class="inline-flex items-center rounded bg-gray-700 px-2.5 py-1 text-xs font-semibold text-white hover:bg-gray-800">
+                                                                Download PDF
+                                                            </a>
+                                                        </div>
+                                                    </div>
+                                                {% endfor %}
                                             </div>
                                         {% else %}
                                             -

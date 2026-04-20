@@ -218,6 +218,7 @@ class DatabaseConnection:
                             gamma_max REAL,
                             evaluated_points INTEGER,
                             report_path TEXT,
+                            report_paths TEXT,
                             error_message TEXT,
                             fraction_index INTEGER,
                             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -308,6 +309,9 @@ class DatabaseConnection:
                     if 'report_path' not in delivery_columns:
                         self.logger.info("Adding report_path column to deliveries table")
                         conn.execute("ALTER TABLE deliveries ADD COLUMN report_path TEXT")
+                    if 'report_paths' not in delivery_columns:
+                        self.logger.info("Adding report_paths column to deliveries table")
+                        conn.execute("ALTER TABLE deliveries ADD COLUMN report_paths TEXT")
                     if 'error_message' not in delivery_columns:
                         self.logger.info("Adding error_message column to deliveries table")
                         conn.execute("ALTER TABLE deliveries ADD COLUMN error_message TEXT")

@@ -1,12 +1,13 @@
 """Unit tests for CaseRepository DTO mapping helpers."""
 
+import json
 import unittest
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import Mock
 
 from src.domain.enums import BeamStatus, CaseStatus
-from src.domain.models import BeamData, CaseData
+from src.domain.models import BeamData, CaseData, DeliveryData
 from src.repositories.case_repo import CaseRepository
 
 
@@ -214,6 +215,48 @@ class TestCaseRepositoryMapping(unittest.TestCase):
         self.assertIn("beam_number", query)
         self.assertIn("ORDER BY", query)
         self.assertIn("beam_id ASC", query)
+
+    def test_map_row_to_delivery_data_with_plural_report_paths(self):
+        mock_row = {
+            "delivery_id": "DELIVERY001",
+            "parent_case_id": "TEST001",
+            "beam_id": "BEAM001",
+            "delivery_path": "/path/to/delivery",
+            "delivery_timestamp": "2025-01-01T10:00:00",
+            "delivery_date": "2025-01-01",
+            "raw_beam_number": 7,
+            "treatment_beam_index": 1,
+            "is_reference_delivery": 0,
+            "fraction_index": 1,
+            "ptn_status": "passed",
+            "ptn_last_run_at": "2025-01-01T11:00:00",
+            "gamma_pass_rate": 98.2,
+            "gamma_mean": 0.45,
+            "gamma_max": 1.2,
+            "evaluated_points": 125,
+            "report_path": "/reports/beam_1_summary.pdf",
+            "report_paths": json.dumps(
+                [
+                    "/reports/beam_1_summary.pdf",
+                    "/reports/beam_1_detail.pdf",
+                ]
+            ),
+            "error_message": None,
+            "created_at": "2025-01-01T10:00:00",
+            "updated_at": "2025-01-01T11:00:00",
+        }
+
+        result = self.repo._map_row_to_delivery_data(mock_row)
+
+        self.assertIsInstance(result, DeliveryData)
+        self.assertEqual(result.report_path, Path("/reports/beam_1_summary.pdf"))
+        self.assertEqual(
+            result.report_paths,
+            [
+                Path("/reports/beam_1_summary.pdf"),
+                Path("/reports/beam_1_detail.pdf"),
+            ],
+        )
 
 
 if __name__ == "__main__":

@@ -19,6 +19,7 @@ class PtnCheckerResult:
     output_dir: Optional[Path] = None
     analysis_data: Optional[Dict[str, Any]] = None
     report_path: Optional[Path] = None
+    report_paths: Optional[list[Path]] = None
 
 
 class PtnCheckerIntegration:
@@ -58,6 +59,7 @@ class PtnCheckerIntegration:
                 dcm_file=Path(dcm_file),
                 output_dir=output_dir,
             )
+            report_paths = self._extract_report_paths(analysis_data)
             report_path = self._extract_report_path(analysis_data)
             return PtnCheckerResult(
                 success=True,
@@ -65,6 +67,7 @@ class PtnCheckerIntegration:
                 output_dir=output_dir,
                 analysis_data=analysis_data if isinstance(analysis_data, dict) else None,
                 report_path=report_path,
+                report_paths=report_paths,
             )
         except FileNotFoundError as exc:
             message = str(exc)
@@ -201,9 +204,26 @@ class PtnCheckerIntegration:
         return run_analysis
 
     def _extract_report_path(self, analysis_data: Optional[Dict[str, Any]]) -> Optional[Path]:
+        report_paths = self._extract_report_paths(analysis_data)
+        if report_paths:
+            return report_paths[0]
         if not isinstance(analysis_data, dict):
             return None
         raw_path = analysis_data.get("_report_path") or analysis_data.get("report_path")
         if not raw_path:
             return None
         return Path(raw_path)
+
+    def _extract_report_paths(self, analysis_data: Optional[Dict[str, Any]]) -> list[Path]:
+        if not isinstance(analysis_data, dict):
+            return []
+
+        raw_paths = analysis_data.get("_report_paths") or analysis_data.get("report_paths")
+        if raw_paths:
+            return [Path(path) for path in raw_paths if path]
+
+        raw_path = analysis_data.get("_report_path") or analysis_data.get("report_path")
+        if raw_path:
+            return [Path(raw_path)]
+
+        return []

@@ -842,6 +842,7 @@ class CaseRepository(BaseRepository):
         gamma_max: Optional[float] = None,
         evaluated_points: Optional[int] = None,
         report_path: Optional[Path] = None,
+        report_paths: Optional[List[Path]] = None,
         error_message: Optional[str] = None,
     ) -> None:
         """Persist PTN checker status and gamma metrics for a delivery."""
@@ -860,6 +861,7 @@ class CaseRepository(BaseRepository):
                 gamma_max = ?,
                 evaluated_points = ?,
                 report_path = ?,
+                report_paths = ?,
                 error_message = ?,
                 updated_at = CURRENT_TIMESTAMP
             WHERE delivery_id = ?
@@ -872,6 +874,7 @@ class CaseRepository(BaseRepository):
                 gamma_max,
                 evaluated_points,
                 str(report_path) if report_path else None,
+                json.dumps([str(path) for path in report_paths]) if report_paths else None,
                 error_message,
                 delivery_id,
             ),
@@ -954,6 +957,11 @@ class CaseRepository(BaseRepository):
 
     def _map_row_to_delivery_data(self, row) -> DeliveryData:
         """Maps a database row to a DeliveryData DTO."""
+        report_paths = None
+        if "report_paths" in row.keys() and row["report_paths"]:
+            loaded_paths = json.loads(row["report_paths"])
+            report_paths = [Path(path) for path in loaded_paths if path]
+
         return DeliveryData(
             delivery_id=row["delivery_id"],
             parent_case_id=row["parent_case_id"],
@@ -980,6 +988,7 @@ class CaseRepository(BaseRepository):
                 if "report_path" in row.keys() and row["report_path"]
                 else None
             ),
+            report_paths=report_paths,
             error_message=row["error_message"] if "error_message" in row.keys() else None,
             created_at=(
                 datetime.fromisoformat(row["created_at"])
