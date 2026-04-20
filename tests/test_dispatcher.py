@@ -638,3 +638,71 @@ def test_run_case_level_ptn_checker_analysis_records_failure_in_ptn_fields_only(
         raise AssertionError(f"Expected FAILED_NO_DICOM result, got {result!r}")
     case_repo.record_ptn_checker_result.assert_called_once()
     case_repo.update_case_status.assert_not_called()
+
+
+def test_run_case_level_ptn_checker_analysis_records_distinct_delivery_report_paths(mock_settings):
+    dispatcher = importlib.import_module("src.core.dispatcher")
+    logger = MagicMock()
+    case_repo = MagicMock()
+    case_repo.get_deliveries_for_case.return_value = [
+        SimpleNamespace(delivery_id="delivery-1", delivery_path=Path("cases") / "case-1" / "delivery-1"),
+        SimpleNamespace(delivery_id="delivery-2", delivery_path=Path("cases") / "case-1" / "delivery-2"),
+    ]
+    context_manager = MagicMock()
+    context_manager.__enter__.return_value = case_repo
+    context_manager.__exit__.return_value = False
+
+    validator = MagicMock()
+    validator.find_rtplan_file.return_value = Path("cases") / "case-1" / "RP.test.dcm"
+
+    beam_metrics = {
+        "Beam 1": {
+            "layers": [
+                {
+                    "results": {
+                        "evaluated_point_count": 10,
+                        "pass_rate": 0.98,
+                        "gamma_mean": 0.5,
+                        "gamma_max": 1.1,
+                    }
+                }
+            ]
+        }
+    }
+    integration = MagicMock()
+    integration.run_analysis.side_effect = [
+        dispatcher.PtnCheckerResult(
+            success=True,
+            status_code="SUCCESS",
+            output_dir=Path("tmp") / "Daily" / "case-1",
+            analysis_data=beam_metrics,
+            report_path=Path("tmp") / "Daily" / "case-1" / "beam_1.pdf",
+        ),
+        dispatcher.PtnCheckerResult(
+            success=True,
+            status_code="SUCCESS",
+            output_dir=Path("tmp") / "Daily" / "case-1",
+            analysis_data=beam_metrics,
+            report_path=Path("tmp") / "Daily" / "case-1" / "beam_2.pdf",
+        ),
+    ]
+
+    with patch.object(dispatcher.LoggerFactory, "get_logger", return_value=logger), \
+         patch.object(dispatcher, "get_db_session", return_value=context_manager), \
+         patch.object(dispatcher, "DataIntegrityValidator", return_value=validator), \
+         patch.object(dispatcher, "create_ptn_checker_integration", return_value=integration):
+        result = dispatcher.run_case_level_ptn_analysis(
+            case_id="case-1",
+            case_path=Path("cases") / "case-1",
+            settings=mock_settings,
+        )
+
+    assert result.success is True
+    recorded_report_paths = [
+        call.kwargs["report_path"]
+        for call in case_repo.record_delivery_analysis_result.call_args_list
+    ]
+    assert recorded_report_paths == [
+        Path("tmp") / "Daily" / "case-1" / "beam_1.pdf",
+        Path("tmp") / "Daily" / "case-1" / "beam_2.pdf",
+    ]

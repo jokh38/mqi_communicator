@@ -58,7 +58,7 @@ class PtnCheckerIntegration:
                 dcm_file=Path(dcm_file),
                 output_dir=output_dir,
             )
-            report_path = self._find_report_path(output_dir)
+            report_path = self._extract_report_path(analysis_data)
             return PtnCheckerResult(
                 success=True,
                 status_code="SUCCESS",
@@ -74,7 +74,6 @@ class PtnCheckerIntegration:
                 status_code=status_code,
                 error_message=message,
                 output_dir=output_dir,
-                report_path=self._find_report_path(output_dir),
             )
         except Exception as exc:
             return PtnCheckerResult(
@@ -82,7 +81,6 @@ class PtnCheckerIntegration:
                 status_code="FAILED_EXCEPTION",
                 error_message=str(exc),
                 output_dir=output_dir,
-                report_path=self._find_report_path(output_dir),
             )
 
     def _run_analysis_in_subprocess(
@@ -202,8 +200,10 @@ class PtnCheckerIntegration:
             raise AttributeError(f"run_analysis not found in {module_path}")
         return run_analysis
 
-    def _find_report_path(self, output_dir: Path) -> Optional[Path]:
-        if not output_dir.exists():
+    def _extract_report_path(self, analysis_data: Optional[Dict[str, Any]]) -> Optional[Path]:
+        if not isinstance(analysis_data, dict):
             return None
-        pdfs = sorted(output_dir.glob("*.pdf"))
-        return pdfs[0] if pdfs else None
+        raw_path = analysis_data.get("_report_path") or analysis_data.get("report_path")
+        if not raw_path:
+            return None
+        return Path(raw_path)
