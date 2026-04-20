@@ -711,9 +711,21 @@ def run_case_level_ptn_analysis(
                 output_dir=default_output_dir,
             )
             metrics = _summarize_point_gamma_metrics(result.analysis_data)
+            # Derive gamma pass/fail from analysis metrics (>=95% threshold
+            # matches the PTN report's own _gamma_beam_verdict), rather than
+            # using the subprocess execution status ("SUCCESS"/"FAILED_*")
+            # which the dashboard template does not recognise.
+            if result.success and metrics:
+                delivery_ptn_status = (
+                    "passed"
+                    if metrics.get("gamma_pass_rate", 0.0) >= 95.0
+                    else "failed"
+                )
+            else:
+                delivery_ptn_status = "failed"
             case_repo.record_delivery_analysis_result(
                 delivery_id=delivery.delivery_id,
-                status_code=result.status_code,
+                status_code=delivery_ptn_status,
                 last_run_at=datetime.now(),
                 gamma_pass_rate=metrics.get("gamma_pass_rate"),
                 gamma_mean=metrics.get("gamma_mean"),
