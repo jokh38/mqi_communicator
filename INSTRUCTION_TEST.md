@@ -31,7 +31,7 @@ This document provides comprehensive testing procedures for the MQI Communicator
 #### 1.1 Clean Existing Database
 ```bash
 # Navigate to project directory
-cd /home/jokh38/MOQUI_SMC/mqi_communicator
+cd /home/SMC/MOQUI_SMC/mqi_communicator
 
 # Backup existing database (optional)
 if [ -f ../data/mqi_communicator.db ]; then
@@ -72,7 +72,7 @@ python3 -c "from src.config.settings import Settings; s = Settings(); print('✓
 #### 2.1 Start MQI Communicator
 ```bash
 # Start in one terminal
-cd /home/jokh38/MOQUI_SMC/mqi_communicator
+cd /home/SMC/MOQUI_SMC/mqi_communicator
 python3 main.py config/config.yaml 2>&1 | tee test_run.log
 ```
 

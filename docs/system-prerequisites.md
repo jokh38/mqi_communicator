@@ -7,8 +7,8 @@ These tools are not installable through `requirements.txt`.
 
 ### `ttyd`
 
-- Required when `ui.web.enabled: true` in [`config/config.yaml`](/home/jokh38/MOQUI_SMC/mqi_communicator/config/config.yaml).
-- Used by [`src/infrastructure/ui_process_manager.py`](/home/jokh38/MOQUI_SMC/mqi_communicator/src/infrastructure/ui_process_manager.py) to expose the Rich dashboard over HTTP.
+- Required when `ui.web.enabled: true` in [`config/config.yaml`](/home/SMC/MOQUI_SMC/mqi_communicator/config/config.yaml).
+- Used by [`src/infrastructure/ui_process_manager.py`](/home/SMC/MOQUI_SMC/mqi_communicator/src/infrastructure/ui_process_manager.py) to expose the Rich dashboard over HTTP.
 - If `ttyd` is missing, dashboard startup fails with `ttyd not available`.
 
 Install reference:
@@ -19,7 +19,7 @@ If you do not want to install it, set `ui.web.enabled: false`.
 
 ### `nvidia-smi`
 
-- Required for live GPU monitoring in [`src/infrastructure/gpu_monitor.py`](/home/jokh38/MOQUI_SMC/mqi_communicator/src/infrastructure/gpu_monitor.py).
+- Required for live GPU monitoring in [`src/infrastructure/gpu_monitor.py`](/home/SMC/MOQUI_SMC/mqi_communicator/src/infrastructure/gpu_monitor.py).
 - Typically provided by the NVIDIA driver installation.
 
 ## Environment-Specific External Scripts
@@ -30,4 +30,4 @@ that must exist on the target machine:
 - `mqi_interpreter/main_cli.py`
 - `RawToDCM`
 
-Verify the configured paths under [`config/config.yaml`](/home/jokh38/MOQUI_SMC/mqi_communicator/config/config.yaml) before starting the application.
+Verify the configured paths under [`config/config.yaml`](/home/SMC/MOQUI_SMC/mqi_communicator/config/config.yaml) before starting the application.

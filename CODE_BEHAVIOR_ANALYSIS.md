@@ -66,7 +66,7 @@ The MQI simulator outputs DICOM files to a **case-level** directory structure, b
 local_result_path = Path(local_result_base) / f"beam_{beam_number}"
 
 # Actual simulation output
-/home/jokh38/MOQUI_SMC/data/Outputs_csv/55061194/rtplan/RP.1.2.840...dcm  # ONE file for beam 1
+/home/SMC/MOQUI_SMC/data/Outputs_csv/55061194/rtplan/RP.1.2.840...dcm  # ONE file for beam 1
 # No beam_2, beam_3 subdirectories exist
 ```
 
@@ -74,14 +74,14 @@ local_result_path = Path(local_result_base) / f"beam_{beam_number}"
 Created symlinks from expected beam directories to actual output files:
 
 ```bash
-mkdir -p /home/jokh38/MOQUI_SMC/data/Dose_dcm/55061194/beam_{1,2,3}
-ln -s /home/jokh38/MOQUI_SMC/data/Outputs_csv/55061194/rtplan/RP.{beam_id}.dcm \
-    /home/jokh38/MOQUI_SMC/data/Dose_dcm/55061194/beam_{beam_id}/
+mkdir -p /home/SMC/MOQUI_SMC/data/Dose_dcm/55061194/beam_{1,2,3}
+ln -s /home/SMC/MOQUI_SMC/data/Outputs_csv/55061194/rtplan/RP.{beam_id}.dcm \
+    /home/SMC/MOQUI_SMC/data/Dose_dcm/55061194/beam_{beam_id}/
 ```
 
 ### Verification
 ```bash
-ls -la /home/jokh38/MOQUI_SMC/data/Dose_dcm/55061194/
+ls -la /home/SMC/MOQUI_SMC/data/Dose_dcm/55061194/
 # Output shows symlinks pointing to actual DCM files
 ```
 
