@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
+from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
 
 from src.config.settings import Settings
@@ -127,6 +128,7 @@ def _filter_cases(
 def create_app() -> FastAPI:
     """Create the FastAPI app."""
     app = FastAPI(title="MQI Communicator Dashboard")
+    app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
     @app.get("/", response_class=HTMLResponse)
     async def root(request: Request) -> HTMLResponse:
