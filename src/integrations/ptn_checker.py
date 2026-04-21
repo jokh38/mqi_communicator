@@ -19,6 +19,7 @@ class PtnCheckerResult:
     output_dir: Optional[Path] = None
     analysis_data: Optional[Dict[str, Any]] = None
     report_path: Optional[Path] = None
+    report_paths: Optional[list[Path]] = None
 
 
 class PtnCheckerIntegration:
@@ -58,13 +59,15 @@ class PtnCheckerIntegration:
                 dcm_file=Path(dcm_file),
                 output_dir=output_dir,
             )
-            report_path = self._find_report_path(output_dir)
+            report_paths = self._extract_report_paths(analysis_data)
+            report_path = self._extract_report_path(analysis_data)
             return PtnCheckerResult(
                 success=True,
                 status_code="SUCCESS",
                 output_dir=output_dir,
                 analysis_data=analysis_data if isinstance(analysis_data, dict) else None,
                 report_path=report_path,
+                report_paths=report_paths,
             )
         except FileNotFoundError as exc:
             message = str(exc)
@@ -74,7 +77,6 @@ class PtnCheckerIntegration:
                 status_code=status_code,
                 error_message=message,
                 output_dir=output_dir,
-                report_path=self._find_report_path(output_dir),
             )
         except Exception as exc:
             return PtnCheckerResult(
@@ -82,7 +84,6 @@ class PtnCheckerIntegration:
                 status_code="FAILED_EXCEPTION",
                 error_message=str(exc),
                 output_dir=output_dir,
-                report_path=self._find_report_path(output_dir),
             )
 
     def _run_analysis_in_subprocess(
@@ -202,8 +203,27 @@ class PtnCheckerIntegration:
             raise AttributeError(f"run_analysis not found in {module_path}")
         return run_analysis
 
-    def _find_report_path(self, output_dir: Path) -> Optional[Path]:
-        if not output_dir.exists():
+    def _extract_report_path(self, analysis_data: Optional[Dict[str, Any]]) -> Optional[Path]:
+        report_paths = self._extract_report_paths(analysis_data)
+        if report_paths:
+            return report_paths[0]
+        if not isinstance(analysis_data, dict):
             return None
-        pdfs = sorted(output_dir.glob("*.pdf"))
-        return pdfs[0] if pdfs else None
+        raw_path = analysis_data.get("_report_path") or analysis_data.get("report_path")
+        if not raw_path:
+            return None
+        return Path(raw_path)
+
+    def _extract_report_paths(self, analysis_data: Optional[Dict[str, Any]]) -> list[Path]:
+        if not isinstance(analysis_data, dict):
+            return []
+
+        raw_paths = analysis_data.get("_report_paths") or analysis_data.get("report_paths")
+        if raw_paths:
+            return [Path(path) for path in raw_paths if path]
+
+        raw_path = analysis_data.get("_report_path") or analysis_data.get("report_path")
+        if raw_path:
+            return [Path(raw_path)]
+
+        return []

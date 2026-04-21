@@ -285,7 +285,7 @@ class TpsGenerator:
         """
         # Get base_directory from config
         base_dir = self.settings._yaml_config.get("paths", {}).get(
-            "base_directory", "/home/jokh38/MOQUI_SMC"
+            "base_directory", "/home/SMC/MOQUI_SMC"
         )
         from src.core.workflow_manager import derive_room_from_path
 

@@ -34,7 +34,7 @@ Integrate `~/MOQUI_SMC/ptn_checker` into the workflow so that:
 - Database schema is initialized in `src/database/connection.py` via `init_db()`
 - Case routing and startup scans are handled in `src/core/dispatcher.py` and `src/core/workflow_manager.py`
 - Beam workflow states live in `src/domain/states.py` and should remain dedicated to MC execution
-- `ptn_checker` exposes `run_analysis(log_dir, dcm_file, output_dir)` from `/home/jokh38/MOQUI_SMC/ptn_checker/main.py`
+- `ptn_checker` exposes `run_analysis(log_dir, dcm_file, output_dir)` from `/home/SMC/MOQUI_SMC/ptn_checker/main.py`
 - The repo uses a flat `tests/` layout, not `tests/unit/` and `tests/integration/`
 - Settings live in `src/config/settings.py`
 

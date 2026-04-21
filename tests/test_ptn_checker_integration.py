@@ -14,49 +14,124 @@ def test_ptn_checker_wrapper_returns_success_result(tmp_path: Path) -> None:
         "    return {'status': 'ok'}\n",
         encoding="utf-8",
     )
-    case_path = tmp_path / "case"
-    case_path.mkdir()
-    log_dir = case_path / "logs"
+    log_dir = tmp_path / "logs"
     log_dir.mkdir()
     (log_dir / "delivered.ptn").write_text("stable", encoding="utf-8")
-    dcm_file = case_path / "RP.test.dcm"
+    dcm_file = tmp_path / "RP.test.dcm"
     dcm_file.write_text("dicom", encoding="utf-8")
+    output_dir = tmp_path / "output"
 
-    integration = PtnCheckerIntegration(
-        ptn_checker_path=ptn_checker_path,
-        output_subdir="ptn_output",
-    )
+    integration = PtnCheckerIntegration(ptn_checker_path=ptn_checker_path)
 
     result = integration.run_analysis(
         log_dir=log_dir,
         dcm_file=dcm_file,
-        case_path=case_path,
+        output_dir=output_dir,
     )
 
-    if result.success is not True:
-        raise AssertionError(f"Expected success result, got {result!r}")
-    if result.status_code != "SUCCESS":
-        raise AssertionError(f"Expected SUCCESS status code, got {result.status_code!r}")
+    assert result.success is True
+    assert result.status_code == "SUCCESS"
+    assert result.analysis_data == {"status": "ok"}
+    assert result.report_path is None
 
 
-def test_ptn_checker_wrapper_reports_missing_dicom() -> None:
+def test_ptn_checker_wrapper_uses_report_path_returned_by_subprocess(tmp_path: Path) -> None:
     from src.integrations.ptn_checker import PtnCheckerIntegration
 
-    integration = PtnCheckerIntegration(
-        ptn_checker_path=Path("/tmp/ptn_checker"),
-        output_subdir="ptn_output",
+    ptn_checker_path = tmp_path / "ptn_checker"
+    ptn_checker_path.mkdir()
+    (ptn_checker_path / "main.py").write_text(
+        "from pathlib import Path\n"
+        "def run_analysis(log_dir, dcm_file, output_dir):\n"
+        "    output = Path(output_dir)\n"
+        "    output.mkdir(parents=True, exist_ok=True)\n"
+        "    report_path = output / 'beam_2.pdf'\n"
+        "    report_path.write_text('pdf', encoding='utf-8')\n"
+        "    return {'Beam 2': {'layers': []}, '_report_path': report_path}\n",
+        encoding="utf-8",
     )
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    (log_dir / "delivered.ptn").write_text("stable", encoding="utf-8")
+    dcm_file = tmp_path / "RP.test.dcm"
+    dcm_file.write_text("dicom", encoding="utf-8")
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    (output_dir / "aaa_wrong.pdf").write_text("wrong", encoding="utf-8")
+
+    integration = PtnCheckerIntegration(ptn_checker_path=ptn_checker_path)
 
     result = integration.run_analysis(
-        log_dir=Path("/tmp/logs"),
-        dcm_file=None,
-        case_path=Path("/tmp/case"),
+        log_dir=log_dir,
+        dcm_file=dcm_file,
+        output_dir=output_dir,
     )
 
-    if result.success is not False:
-        raise AssertionError(f"Expected missing DICOM to fail, got {result!r}")
-    if result.status_code != "FAILED_NO_DICOM":
-        raise AssertionError(f"Expected FAILED_NO_DICOM status code, got {result.status_code!r}")
+    assert result.success is True
+    assert result.report_path == output_dir / "beam_2.pdf"
+    assert result.analysis_data == {
+        "Beam 2": {"layers": []},
+        "_report_path": str(output_dir / "beam_2.pdf"),
+    }
+
+
+def test_ptn_checker_wrapper_preserves_all_report_paths_returned_by_subprocess(tmp_path: Path) -> None:
+    from src.integrations.ptn_checker import PtnCheckerIntegration
+
+    ptn_checker_path = tmp_path / "ptn_checker"
+    ptn_checker_path.mkdir()
+    (ptn_checker_path / "main.py").write_text(
+        "from pathlib import Path\n"
+        "def run_analysis(log_dir, dcm_file, output_dir):\n"
+        "    output = Path(output_dir)\n"
+        "    output.mkdir(parents=True, exist_ok=True)\n"
+        "    summary = output / 'beam_2_summary.pdf'\n"
+        "    detail = output / 'beam_2_detail.pdf'\n"
+        "    summary.write_text('pdf', encoding='utf-8')\n"
+        "    detail.write_text('pdf', encoding='utf-8')\n"
+        "    return {\n"
+        "        'Beam 2': {'layers': []},\n"
+        "        '_report_path': summary,\n"
+        "        '_report_paths': [summary, detail],\n"
+        "    }\n",
+        encoding="utf-8",
+    )
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    (log_dir / "delivered.ptn").write_text("stable", encoding="utf-8")
+    dcm_file = tmp_path / "RP.test.dcm"
+    dcm_file.write_text("dicom", encoding="utf-8")
+    output_dir = tmp_path / "output"
+
+    integration = PtnCheckerIntegration(ptn_checker_path=ptn_checker_path)
+
+    result = integration.run_analysis(
+        log_dir=log_dir,
+        dcm_file=dcm_file,
+        output_dir=output_dir,
+    )
+
+    assert result.success is True
+    assert result.report_path == output_dir / "beam_2_summary.pdf"
+    assert result.report_paths == [
+        output_dir / "beam_2_summary.pdf",
+        output_dir / "beam_2_detail.pdf",
+    ]
+
+
+def test_ptn_checker_wrapper_reports_missing_dicom(tmp_path: Path) -> None:
+    from src.integrations.ptn_checker import PtnCheckerIntegration
+
+    integration = PtnCheckerIntegration(ptn_checker_path=tmp_path / "ptn_checker")
+
+    result = integration.run_analysis(
+        log_dir=tmp_path / "logs",
+        dcm_file=None,
+        output_dir=tmp_path / "output",
+    )
+
+    assert result.success is False
+    assert result.status_code == "FAILED_NO_DICOM"
 
 
 def test_ptn_checker_wrapper_reports_missing_ptn_files(tmp_path: Path) -> None:
@@ -69,28 +144,21 @@ def test_ptn_checker_wrapper_reports_missing_ptn_files(tmp_path: Path) -> None:
         "    return {'status': 'ok'}\n",
         encoding="utf-8",
     )
-    case_path = tmp_path / "case"
-    case_path.mkdir()
-    log_dir = case_path / "logs"
+    log_dir = tmp_path / "logs"
     log_dir.mkdir()
-    dcm_file = case_path / "RP.test.dcm"
+    dcm_file = tmp_path / "RP.test.dcm"
     dcm_file.write_text("dicom", encoding="utf-8")
 
-    integration = PtnCheckerIntegration(
-        ptn_checker_path=ptn_checker_path,
-        output_subdir="ptn_output",
-    )
+    integration = PtnCheckerIntegration(ptn_checker_path=ptn_checker_path)
 
     result = integration.run_analysis(
         log_dir=log_dir,
         dcm_file=dcm_file,
-        case_path=case_path,
+        output_dir=tmp_path / "output",
     )
 
-    if result.success is not False:
-        raise AssertionError(f"Expected missing PTN files to fail, got {result!r}")
-    if result.status_code != "FAILED_NO_PTN":
-        raise AssertionError(f"Expected FAILED_NO_PTN status code, got {result.status_code!r}")
+    assert result.success is False
+    assert result.status_code == "FAILED_NO_PTN"
 
 
 def test_ptn_checker_wrapper_runs_in_isolated_subprocess_when_src_package_already_loaded(tmp_path: Path) -> None:
@@ -138,30 +206,25 @@ def test_ptn_checker_wrapper_runs_in_isolated_subprocess_when_src_package_alread
         encoding="utf-8",
     )
 
-    case_path = tmp_path / "case"
-    case_path.mkdir()
-    log_dir = case_path / "logs"
+    log_dir = tmp_path / "logs"
     log_dir.mkdir()
     (log_dir / "delivered.ptn").write_text("stable", encoding="utf-8")
-    dcm_file = case_path / "RP.test.dcm"
+    dcm_file = tmp_path / "RP.test.dcm"
     dcm_file.write_text("dicom", encoding="utf-8")
 
-    import src  # Ensure communicator's src package is already present in-process.
+    import src
+
     assert "src" in sys.modules
 
-    integration = PtnCheckerIntegration(
-        ptn_checker_path=ptn_checker_path,
-        output_subdir="ptn_output",
-    )
+    integration = PtnCheckerIntegration(ptn_checker_path=ptn_checker_path)
 
     result = integration.run_analysis(
         log_dir=log_dir,
         dcm_file=dcm_file,
-        case_path=case_path,
+        output_dir=tmp_path / "output",
     )
 
-    if result.success is not True:
-        raise AssertionError(f"Expected subprocess-isolated PTN analysis success, got {result!r}")
+    assert result.success is True
 
 
 def test_ptn_checker_wrapper_handles_numpy_like_results_and_noisy_stdout(tmp_path: Path) -> None:
@@ -191,26 +254,19 @@ def test_ptn_checker_wrapper_handles_numpy_like_results_and_noisy_stdout(tmp_pat
         "    }\n",
         encoding="utf-8",
     )
-    case_path = tmp_path / "case"
-    case_path.mkdir()
-    log_dir = case_path / "logs"
+    log_dir = tmp_path / "logs"
     log_dir.mkdir()
     (log_dir / "delivered.ptn").write_text("stable", encoding="utf-8")
-    dcm_file = case_path / "RP.test.dcm"
+    dcm_file = tmp_path / "RP.test.dcm"
     dcm_file.write_text("dicom", encoding="utf-8")
 
-    integration = PtnCheckerIntegration(
-        ptn_checker_path=ptn_checker_path,
-        output_subdir="ptn_output",
-    )
+    integration = PtnCheckerIntegration(ptn_checker_path=ptn_checker_path)
 
     result = integration.run_analysis(
         log_dir=log_dir,
         dcm_file=dcm_file,
-        case_path=case_path,
+        output_dir=tmp_path / "output",
     )
 
-    if result.success is not True:
-        raise AssertionError(f"Expected noisy PTN analysis success, got {result!r}")
-    if result.analysis_data != {"status": "ok", "layers": [{"gamma_mean": 0.8}]}:
-        raise AssertionError(f"Unexpected analysis data: {result.analysis_data!r}")
+    assert result.success is True
+    assert result.analysis_data == {"status": "ok", "layers": [{"gamma_mean": 0.8}]}

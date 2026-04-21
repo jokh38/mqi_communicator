@@ -25,7 +25,7 @@ This note records the current post-startup runtime failure after fixing the
 - The runtime command now resolves correctly to:
 
 ```bash
-nohup bash -c 'cd /home/jokh38/MOQUI_SMC/moqui && ./tps_env/tps_env /home/jokh38/MOQUI_SMC/data/Outputs_csv/55061194/moqui_tps_55061194_2025042401440800.in > /home/jokh38/MOQUI_SMC/mqi_communicator/logs/sim_55061194_55061194_2025042401440800.log 2>&1' > /dev/null 2>&1 &
+nohup bash -c 'cd /home/SMC/MOQUI_SMC/moqui && ./tps_env/tps_env /home/SMC/MOQUI_SMC/data/Outputs_csv/55061194/moqui_tps_55061194_2025042401440800.in > /home/SMC/MOQUI_SMC/mqi_communicator/logs/sim_55061194_55061194_2025042401440800.log 2>&1' > /dev/null 2>&1 &
 ```
 
 ## Reproduced Failure
@@ -135,14 +135,14 @@ writing any configured terminal marker.
 Launch:
 
 ```bash
-setsid /home/jokh38/miniconda3/bin/python main.py >/tmp/mqi_watch_run.log 2>&1 < /dev/null &
+setsid /home/SMC/miniconda3/bin/python main.py >/tmp/mqi_watch_run.log 2>&1 < /dev/null &
 ```
 
 Observation:
 
 ```bash
 pgrep -af 'main.py|tps_env|ttyd|src.ui.dashboard'
-sqlite3 /home/jokh38/MOQUI_SMC/data/mqi_communicator.db "..."
+sqlite3 /home/SMC/MOQUI_SMC/data/mqi_communicator.db "..."
 tail -n 200 /tmp/mqi_watch_run.log
 tail -n 120 logs/worker_55061194_*.log
 tail -n 80 logs/sim_55061194_*.log

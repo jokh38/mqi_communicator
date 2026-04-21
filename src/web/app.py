@@ -74,6 +74,7 @@ def _find_delivery(provider: DashboardDataProvider, case_id: str, delivery_id: s
                 "delivery_id": delivery.delivery_id,
                 "delivery_path": delivery.delivery_path,
                 "report_path": delivery.report_path,
+                "report_paths": delivery.report_paths or [],
             }
     return None
 
@@ -240,6 +241,7 @@ def create_app() -> FastAPI:
                 "gamma_max": delivery.gamma_max,
                 "evaluated_points": delivery.evaluated_points,
                 "report_path": str(delivery.report_path) if delivery.report_path else None,
+                "report_paths": [str(path) for path in (delivery.report_paths or [])],
                 "error_message": delivery.error_message,
             }
             for delivery in deliveries
@@ -285,13 +287,20 @@ def create_app() -> FastAPI:
         case_id: str,
         delivery_id: str,
         download: bool = False,
+        report_index: int = 0,
     ) -> FileResponse:
         provider = _get_provider(request)
         delivery = _find_delivery(provider, case_id, delivery_id)
         if delivery is None:
             raise HTTPException(status_code=404, detail="Delivery not found")
 
-        report_path = delivery["report_path"]
+        report_paths = delivery.get("report_paths") or []
+        if report_paths:
+            if report_index < 0 or report_index >= len(report_paths):
+                raise HTTPException(status_code=404, detail="Report PDF not found")
+            report_path = report_paths[report_index]
+        else:
+            report_path = delivery["report_path"]
         if report_path is None or not Path(report_path).exists():
             raise HTTPException(status_code=404, detail="Report PDF not found")
 

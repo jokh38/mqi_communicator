@@ -103,7 +103,7 @@ Notes about the checked-in config:
 - All processing handlers are currently set to `local`.
 - `ui.auto_start` is enabled.
 - `ui.web.enabled` is enabled, so the dashboard launcher expects `ttyd` to be installed and port `8080` to be available.
-- The default `paths.base_directory` is `/home/jokh38/MOQUI_SMC`, so the sample config is not directly runnable on a fresh machine without editing paths.
+- The default `paths.base_directory` is `/home/SMC/MOQUI_SMC`, so the sample config is not directly runnable on a fresh machine without editing paths.
 
 ## Dashboard
 

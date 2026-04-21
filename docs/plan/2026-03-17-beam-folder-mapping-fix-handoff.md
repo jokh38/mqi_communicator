@@ -19,20 +19,20 @@ That does not work for real incoming folders named by irradiation timestamp. The
 
 ## Fix Implemented
 
-Updated [case_aggregator.py](/home/jokh38/MOQUI_SMC/mqi_communicator/src/core/case_aggregator.py) to:
+Updated [case_aggregator.py](/home/SMC/MOQUI_SMC/mqi_communicator/src/core/case_aggregator.py) to:
 
 1. Read `DICOM_BEAM_NUMBER` from `PlanInfo.txt` when present.
 2. Use that explicit beam number before folder-name-based matching.
 3. Sort beam folders by directory name so `prepare_beam_jobs()` returns deterministic ordering.
 
-Added regression coverage in [test_case_aggregator.py](/home/jokh38/MOQUI_SMC/mqi_communicator/tests/test_case_aggregator.py).
+Added regression coverage in [test_case_aggregator.py](/home/SMC/MOQUI_SMC/mqi_communicator/tests/test_case_aggregator.py).
 
 ## Verification
 
 Commands used:
 
 ```bash
-python -m pytest /home/jokh38/MOQUI_SMC/mqi_communicator/tests/test_case_aggregator.py /home/jokh38/MOQUI_SMC/mqi_communicator/tests/test_dispatcher.py /home/jokh38/MOQUI_SMC/mqi_communicator/tests/test_worker.py -q
+python -m pytest /home/SMC/MOQUI_SMC/mqi_communicator/tests/test_case_aggregator.py /home/SMC/MOQUI_SMC/mqi_communicator/tests/test_dispatcher.py /home/SMC/MOQUI_SMC/mqi_communicator/tests/test_worker.py -q
 ```
 
 Observed result:
@@ -50,7 +50,7 @@ from src.infrastructure.logging_handler import LoggerFactory
 
 settings = Settings(Path('config/config.yaml'))
 LoggerFactory.configure(settings)
-case_path = Path('/home/jokh38/MOQUI_SMC/data/SHI_log/55061194')
+case_path = Path('/home/SMC/MOQUI_SMC/data/SHI_log/55061194')
 beam_jobs = prepare_beam_jobs('55061194', case_path, settings)
 print('beam_job_count=', len(beam_jobs))
 for job in beam_jobs:

@@ -257,7 +257,7 @@ Without this change, `main.log` can incorrectly suggest full success for failed 
 
 ```bash
 # Reproduce the segfault directly
-cd /home/jokh38/MOQUI_SMC/mqi_communicator
+cd /home/SMC/MOQUI_SMC/mqi_communicator
 ./tps_env/tps_env ../data/Outputs_csv/55758663/moqui_tps_55758663_2025072123104200.in
 
 # Get a backtrace
