@@ -29,6 +29,7 @@ from watchdog.observers import Observer
 from src.config.settings import Settings
 from src.infrastructure.logging_handler import StructuredLogger, LoggerFactory
 from src.infrastructure.process_registry import ProcessRegistry
+from src.infrastructure.transfer_process_manager import TransferProcessManager
 from src.infrastructure.ui_process_manager import UIProcessManager
 from src.database.connection import DatabaseConnection
 from src.repositories.gpu_repo import GpuRepository
@@ -75,6 +76,7 @@ class MQIApplication:
         self.observer: Optional[Observer] = None
         self.executor: Optional[ProcessPoolExecutor] = None
         self.ui_process_manager: Optional[UIProcessManager] = None
+        self.transfer_process_manager: Optional[TransferProcessManager] = None
         self.gpu_monitor: Optional[GpuMonitor] = None
         self.process_registry: Optional[ProcessRegistry] = None
         self.monitor_db_connection: Optional[DatabaseConnection] = None
@@ -161,8 +163,16 @@ class MQIApplication:
             self.logger.error("Failed to start file watcher", {"error": str(e)})
 
     def start_dashboard(self) -> None:
-        """Starts the dashboard UI in a separate process if configured."""
+        """Starts MQI Transfer first, then the dashboard UI in a separate process."""
         try:
+            self.transfer_process_manager = TransferProcessManager(
+                project_root=Path(__file__).resolve().parent.parent,
+                python_executable=sys.executable,
+                logger=self.logger,
+            )
+            if not self.transfer_process_manager.start():
+                raise RuntimeError("Failed to start MQI Transfer receiver on port 80")
+
             if not self.settings.get_ui_config().get("auto_start", False):
                 self.logger.info("Dashboard auto-start disabled")
                 return
@@ -217,9 +227,12 @@ class MQIApplication:
                         self.logger.info(f"  → {url}")
                     self.logger.info("=" * 60)
             else:
-                self.logger.error("Failed to start dashboard UI process")
+                raise RuntimeError("Failed to start dashboard UI process on port 8080")
         except Exception as e:
             self.logger.error("Failed to start dashboard", {"error": str(e)})
+            if self.transfer_process_manager:
+                self.transfer_process_manager.stop()
+            raise
 
     def start_gpu_monitor(self) -> None:
         """Starts the GPU monitoring service in a background thread."""
@@ -703,6 +716,12 @@ class MQIApplication:
                     if not self.ui_process_manager.restart():
                         self.logger.error("Failed to restart the dashboard UI process.")
 
+                if self.transfer_process_manager and not self.transfer_process_manager.is_running():
+                    self.logger.error(
+                        "MQI Transfer receiver is not running; stopping communicator."
+                    )
+                    self.shutdown_event.set()
+
                 # Periodically reconcile stale GPU assignments (C-3 fix)
                 if self.gpu_monitor:
                     try:
@@ -741,6 +760,9 @@ class MQIApplication:
             self.gpu_monitor.stop()
         if self.monitor_db_connection:
             self.monitor_db_connection.close()
+        if self.transfer_process_manager:
+            self.logger.info("Stopping MQI Transfer receiver.")
+            self.transfer_process_manager.stop()
         # Stop dashboard UI process
         if self.ui_process_manager:
             self.ui_process_manager.stop()
