@@ -148,3 +148,26 @@ def test_save_and_remove_ui_pid(tmp_path):
     assert manager._pid_file.read_text() == "12345"
     manager._remove_ui_pid()
     assert not manager._pid_file.exists()
+
+
+def test_ui_manager_reports_equivalent_external_web_service_when_owned_child_is_gone():
+    manager = make_manager()
+    manager.config.get_ui_config = MagicMock(
+        return_value={"mode": "web", "web": {"port": 8080, "host": "0.0.0.0"}}
+    )
+    process = MagicMock()
+    process.pid = 1234
+    process.poll.return_value = 1
+    manager._process = process
+    manager._is_running = True
+    manager.web_port = 8080
+
+    with (
+        patch.object(manager, "_is_web_listener_healthy", return_value=True),
+        patch.object(
+            manager,
+            "_find_port_owner_info",
+            return_value={"pid": 4321, "command": "python -m uvicorn src.web.app:app --port 8080"},
+        ),
+    ):
+        assert manager.has_equivalent_service_available() is True

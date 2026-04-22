@@ -8,6 +8,7 @@ import os
 import errno
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import platform
@@ -161,6 +162,11 @@ class UIProcessManager:
 
                 if platform.system() == "Windows":
                     popen_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+                else:
+                    # Use a separate process group for web mode without fully
+                    # detaching the session; parent-death signaling still
+                    # enforces immediate shutdown when main.py exits.
+                    popen_kwargs["preexec_fn"] = os.setpgrp
 
                 self._process = subprocess.Popen(command, **popen_kwargs)
             else:
@@ -180,6 +186,8 @@ class UIProcessManager:
                             "cwd": str(self.project_root),
                             "creation_flags": creation_flags
                         })
+                else:
+                    popen_kwargs["start_new_session"] = True
 
                 self._process = subprocess.Popen(command, **popen_kwargs)
 
@@ -310,7 +318,66 @@ class UIProcessManager:
                     "return_code": self._process.returncode
                 })
             return False
+
+        ui_config = self.config.get_ui_config()
+        if ui_config.get("mode", "web") == "web" and not self._is_web_listener_healthy():
+            self._is_running = False
+            if self.logger:
+                self.logger.warning(
+                    "UI process is alive but web listener is unavailable",
+                    {
+                        "pid": self._process.pid,
+                        "port": self.get_web_port(),
+                    },
+                )
+            return False
         
+        return True
+
+    def has_equivalent_service_available(self) -> bool:
+        """Return True when another dashboard instance is already serving the expected UI endpoint."""
+        ui_config = self.config.get_ui_config()
+        mode = ui_config.get("mode", "web")
+        owned_pid = self._process.pid if self._process is not None else None
+
+        if mode == "web":
+            if not self._is_web_listener_healthy():
+                return False
+            port = self.get_web_port()
+            if port is None:
+                return False
+            owner_info = self._find_port_owner_info(port)
+            if not owner_info:
+                return False
+            owner_pid = owner_info.get("pid")
+            command = owner_info.get("command") or ""
+            if owner_pid == owned_pid:
+                return False
+            if not self._is_dashboard_process_command(command):
+                return False
+            if self.logger:
+                self.logger.warning(
+                    "Owned UI child is down, but an equivalent external dashboard service is available",
+                    {
+                        "owned_pid": owned_pid,
+                        "external_pid": owner_pid,
+                        "port": port,
+                        "command": command,
+                    },
+                )
+            return True
+
+        external_pid = self._find_equivalent_dashboard_pid()
+        if external_pid is None:
+            return False
+        if self.logger:
+            self.logger.warning(
+                "Owned UI child is down, but an equivalent external dashboard process is available",
+                {
+                    "owned_pid": owned_pid,
+                    "external_pid": external_pid,
+                },
+            )
         return True
     
     def get_process_info(self) -> Dict[str, Any]:
@@ -468,8 +535,6 @@ class UIProcessManager:
 
     def _check_port_available(self, port: int) -> bool:
         """Check if port is available for binding."""
-        import socket
-
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.bind(('', port))
@@ -486,6 +551,18 @@ class UIProcessManager:
                     {"port": port, "error": str(exc), "errno": getattr(exc, "errno", None)},
                 )
             return True
+
+    def _is_web_listener_healthy(self) -> bool:
+        """Return True when the managed web UI port is accepting TCP connections."""
+        port = self.get_web_port()
+        if port is None:
+            return False
+
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=0.5):
+                return True
+        except OSError:
+            return False
 
     def _ensure_web_port_ready(self, port: int) -> bool:
         """Ensure the configured UI port is free, killing any occupying process."""
@@ -604,6 +681,34 @@ class UIProcessManager:
             "src.web.app:app" in command
             or "src.ui.dashboard" in command
         )
+
+    def _find_equivalent_dashboard_pid(self) -> Optional[int]:
+        """Find another dashboard process without claiming ownership of it."""
+        owned_pid = self._process.pid if self._process is not None else None
+        try:
+            result = subprocess.run(
+                ["ps", "-eo", "pid=,command="],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+        except Exception:
+            return None
+
+        for line in result.stdout.splitlines():
+            stripped = line.strip()
+            if not stripped:
+                continue
+            parts = stripped.split(maxsplit=1)
+            if not parts or not parts[0].isdigit():
+                continue
+            pid = int(parts[0])
+            command = parts[1] if len(parts) > 1 else ""
+            if owned_pid is not None and pid == owned_pid:
+                continue
+            if self._is_dashboard_process_command(command):
+                return pid
+        return None
 
     def _find_port_owner_pid(self, port: int) -> Optional[int]:
         """Resolve the PID of the process listening on the target TCP port."""

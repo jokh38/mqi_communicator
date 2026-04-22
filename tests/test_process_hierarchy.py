@@ -1,3 +1,4 @@
+import os
 from argparse import Namespace
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -38,7 +39,7 @@ def _make_ui_manager(tmp_path: Path) -> UIProcessManager:
     return manager
 
 
-def test_transfer_manager_linux_launch_does_not_detach_session(tmp_path: Path):
+def test_transfer_manager_linux_launch_detaches_session(tmp_path: Path):
     manager = _make_transfer_manager(tmp_path)
 
     process = MagicMock()
@@ -54,10 +55,10 @@ def test_transfer_manager_linux_launch_does_not_detach_session(tmp_path: Path):
         assert manager.start() is True
 
     _, kwargs = popen_mock.call_args
-    assert "start_new_session" not in kwargs
+    assert kwargs["start_new_session"] is True
 
 
-def test_ui_manager_linux_web_launch_does_not_detach_session(tmp_path: Path):
+def test_ui_manager_linux_web_launch_uses_process_group_not_new_session(tmp_path: Path):
     manager = _make_ui_manager(tmp_path)
 
     process = MagicMock()
@@ -76,7 +77,34 @@ def test_ui_manager_linux_web_launch_does_not_detach_session(tmp_path: Path):
         assert manager.start() is True
 
     _, kwargs = popen_mock.call_args
+    assert kwargs["preexec_fn"] is os.setpgrp
     assert "start_new_session" not in kwargs
+
+
+def test_ui_manager_web_mode_reports_not_running_when_listener_is_down(tmp_path: Path):
+    manager = _make_ui_manager(tmp_path)
+    process = MagicMock()
+    process.pid = 4321
+    process.poll.return_value = None
+    manager._process = process
+    manager._is_running = True
+    manager.web_port = 8080
+
+    with patch.object(manager, "_is_web_listener_healthy", return_value=False):
+        assert manager.is_running() is False
+
+
+def test_ui_manager_web_mode_reports_running_when_listener_is_healthy(tmp_path: Path):
+    manager = _make_ui_manager(tmp_path)
+    process = MagicMock()
+    process.pid = 4321
+    process.poll.return_value = None
+    manager._process = process
+    manager._is_running = True
+    manager.web_port = 8080
+
+    with patch.object(manager, "_is_web_listener_healthy", return_value=True):
+        assert manager.is_running() is True
 
 
 def test_request_parent_death_signal_calls_prctl_on_linux():
