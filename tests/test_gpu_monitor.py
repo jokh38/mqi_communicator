@@ -53,12 +53,52 @@ def test_fetch_and_update_gpus_uses_execution_handler(mock_thread, mock_logger, 
 
     monitor._fetch_and_update_gpus()
 
-    mock_execution_handler.execute_command.assert_called_once_with(
-        command="nvidia-smi-test"
-    )
+    assert mock_execution_handler.execute_command.call_args_list[0].kwargs == {
+        "command": "nvidia-smi-test"
+    }
 
     if mock_gpu_repo.update_resources.call_count != 1:
         raise AssertionError("GPU resources should be updated exactly once")
+
+
+def test_fetch_and_update_gpus_persists_live_compute_state(
+    mock_logger,
+    mock_gpu_repo,
+    mock_execution_handler,
+):
+    mock_execution_handler.execute_command.side_effect = [
+        MagicMock(
+            success=True,
+            output=(
+                "0, GPU-ae1a4e4a, NVIDIA GeForce RTX 3090, 24576, 1024, 23552, 30, 5\n"
+                "1, GPU-ae1a4e4b, NVIDIA GeForce RTX 3090, 24576, 2048, 22528, 35, 10\n"
+            ),
+            error="",
+            return_code=0,
+        ),
+        MagicMock(
+            success=True,
+            output="4321, GPU-ae1a4e4b, tps_env, 1500\n",
+            error="",
+            return_code=0,
+        ),
+    ]
+
+    monitor = GpuMonitor(
+        logger=mock_logger,
+        execution_handler=mock_execution_handler,
+        gpu_repository=mock_gpu_repo,
+        command="nvidia-smi-test",
+        update_interval=10,
+    )
+
+    monitor._fetch_and_update_gpus()
+
+    persisted_rows = mock_gpu_repo.update_resources.call_args.args[0]
+    assert persisted_rows[0]["uuid"] == "GPU-ae1a4e4a"
+    assert persisted_rows[0]["has_live_compute"] is False
+    assert persisted_rows[1]["uuid"] == "GPU-ae1a4e4b"
+    assert persisted_rows[1]["has_live_compute"] is True
 
 
 @pytest.mark.parametrize(

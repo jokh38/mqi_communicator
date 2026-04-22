@@ -684,42 +684,7 @@ class CaseRepository(BaseRepository):
             ORDER BY created_at ASC
         """
         case_rows = self._execute_query(case_query, tuple(active_statuses), fetch_all=True)
-
-        results = []
-        for case_row in case_rows:
-            case_id = case_row["case_id"]
-
-            # Get beams for this case
-            beam_query = """
-                SELECT beam_id, status, progress, created_at, updated_at, hpc_job_id, error_message
-                FROM beams
-                WHERE parent_case_id = ?
-                ORDER BY beam_id ASC
-            """
-            beam_rows = self._execute_query(beam_query, (case_id,), fetch_all=True)
-
-            beams = []
-            for beam_row in beam_rows:
-                beams.append({
-                    "beam_id": beam_row["beam_id"],
-                    "status": BeamStatus(beam_row["status"]),
-                    "progress": beam_row["progress"],
-                    "created_at": datetime.fromisoformat(beam_row["created_at"]),
-                    "updated_at": (
-                        datetime.fromisoformat(beam_row["updated_at"])
-                        if beam_row["updated_at"] else None
-                    ),
-                    "hpc_job_id": beam_row["hpc_job_id"],
-                    "error_message": beam_row["error_message"]
-                })
-
-
-            results.append({
-                "case_data": self._map_row_to_case_data(case_row),
-                "beams": beams
-            })
-
-        return results
+        return self._compose_cases_with_beams(case_rows, active_only=True)
 
     def get_all_cases_with_beams(self) -> List[Dict[str, Any]]:
         """Retrieves all cases with their associated beam data."""
@@ -734,24 +699,37 @@ class CaseRepository(BaseRepository):
             ORDER BY updated_at DESC, created_at DESC, case_id ASC
         """
         case_rows = self._execute_query(case_query, fetch_all=True)
+        return self._compose_cases_with_beams(case_rows, active_only=False)
 
-        results = []
-        for case_row in case_rows:
-            case_id = case_row["case_id"]
+    def _compose_cases_with_beams(
+        self,
+        case_rows: List[Any],
+        *,
+        active_only: bool,
+    ) -> List[Dict[str, Any]]:
+        """Compose case rows with their beams using one bulk beam query."""
+        if not case_rows:
+            return []
 
-            beam_query = """
-                SELECT beam_id, status, progress, created_at, updated_at, hpc_job_id, error_message
-                FROM beams
-                WHERE parent_case_id = ?
-                ORDER BY
-                    CASE WHEN beam_id IS NULL THEN 1 ELSE 0 END,
-                    beam_id ASC
-            """
-            beam_rows = self._execute_query(beam_query, (case_id,), fetch_all=True)
+        case_ids = [row["case_id"] for row in case_rows]
+        placeholders = ",".join(["?" for _ in case_ids])
+        beam_order_clause = (
+            "beam_id ASC"
+            if active_only
+            else "CASE WHEN beam_id IS NULL THEN 1 ELSE 0 END, beam_id ASC"
+        )
+        beam_query = f"""
+            SELECT parent_case_id, beam_id, status, progress, created_at, updated_at, hpc_job_id, error_message
+            FROM beams
+            WHERE parent_case_id IN ({placeholders})
+            ORDER BY parent_case_id ASC, {beam_order_clause}
+        """
+        beam_rows = self._execute_query(beam_query, tuple(case_ids), fetch_all=True)
 
-            beams = []
-            for beam_row in beam_rows:
-                beams.append({
+        beams_by_case_id: Dict[str, List[Dict[str, Any]]] = {case_id: [] for case_id in case_ids}
+        for beam_row in beam_rows:
+            beams_by_case_id.setdefault(beam_row["parent_case_id"], []).append(
+                {
                     "beam_id": beam_row["beam_id"],
                     "status": BeamStatus(beam_row["status"]),
                     "progress": beam_row["progress"],
@@ -762,14 +740,16 @@ class CaseRepository(BaseRepository):
                     ),
                     "hpc_job_id": beam_row["hpc_job_id"],
                     "error_message": beam_row["error_message"],
-                })
+                }
+            )
 
-            results.append({
+        return [
+            {
                 "case_data": self._map_row_to_case_data(case_row),
-                "beams": beams,
-            })
-
-        return results
+                "beams": beams_by_case_id.get(case_row["case_id"], []),
+            }
+            for case_row in case_rows
+        ]
 
     def create_or_update_deliveries(self, case_id: str, deliveries: List[Dict[str, Any]]) -> None:
         """Upsert delivery-session records for a case."""

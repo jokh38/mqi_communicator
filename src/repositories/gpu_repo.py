@@ -51,9 +51,9 @@ class GpuRepository(BaseRepository):
         query = """
             INSERT INTO gpu_resources (
                 uuid, gpu_index, name, memory_total, memory_used, memory_free,
-                temperature, utilization, core_clock, status, last_updated
+                temperature, utilization, core_clock, has_live_compute, status, last_updated
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             ON CONFLICT(uuid) DO UPDATE SET
                 gpu_index = excluded.gpu_index,
                 name = excluded.name,
@@ -63,6 +63,7 @@ class GpuRepository(BaseRepository):
                 temperature = excluded.temperature,
                 utilization = excluded.utilization,
                 core_clock = excluded.core_clock,
+                has_live_compute = excluded.has_live_compute,
                 status = CASE
                     WHEN gpu_resources.assigned_case IS NOT NULL THEN gpu_resources.status
                     ELSE excluded.status
@@ -82,6 +83,7 @@ class GpuRepository(BaseRepository):
                 gpu["temperature"],
                 gpu["utilization"],
                 gpu.get("core_clock", 0),
+                1 if gpu.get("has_live_compute", False) else 0,
                 GpuStatus.IDLE.value,
             )
             for gpu in gpu_data
@@ -330,7 +332,7 @@ class GpuRepository(BaseRepository):
 
         query = """
             SELECT uuid, gpu_index, name, memory_total, memory_used, memory_free,
-                   temperature, utilization, core_clock, status, assigned_case, last_updated
+                   temperature, utilization, core_clock, has_live_compute, status, assigned_case, last_updated
             FROM gpu_resources
             ORDER BY gpu_index ASC
         """
@@ -350,6 +352,7 @@ class GpuRepository(BaseRepository):
                     temperature=row["temperature"],
                     utilization=row["utilization"],
                     core_clock=row["core_clock"],
+                    has_live_compute=bool(row["has_live_compute"]),
                     status=GpuStatus(row["status"]),
                     assigned_case=row["assigned_case"],
                     last_updated=(
@@ -375,7 +378,7 @@ class GpuRepository(BaseRepository):
 
         query = """
             SELECT uuid, gpu_index, name, memory_total, memory_used, memory_free,
-                   temperature, utilization, core_clock, status, assigned_case, last_updated
+                   temperature, utilization, core_clock, has_live_compute, status, assigned_case, last_updated
             FROM gpu_resources
             WHERE uuid = ?
         """
@@ -393,6 +396,7 @@ class GpuRepository(BaseRepository):
                 temperature=row["temperature"],
                 utilization=row["utilization"],
                 core_clock=row["core_clock"],
+                has_live_compute=bool(row["has_live_compute"]),
                 status=GpuStatus(row["status"]),
                 assigned_case=row["assigned_case"],
                 last_updated=(

@@ -159,10 +159,11 @@ def create_app() -> FastAPI:
         selected_case_id: str = "",
     ) -> HTMLResponse:
         provider = _get_provider(request)
-        await asyncio.to_thread(provider.refresh_all_data)
-
         raw_cases = await asyncio.to_thread(provider.case_repo.get_all_cases_with_beams)
-        processed_cases = provider._process_cases_with_beams_data(raw_cases)
+        processed_cases = provider._process_cases_with_beams_data(
+            raw_cases,
+            include_result_summary=False,
+        )
         filtered_cases = _filter_cases(
             processed_cases,
             search=search,
@@ -220,7 +221,8 @@ def create_app() -> FastAPI:
         case_view = None
         if raw_case is not None:
             case_view = provider._process_cases_with_beams_data(
-                [{"case_data": raw_case, "beams": [beam.__dict__ for beam in beams]}]
+                [{"case_data": raw_case, "beams": [beam.__dict__ for beam in beams]}],
+                include_result_summary=True,
             )[0]
             case_view["case_display"]["retry_eligible"] = is_retryable_failed_case(raw_case)
 

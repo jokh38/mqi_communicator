@@ -107,13 +107,18 @@ class GpuMonitor:
 
             # Parse the CSV output
             gpu_data = self._parse_nvidia_smi_output(result.output)
+            active_gpu_uuids = self.get_active_compute_gpu_uuids()
 
             if not gpu_data:
                 self.logger.warning("Nvidia-smi command succeeded but parsing yielded no GPU data.")
                 return
 
+            for gpu in gpu_data:
+                gpu["has_live_compute"] = gpu["uuid"] in active_gpu_uuids
+
             self.logger.info("Successfully fetched and parsed local GPU data.", {
-                "gpu_count": len(gpu_data)
+                "gpu_count": len(gpu_data),
+                "live_compute_gpu_count": len(active_gpu_uuids),
             })
 
             # Persist the new data to the repository

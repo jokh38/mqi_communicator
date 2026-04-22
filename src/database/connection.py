@@ -180,6 +180,7 @@ class DatabaseConnection:
                             temperature INTEGER NOT NULL,
                             utilization INTEGER NOT NULL,
                             core_clock INTEGER NOT NULL DEFAULT 0,
+                            has_live_compute BOOLEAN NOT NULL DEFAULT 0,
                             status TEXT NOT NULL,
                             assigned_case TEXT,
                             last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -235,6 +236,9 @@ class DatabaseConnection:
                     if 'core_clock' not in columns:
                         self.logger.info("Adding core_clock column to gpu_resources table")
                         conn.execute("ALTER TABLE gpu_resources ADD COLUMN core_clock INTEGER DEFAULT 0")
+                    if 'has_live_compute' not in columns:
+                        self.logger.info("Adding has_live_compute column to gpu_resources table")
+                        conn.execute("ALTER TABLE gpu_resources ADD COLUMN has_live_compute BOOLEAN NOT NULL DEFAULT 0")
 
                     # Add interpreter_completed column to cases table if it doesn't exist
                     cursor = conn.execute("PRAGMA table_info(cases)")

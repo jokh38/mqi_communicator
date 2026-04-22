@@ -88,6 +88,7 @@ class GpuResource:
     status: GpuStatus
     assigned_case: Optional[str] = None
     last_updated: Optional[datetime] = None
+    has_live_compute: bool = False
 
 @dataclass
 class WorkflowStepRecord:

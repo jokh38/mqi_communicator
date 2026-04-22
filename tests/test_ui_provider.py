@@ -8,20 +8,17 @@ from src.domain.models import GpuResource
 from src.ui.provider import DashboardDataProvider
 
 
-def test_provider_marks_gpu_assigned_when_live_compute_exists_without_db_reservation():
+def test_provider_marks_gpu_assigned_when_live_compute_exists_without_request_time_shell_call():
     case_repo = MagicMock()
     gpu_repo = MagicMock()
     logger = MagicMock()
     execution_handler = MagicMock()
-    execution_handler.execute_command.return_value = SimpleNamespace(
-        success=True,
-        output="GPU-live, 1234, tps_env, 1500\n",
-        error="",
-        return_code=0,
+    execution_handler.execute_command.side_effect = AssertionError(
+        "refresh_all_data should not shell out for live compute status"
     )
 
     gpu_repo.get_all_gpu_resources.return_value = [
-        GpuResource(
+        SimpleNamespace(
             uuid="GPU-live",
             gpu_index=5,
             name="RTX A5000",
@@ -34,7 +31,8 @@ def test_provider_marks_gpu_assigned_when_live_compute_exists_without_db_reserva
             status=GpuStatus.IDLE,
             assigned_case=None,
             last_updated=None,
-        ),
+            has_live_compute=True,
+        )
     ]
     case_repo.get_all_active_cases_with_beams.return_value = []
 
@@ -96,9 +94,12 @@ def test_provider_surfaces_finished_result_output_locations(tmp_path: Path):
     gpu_repo.get_all_gpu_resources.return_value = []
 
     provider = DashboardDataProvider(case_repo, gpu_repo, logger, settings=settings)
-    provider.refresh_all_data()
+    processed = provider._process_cases_with_beams_data(
+        case_repo.get_all_active_cases_with_beams.return_value,
+        include_result_summary=True,
+    )
 
-    case_display = provider.get_cases_with_beams_data()[0]["case_display"]
+    case_display = processed[0]["case_display"]
     result_summary = case_display["result_summary"]
 
     if case_display["status_label"] != "Finished":
@@ -183,3 +184,37 @@ def test_provider_guesses_grouped_room_output_location(tmp_path: Path):
     resolved = provider._guess_case_output_subdir(case_path, "04198922", "Log_csv")
 
     assert resolved == grouped_output
+
+
+def test_process_cases_with_beams_data_skips_result_scans_when_not_requested(tmp_path: Path):
+    case_repo = MagicMock()
+    gpu_repo = MagicMock()
+    logger = MagicMock()
+
+    provider = DashboardDataProvider(case_repo, gpu_repo, logger)
+    provider._build_result_summary = MagicMock(
+        side_effect=AssertionError("list rendering should not build result summaries")
+    )
+
+    raw_case = SimpleNamespace(
+        case_id="case-123",
+        case_path=tmp_path / "case-123",
+        status=CaseStatus.PROCESSING,
+        progress=12.0,
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
+        error_message=None,
+        assigned_gpu=None,
+        interpreter_completed=False,
+        failure_category=None,
+        failure_phase=None,
+        failure_details=None,
+        retry_count=0,
+    )
+
+    processed = provider._process_cases_with_beams_data(
+        [{"case_data": raw_case, "beams": []}],
+        include_result_summary=False,
+    )
+
+    assert processed[0]["case_display"]["result_summary"] is None

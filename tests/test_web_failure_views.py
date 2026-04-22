@@ -70,7 +70,6 @@ def _failed_case_view(tmp_path: Path):
 
 def test_cases_list_renders_case_level_error_column(tmp_path: Path):
     provider = MagicMock()
-    provider.refresh_all_data.return_value = None
     provider.case_repo.get_all_cases_with_beams.return_value = []
     provider._process_cases_with_beams_data.return_value = [_failed_case_view(tmp_path)]
 
@@ -83,6 +82,11 @@ def test_cases_list_renders_case_level_error_column(tmp_path: Path):
     assert response.status_code == 200
     assert "Error" in response.text
     assert "TPS generation failed" in response.text
+    provider.refresh_all_data.assert_not_called()
+    provider._process_cases_with_beams_data.assert_called_once_with(
+        [],
+        include_result_summary=False,
+    )
 
 
 def test_root_view_renders_base_template(tmp_path: Path):

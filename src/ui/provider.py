@@ -4,11 +4,9 @@
 # =====================================================================================
 """Fetches and processes data required for the UI dashboard."""
 
-import csv
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timezone
-from io import StringIO
 
 from src.handlers.execution_handler import ExecutionHandler
 from src.repositories.case_repo import CaseRepository
@@ -92,14 +90,16 @@ class DashboardDataProvider:
             # Fetch raw data
             raw_gpus = self.gpu_repo.get_all_gpu_resources()
             raw_cases_with_beams = self.case_repo.get_all_active_cases_with_beams()
-            active_compute_gpu_uuids = self._get_active_compute_gpu_uuids()
 
             # Set update time first
             self._last_update = datetime.now()
 
             # Process data
-            self._gpu_data = self._process_gpu_data(raw_gpus, active_compute_gpu_uuids)
-            self._cases_with_beams = self._process_cases_with_beams_data(raw_cases_with_beams)
+            self._gpu_data = self._process_gpu_data(raw_gpus)
+            self._cases_with_beams = self._process_cases_with_beams_data(
+                raw_cases_with_beams,
+                include_result_summary=False,
+            )
 
             # Extract just case data for backward compatibility
             self._active_cases = [item["case_display"] for item in self._cases_with_beams]
@@ -187,7 +187,6 @@ class DashboardDataProvider:
     def _process_gpu_data(
         self,
         raw_gpu_data: List[GpuResource],
-        active_compute_gpu_uuids: Optional[set[str]] = None,
     ) -> List[Dict[str, Any]]:
         """Processes raw GPU data into a format suitable for display.
 
@@ -197,10 +196,9 @@ class DashboardDataProvider:
         Returns:
             List[Dict[str, Any]]: A list of processed GPU data.
         """
-        active_compute_gpu_uuids = active_compute_gpu_uuids or set()
         processed_gpus = []
         for gpu in raw_gpu_data:
-            has_live_compute = gpu.uuid in active_compute_gpu_uuids
+            has_live_compute = bool(getattr(gpu, "has_live_compute", False))
             effective_status = (
                 GpuStatus.ASSIGNED
                 if has_live_compute or gpu.status == GpuStatus.ASSIGNED or gpu.assigned_case
@@ -232,38 +230,16 @@ class DashboardDataProvider:
             })
         return processed_gpus
 
-    def _get_active_compute_gpu_uuids(self) -> set[str]:
-        """Resolve GPU UUIDs that currently host a live compute process."""
-        if self.execution_handler is None:
-            return set()
-
-        result = self.execution_handler.execute_command(
-            command=(
-                "nvidia-smi --query-compute-apps=gpu_uuid,pid,process_name,used_memory "
-                "--format=csv,noheader,nounits"
-            )
-        )
-        if not result.success:
-            self.logger.warning(
-                "Failed to query live GPU compute activity for dashboard status",
-                {"return_code": result.return_code, "error": result.error},
-            )
-            return set()
-
-        active_gpu_uuids: set[str] = set()
-        for row in csv.reader(StringIO(result.output or "")):
-            if not row:
-                continue
-            gpu_uuid = row[0].strip()
-            if gpu_uuid:
-                active_gpu_uuids.add(gpu_uuid)
-        return active_gpu_uuids
-
-    def _process_cases_with_beams_data(self, raw_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _process_cases_with_beams_data(
+        self,
+        raw_data: List[Dict[str, Any]],
+        include_result_summary: bool = True,
+    ) -> List[Dict[str, Any]]:
         """Processes raw case+beam data into display format.
 
         Args:
             raw_data: List of dicts with 'case_data' and 'beams'
+            include_result_summary: Whether to scan filesystem output paths.
 
         Returns:
             List[Dict[str, Any]]: Processed data ready for display
@@ -272,7 +248,7 @@ class DashboardDataProvider:
         for item in raw_data:
             case = item["case_data"]
             beams = item["beams"]
-            result_summary = self._build_result_summary(case)
+            result_summary = self._build_result_summary(case) if include_result_summary else None
 
             # Process beam data
             beam_display_data = []
