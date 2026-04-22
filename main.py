@@ -710,17 +710,27 @@ class MQIApplication:
                     and self.settings.get_ui_config().get("auto_start", False)
                     and not self.ui_process_manager.is_running()
                 ):
-                    self.logger.warning(
-                        "Dashboard UI process is not running. Attempting to restart."
-                    )
-                    if not self.ui_process_manager.restart():
-                        self.logger.error("Failed to restart the dashboard UI process.")
+                    if self.ui_process_manager.has_equivalent_service_available():
+                        self.logger.warning(
+                            "Dashboard owned child is down, but equivalent dashboard service remains available."
+                        )
+                    else:
+                        self.logger.warning(
+                            "Dashboard UI process is not running. Attempting to restart."
+                        )
+                        if not self.ui_process_manager.restart():
+                            self.logger.error("Failed to restart the dashboard UI process.")
 
                 if self.transfer_process_manager and not self.transfer_process_manager.is_running():
-                    self.logger.error(
-                        "MQI Transfer receiver is not running; stopping communicator."
-                    )
-                    self.shutdown_event.set()
+                    if self.transfer_process_manager.has_equivalent_service_available():
+                        self.logger.warning(
+                            "MQI Transfer owned child is down, but equivalent receiver service remains available."
+                        )
+                    else:
+                        self.logger.error(
+                            "MQI Transfer receiver is not running; stopping communicator."
+                        )
+                        self.shutdown_event.set()
 
                 # Periodically reconcile stale GPU assignments (C-3 fix)
                 if self.gpu_monitor:
