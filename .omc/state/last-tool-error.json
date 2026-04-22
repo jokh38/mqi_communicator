@@ -1,7 +1,0 @@
-{
-  "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"git commit -m \\\"$(cat <<'EOF'\\nchore: cleanup and documentation improvements\\n\\nClean up obsolete files and improve project documentation.\\n\\nChanges:\\n- Remove obsolete planning documents...",
-  "error": "Exit code 1\n[pre-commit] Running ai-semgrep on staged files...\nBlocking Semgrep findings: 32\n- src/handlers/execution_handler.py:188 [home.SMC..config.semgrep.ai.python.except-pass] AI anti-pattern: bare except/pass hides failures and complicates debugging.\n- src/infrastructure/ui_process_manager.py:460 [home.SMC..config.semgrep.ai.python.subprocess-run-without-check] AI failure pattern: subprocess.run() without check=True can silently ignore command failures.\n- src/infrastructure/ui_proce...",
-  "timestamp": "2026-03-18T00:26:32.774Z",
-  "retry_count": 1
-}

@@ -128,3 +128,8 @@ config/*.bak*
 # Local generated artifacts
 logs/
 *.bak
+
+# AI tool artifacts
+.claude/
+.codex
+.ruff_cache/
