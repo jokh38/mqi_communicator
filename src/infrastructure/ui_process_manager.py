@@ -66,6 +66,19 @@ class UIProcessManager:
             self._pid_file.unlink(missing_ok=True)
             return
 
+        if self._process is not None and self._process.pid == stale_pid:
+            return
+
+        command = self._get_process_command(stale_pid)
+        if command and not self._is_dashboard_process_command(command):
+            if self.logger:
+                self.logger.warning(
+                    "Skipping stale PID reclamation because PID does not look like the dashboard process",
+                    {"pid": stale_pid, "command": command},
+                )
+            self._pid_file.unlink(missing_ok=True)
+            return
+
         if self.logger:
             self.logger.info("Reclaiming stale UI process from previous run", {"pid": stale_pid})
         self._terminate_process_tree(stale_pid)
@@ -107,18 +120,9 @@ class UIProcessManager:
             if web_enabled:
                 web_config = ui_config.get("web", {})
                 port = web_config.get("port", 8080)
-                if self._ensure_web_port_ready(port):
-                    self.web_port = port
-                else:
-                    fallback_port = self._find_next_available_web_port(port + 1)
-                    if fallback_port is None:
-                        raise RuntimeError(f"Port {port} already in use")
-                    self.web_port = fallback_port
-                    if self.logger:
-                        self.logger.warning(
-                            "Using fallback UI port after reclaim failed",
-                            {"requested_port": port, "fallback_port": fallback_port},
-                        )
+                if not self._ensure_web_port_ready(port):
+                    raise RuntimeError(f"Failed to reclaim required UI port {port}")
+                self.web_port = port
 
             command = self._get_ui_command()
 
@@ -227,12 +231,14 @@ class UIProcessManager:
                 self._stdout_log_file = None
                 self._stderr_log_file = None
                 self._process = None
+                self._remove_ui_pid()
                 return False
 
         except Exception as e:
             if self.logger:
                 self.logger.error("Failed to start UI process", {"error": str(e)})
             self._process = None
+            self._remove_ui_pid()
             return False
     
     def stop(self, timeout: float = 10.0) -> bool:
@@ -256,6 +262,7 @@ class UIProcessManager:
         self._stderr_log_file = None
 
         if not self._is_running or not self._process:
+            self._remove_ui_pid()
             return True
         
         try:
@@ -299,6 +306,7 @@ class UIProcessManager:
         if self._process.poll() is not None:
             # Process has terminated
             self._is_running = False
+            self._remove_ui_pid()
             if self.logger:
                 self.logger.info("UI process has terminated", {
                     "return_code": self._process.returncode
@@ -591,6 +599,13 @@ class UIProcessManager:
             "pid": pid,
             "command": self._get_process_command(pid),
         }
+
+    def _is_dashboard_process_command(self, command: str) -> bool:
+        """Return True when a command line looks like the managed dashboard process."""
+        return (
+            "src.web.app:app" in command
+            or "src.ui.dashboard" in command
+        )
 
     def _find_port_owner_pid(self, port: int) -> Optional[int]:
         """Resolve the PID of the process listening on the target TCP port."""

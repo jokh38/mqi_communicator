@@ -86,7 +86,7 @@ def test_start_web_mode(mock_popen):
 
 
 @patch("src.infrastructure.ui_process_manager.subprocess.Popen")
-def test_start_web_mode_uses_fallback_port_when_reclaim_fails(mock_popen):
+def test_start_web_mode_fails_when_required_port_cannot_be_reclaimed(mock_popen):
     manager = make_manager()
 
     mock_ui_config = {
@@ -95,25 +95,16 @@ def test_start_web_mode_uses_fallback_port_when_reclaim_fails(mock_popen):
     }
     manager.config.get_ui_config = MagicMock(return_value=mock_ui_config)
 
-    process = MagicMock()
-    process.poll.return_value = None
-    process.stdout = MagicMock()
-    process.stderr = MagicMock()
-    process.pid = 4321
-    mock_popen.return_value = process
-
     with (
         patch.object(manager, "_reclaim_stale_ui_process"),
         patch.object(manager, "_save_ui_pid"),
         patch.object(manager, "_ensure_web_port_ready", return_value=False),
-        patch.object(manager, "_find_next_available_web_port", return_value=8081) as fallback_mock,
         patch("src.infrastructure.ui_process_manager.time.sleep")
     ):
-        assert manager.start() is True
+        assert manager.start() is False
 
-    fallback_mock.assert_called_once_with(8081)
-    assert manager.get_web_port() == 8081
-    mock_popen.assert_called_once()
+    mock_popen.assert_not_called()
+    manager.logger.error.assert_called()
 
 
 def test_reclaim_stale_ui_process_kills_orphaned_pid(tmp_path):

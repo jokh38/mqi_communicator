@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
+import warnings
 
 from fastapi.testclient import TestClient
 
@@ -82,6 +83,36 @@ def test_cases_list_renders_case_level_error_column(tmp_path: Path):
     assert response.status_code == 200
     assert "Error" in response.text
     assert "TPS generation failed" in response.text
+
+
+def test_root_view_renders_base_template(tmp_path: Path):
+    provider = MagicMock()
+    provider.refresh_all_data.return_value = None
+    provider.get_gpu_data.return_value = []
+    provider.get_cases_with_beams_data.return_value = []
+    provider.get_system_stats.return_value = {
+        "pending": 0,
+        "total_gpus": 0,
+        "last_update": datetime.now(timezone.utc),
+        "retryable_failed": 0,
+        "permanent_failed": 0,
+        "failure_phases": {},
+    }
+
+    app = create_app()
+    app.state.provider = provider
+    client = TestClient(app)
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        response = client.get("/")
+
+    assert response.status_code == 200
+    assert "MQI Communicator" in response.text
+    assert not any(
+        "TemplateResponse" in str(warning.message)
+        for warning in caught
+    )
 
 
 def test_case_detail_renders_case_failure_summary_and_beam_level_errors(tmp_path: Path):

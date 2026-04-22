@@ -133,16 +133,16 @@ def create_app() -> FastAPI:
 
     @app.get("/", response_class=HTMLResponse)
     async def root(request: Request) -> HTMLResponse:
-        return templates.TemplateResponse("base.html", {"request": request})
+        return templates.TemplateResponse(request, "base.html")
 
     @app.get("/ui/workflow", response_class=HTMLResponse)
     async def workflow(request: Request) -> HTMLResponse:
         provider = _get_provider(request)
         await asyncio.to_thread(provider.refresh_all_data)
         return templates.TemplateResponse(
+            request,
             "workflow.html",
             {
-                "request": request,
                 "stats": provider.get_system_stats(),
                 "cases": provider.get_cases_with_beams_data(),
                 "gpus": provider.get_gpu_data(),
@@ -172,9 +172,9 @@ def create_app() -> FastAPI:
         )
 
         return templates.TemplateResponse(
+            request,
             "cases.html",
             {
-                "request": request,
                 "cases": filtered_cases,
                 "search": search,
                 "status": status,
@@ -200,9 +200,9 @@ def create_app() -> FastAPI:
             beam_display = processed["beams"]
 
         return templates.TemplateResponse(
+            request,
             "modal_logs.html",
             {
-                "request": request,
                 "case_display": case_display,
                 "beams": beam_display,
                 "workflow_steps": workflow_steps,
@@ -248,9 +248,9 @@ def create_app() -> FastAPI:
         ]
 
         return templates.TemplateResponse(
+            request,
             "case_detail.html",
             {
-                "request": request,
                 "case": case_view,
                 "deliveries": delivery_view,
                 "workflow_steps": workflow_steps,
