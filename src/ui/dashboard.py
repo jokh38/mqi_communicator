@@ -23,6 +23,7 @@ from logging.handlers import RotatingFileHandler
 import logging
 from src.config.settings import Settings
 from src.infrastructure.logging_handler import StructuredLogger
+from src.infrastructure.process_lifecycle import set_parent_death_signal
 from src.database.connection import DatabaseConnection
 from src.handlers.execution_handler import ExecutionHandler
 from src.repositories.case_repo import CaseRepository
@@ -205,6 +206,8 @@ def setup_signal_handlers(dashboard: DashboardProcess) -> None:
 def main() -> NoReturn:
     """The main entry point for the dashboard process."""
     try:
+        set_parent_death_signal()
+
         parser = argparse.ArgumentParser(description="MQI Communicator Dashboard")
         parser.add_argument("database_path", type=str, help="Path to the SQLite database file.")
         parser.add_argument("--config", type=str, help="Path to the YAML configuration file.", default=None)

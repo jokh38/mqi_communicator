@@ -19,6 +19,7 @@ from src.core.retry_policy import is_retryable_failed_case
 from src.database.connection import DatabaseConnection
 from src.handlers.execution_handler import ExecutionHandler
 from src.infrastructure.logging_handler import StructuredLogger
+from src.infrastructure.process_lifecycle import set_parent_death_signal
 from src.repositories.case_repo import CaseRepository
 from src.repositories.gpu_repo import GpuRepository
 from src.ui.provider import DashboardDataProvider
@@ -128,6 +129,8 @@ def _filter_cases(
 
 def create_app() -> FastAPI:
     """Create the FastAPI app."""
+    set_parent_death_signal()
+
     app = FastAPI(title="MQI Communicator Dashboard")
     app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
