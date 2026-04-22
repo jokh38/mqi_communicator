@@ -171,6 +171,7 @@
                                     <td class="px-3 py-2 text-gray-700">
                                         <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full
                                             {% if delivery.ptn_status == 'passed' %}bg-green-100 text-green-800
+                                            {% elif delivery.ptn_status == 'conditional' %}bg-amber-100 text-amber-800
                                             {% elif delivery.ptn_status == 'failed' %}bg-red-100 text-red-800
                                             {% else %}bg-gray-100 text-gray-800{% endif %}">
                                             {{ delivery.ptn_status or "Pending" }}

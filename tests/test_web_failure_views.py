@@ -214,3 +214,68 @@ def test_case_detail_renders_grouped_room_output_locations(tmp_path: Path):
     assert response.status_code == 200
     assert str(csv_case_dir) in response.text
     assert str(dicom_case_dir) in response.text
+
+
+def test_case_detail_renders_conditional_ptn_status_badge(tmp_path: Path):
+    provider = MagicMock()
+    raw_case = _failed_case_view(tmp_path)["case_data"]
+    provider.case_repo.get_case.return_value = raw_case
+    provider.case_repo.get_beams_for_case.return_value = []
+    provider.case_repo.get_deliveries_for_case.return_value = [
+        SimpleNamespace(
+            delivery_id="delivery-1",
+            beam_id="beam-1",
+            delivery_path=tmp_path / "case-failed" / "delivery-1",
+            delivery_timestamp="2026-04-22 01:23:45",
+            delivery_date="2026-04-22",
+            raw_beam_number=1,
+            treatment_beam_index=1,
+            is_reference_delivery=False,
+            ptn_status="conditional",
+            ptn_last_run_at=None,
+            gamma_pass_rate=90.0,
+            gamma_mean=0.5,
+            gamma_max=1.1,
+            evaluated_points=10,
+            report_path=None,
+            report_paths=[],
+            error_message=None,
+        )
+    ]
+    provider.case_repo.get_workflow_steps.return_value = []
+    provider._process_cases_with_beams_data.return_value = [
+        {
+            "case_data": raw_case,
+            "case_display": {
+                "case_id": raw_case.case_id,
+                "status": raw_case.status,
+                "status_label": "Failed",
+                "progress": raw_case.progress,
+                "assigned_gpu": None,
+                "elapsed_time": 10.0,
+                "beam_count": 0,
+                "interpreter_done": True,
+                "error_message": raw_case.error_message,
+                "failure_category": raw_case.failure_category,
+                "failure_phase": raw_case.failure_phase,
+                "failure_details": raw_case.failure_details,
+                "retry_count": raw_case.retry_count,
+                "result_summary": {
+                    "terminal_status": "Failed",
+                    "has_saved_output": False,
+                    "output_locations": [],
+                },
+            },
+            "beams": [],
+        }
+    ]
+
+    app = create_app()
+    app.state.provider = provider
+    client = TestClient(app)
+
+    response = client.get(f"/ui/cases/{raw_case.case_id}/details")
+
+    assert response.status_code == 200
+    assert "conditional" in response.text
+    assert "bg-amber-100 text-amber-800" in response.text

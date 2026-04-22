@@ -99,6 +99,7 @@ class PtnCheckerIntegration:
         bootstrap = textwrap.dedent(
             """
             import json
+            import inspect
             import sys
             from pathlib import Path
 
@@ -109,7 +110,59 @@ class PtnCheckerIntegration:
 
             sys.path.insert(0, str(repo_root))
 
-            from main import run_analysis
+            import main as ptn_main
+
+            run_analysis = ptn_main.run_analysis
+            derive_report_name = getattr(ptn_main, "derive_report_name", None)
+
+            _METRIC_KEYS = {
+                "pass_rate",
+                "gamma_mean",
+                "gamma_max",
+                "evaluated_point_count",
+            }
+
+            def _strip_results_for_communicator(value):
+                if isinstance(value, dict):
+                    stripped = {}
+                    for key, item in value.items():
+                        if str(key).startswith("_") or key in {"report_path", "report_paths"}:
+                            stripped[str(key)] = _strip_results_for_communicator(item)
+                            continue
+
+                        if not isinstance(item, dict):
+                            stripped[str(key)] = _strip_results_for_communicator(item)
+                            continue
+
+                        layers = item.get("layers")
+                        if not isinstance(layers, list):
+                            stripped[str(key)] = _strip_results_for_communicator(item)
+                            continue
+
+                        stripped_layers = []
+                        for layer in layers:
+                            if not isinstance(layer, dict):
+                                continue
+                            results = layer.get("results", {})
+                            layer_payload = {
+                                "results": {
+                                    metric_key: _make_json_safe(results.get(metric_key))
+                                    for metric_key in _METRIC_KEYS
+                                    if metric_key in results
+                                },
+                            }
+                            if "layer_index" in layer:
+                                layer_payload["layer_index"] = _make_json_safe(layer.get("layer_index"))
+                            stripped_layers.append(layer_payload)
+
+                        beam_payload = {"layers": stripped_layers}
+                        if "beam_number" in item:
+                            beam_payload["beam_number"] = _make_json_safe(item.get("beam_number"))
+                        stripped[str(key)] = beam_payload
+                    return stripped
+                if isinstance(value, (list, tuple, set)):
+                    return [_strip_results_for_communicator(item) for item in value]
+                return _make_json_safe(value)
 
             def _make_json_safe(value):
                 if isinstance(value, dict):
@@ -132,8 +185,12 @@ class PtnCheckerIntegration:
                     return value
                 return str(value)
 
-            result = run_analysis(log_dir, dcm_file, output_dir)
-            print(json.dumps(_make_json_safe(result)))
+            report_name = derive_report_name(log_dir) if callable(derive_report_name) else None
+            if "report_name" in inspect.signature(run_analysis).parameters:
+                result = run_analysis(log_dir, dcm_file, output_dir, report_name=report_name)
+            else:
+                result = run_analysis(log_dir, dcm_file, output_dir)
+            print(json.dumps(_strip_results_for_communicator(result)))
             """
         )
 
