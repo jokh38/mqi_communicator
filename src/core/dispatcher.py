@@ -592,6 +592,36 @@ def _summarize_point_gamma_metrics(analysis_data: Optional[Dict[str, Any]]) -> D
     }
 
 
+def _derive_delivery_ptn_status(success: bool, metrics: Dict[str, Any]) -> str:
+    """Map PTN checker output to the dashboard-visible delivery status."""
+    if success and metrics:
+        gamma_pass_rate = metrics.get("gamma_pass_rate", 0.0)
+        if gamma_pass_rate >= 95.0:
+            return "passed"
+        if gamma_pass_rate >= 80.0:
+            return "conditional"
+    return "failed"
+
+
+def _build_fallback_delivery_record(
+    case_id: str,
+    delivery_path: Path,
+) -> Dict[str, Any]:
+    """Create a synthetic delivery row when PTN analysis has no delivery records."""
+    delivery_id = f"{case_id}__fallback_ptn_delivery"
+    return {
+        "delivery_id": delivery_id,
+        "beam_id": f"{case_id}_fallback_ptn_delivery",
+        "delivery_path": delivery_path,
+        "delivery_timestamp": delivery_path.name,
+        "delivery_date": delivery_path.name,
+        "raw_beam_number": None,
+        "treatment_beam_index": None,
+        "is_reference_delivery": False,
+        "fraction_index": None,
+    }
+
+
 def run_case_level_ptn_analysis(
     case_id: str,
     case_path: Path,
@@ -648,12 +678,33 @@ def run_case_level_ptn_analysis(
         if not deliveries:
             ptn_files = validator.find_ptn_files(case_path)
             if ptn_files:
+                fallback_delivery = _build_fallback_delivery_record(
+                    case_id=case_id,
+                    delivery_path=ptn_files[0].parent,
+                )
+                case_repo.create_or_update_deliveries(case_id, [fallback_delivery])
                 fallback_result = integration.run_analysis(
                     log_dir=ptn_files[0].parent,
                     dcm_file=rtplan_path,
                     output_dir=default_output_dir,
                 )
                 metrics = _summarize_point_gamma_metrics(fallback_result.analysis_data)
+                fallback_ptn_status = _derive_delivery_ptn_status(
+                    fallback_result.success,
+                    metrics,
+                )
+                case_repo.record_delivery_analysis_result(
+                    delivery_id=fallback_delivery["delivery_id"],
+                    status_code=fallback_ptn_status,
+                    last_run_at=datetime.now(),
+                    gamma_pass_rate=metrics.get("gamma_pass_rate"),
+                    gamma_mean=metrics.get("gamma_mean"),
+                    gamma_max=metrics.get("gamma_max"),
+                    evaluated_points=metrics.get("evaluated_points"),
+                    report_path=fallback_result.report_path,
+                    report_paths=fallback_result.report_paths,
+                    error_message=fallback_result.error_message,
+                )
                 case_repo.record_ptn_checker_result(
                     case_id=case_id,
                     status_code=fallback_result.status_code,
@@ -667,10 +718,22 @@ def run_case_level_ptn_analysis(
                     error_message=fallback_result.error_message,
                     metadata={
                         "message": "PTN checker analysis finished via fallback single-log execution.",
-                        "status_code": fallback_result.status_code,
+                        "status_code": fallback_ptn_status,
                         "output_dir": str(fallback_result.output_dir or default_output_dir),
                         "gamma_pass_rate": metrics.get("gamma_pass_rate"),
                         "gamma_mean": metrics.get("gamma_mean"),
+                        "gamma_max": metrics.get("gamma_max"),
+                        "evaluated_points": metrics.get("evaluated_points"),
+                        "report_path": (
+                            str(fallback_result.report_path)
+                            if fallback_result.report_path
+                            else None
+                        ),
+                        "report_paths": (
+                            [str(path) for path in fallback_result.report_paths]
+                            if fallback_result.report_paths
+                            else None
+                        ),
                     },
                 )
                 return fallback_result
@@ -711,17 +774,7 @@ def run_case_level_ptn_analysis(
                 output_dir=default_output_dir,
             )
             metrics = _summarize_point_gamma_metrics(result.analysis_data)
-            # Match the dashboard status thresholds to the PTN PDF verdicts.
-            if result.success and metrics:
-                gamma_pass_rate = metrics.get("gamma_pass_rate", 0.0)
-                if gamma_pass_rate >= 95.0:
-                    delivery_ptn_status = "passed"
-                elif gamma_pass_rate >= 80.0:
-                    delivery_ptn_status = "conditional"
-                else:
-                    delivery_ptn_status = "failed"
-            else:
-                delivery_ptn_status = "failed"
+            delivery_ptn_status = _derive_delivery_ptn_status(result.success, metrics)
             case_repo.record_delivery_analysis_result(
                 delivery_id=delivery.delivery_id,
                 status_code=delivery_ptn_status,

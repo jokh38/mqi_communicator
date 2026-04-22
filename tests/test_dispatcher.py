@@ -822,3 +822,79 @@ def test_run_case_level_ptn_checker_analysis_marks_conditional_delivery_status(m
 
     assert result.success is True
     assert case_repo.record_delivery_analysis_result.call_args.kwargs["status_code"] == "conditional"
+
+
+def test_run_case_level_ptn_checker_analysis_fallback_persists_structured_delivery_data(
+    mock_settings,
+):
+    dispatcher = importlib.import_module("src.core.dispatcher")
+    logger = MagicMock()
+    case_repo = MagicMock()
+    case_repo.get_deliveries_for_case.return_value = []
+    context_manager = MagicMock()
+    context_manager.__enter__.return_value = case_repo
+    context_manager.__exit__.return_value = False
+
+    validator = MagicMock()
+    validator.find_rtplan_file.return_value = Path("cases") / "case-1" / "RP.test.dcm"
+    fallback_ptn_path = Path("cases") / "case-1" / "beam-1" / "delivered.ptn"
+    validator.find_ptn_files.return_value = [fallback_ptn_path]
+
+    integration = MagicMock()
+    integration.run_analysis.return_value = dispatcher.PtnCheckerResult(
+        success=True,
+        status_code="SUCCESS",
+        output_dir=Path("tmp") / "Daily" / "case-1",
+        analysis_data={
+            "Beam 1": {
+                "layers": [
+                    {
+                        "results": {
+                            "evaluated_point_count": 10,
+                            "pass_rate": 0.90,
+                            "gamma_mean": 0.5,
+                            "gamma_max": 1.1,
+                        }
+                    }
+                ]
+            }
+        },
+        report_path=Path("tmp") / "Daily" / "case-1" / "summary.pdf",
+        report_paths=[
+            Path("tmp") / "Daily" / "case-1" / "summary.pdf",
+            Path("tmp") / "Daily" / "case-1" / "detail.pdf",
+        ],
+    )
+
+    with patch.object(dispatcher.LoggerFactory, "get_logger", return_value=logger), \
+         patch.object(dispatcher, "get_db_session", return_value=context_manager), \
+         patch.object(dispatcher, "DataIntegrityValidator", return_value=validator), \
+         patch.object(dispatcher, "create_ptn_checker_integration", return_value=integration):
+        result = dispatcher.run_case_level_ptn_analysis(
+            case_id="case-1",
+            case_path=Path("cases") / "case-1",
+            settings=mock_settings,
+        )
+
+    assert result.success is True
+    case_repo.create_or_update_deliveries.assert_called_once()
+    synthetic_delivery = case_repo.create_or_update_deliveries.call_args.args[1][0]
+    assert synthetic_delivery["delivery_path"] == fallback_ptn_path.parent
+    assert synthetic_delivery["beam_id"] == "case-1_fallback_ptn_delivery"
+
+    case_repo.record_delivery_analysis_result.assert_called_once()
+    assert case_repo.record_delivery_analysis_result.call_args.kwargs == {
+        "delivery_id": synthetic_delivery["delivery_id"],
+        "status_code": "conditional",
+        "last_run_at": case_repo.record_delivery_analysis_result.call_args.kwargs["last_run_at"],
+        "gamma_pass_rate": 90.0,
+        "gamma_mean": 0.5,
+        "gamma_max": 1.1,
+        "evaluated_points": 10,
+        "report_path": Path("tmp") / "Daily" / "case-1" / "summary.pdf",
+        "report_paths": [
+            Path("tmp") / "Daily" / "case-1" / "summary.pdf",
+            Path("tmp") / "Daily" / "case-1" / "detail.pdf",
+        ],
+        "error_message": None,
+    }
