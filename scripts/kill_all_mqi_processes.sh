@@ -5,7 +5,11 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 REPO_ROOT="$(dirname "$PROJECT_DIR")"
 
-CONFIG_PATH="${1:-config/config.yaml}"
+if [[ $# -gt 0 ]]; then
+    CONFIG_PATH="$1"
+else
+    CONFIG_PATH="$PROJECT_DIR/config/config.yaml"
+fi
 DRY_RUN="${MQI_KILL_SCRIPT_DRY_RUN:-0}"
 
 MAIN_RUNTIME_FILE="$PROJECT_DIR/.runtime/main_process.json"

@@ -144,3 +144,68 @@ esac
 
     assert "[dry-run] rm -f" in result.stdout
     assert "MQI process cleanup complete" in result.stdout
+
+
+def test_kill_all_mqi_processes_script_default_config_works_from_scripts_dir(
+    tmp_path: Path,
+) -> None:
+    repo_root = Path(__file__).resolve().parent.parent
+
+    log_path = tmp_path / "commands.log"
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+
+    _write_executable(
+        bin_dir / "sudo",
+        f"""#!/usr/bin/env bash
+set -euo pipefail
+printf 'sudo:%s\\n' "$*" >> "{log_path}"
+"$@"
+""",
+    )
+    _write_executable(
+        bin_dir / "systemctl",
+        f"""#!/usr/bin/env bash
+set -euo pipefail
+printf 'systemctl:%s\\n' "$*" >> "{log_path}"
+""",
+    )
+    _write_executable(
+        bin_dir / "pgrep",
+        f"""#!/usr/bin/env bash
+set -euo pipefail
+printf 'pgrep:%s\\n' "$*" >> "{log_path}"
+""",
+    )
+    _write_executable(
+        bin_dir / "lsof",
+        f"""#!/usr/bin/env bash
+set -euo pipefail
+printf 'lsof:%s\\n' "$*" >> "{log_path}"
+""",
+    )
+    _write_executable(
+        bin_dir / "fuser",
+        f"""#!/usr/bin/env bash
+set -euo pipefail
+printf 'fuser:%s\\n' "$*" >> "{log_path}"
+""",
+    )
+
+    env = os.environ.copy()
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    env["MQI_KILL_SCRIPT_DRY_RUN"] = "1"
+
+    result = subprocess.run(
+        ["./kill_all_mqi_processes.sh"],
+        cwd=repo_root / "scripts",
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Config file not found" not in result.stderr
+    assert "[dry-run] sudo systemctl stop mqi_communicator.service" in result.stdout
+    assert "MQI process cleanup complete" in result.stdout
