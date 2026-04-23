@@ -30,10 +30,23 @@ def _case(case_id: str, status: CaseStatus, retry_count: int = 0, error_message:
     )
 
 
+def _build_ready_case_tree(case_path: Path, *, marker: bool = True) -> None:
+    delivery_path = case_path / "2026031923483900"
+    delivery_path.mkdir(parents=True)
+    (case_path / "RP.test.dcm").write_text("", encoding="ascii")
+    (delivery_path / "PlanInfo.txt").write_text(
+        "DICOM_PATIENT_ID,04198922\nDICOM_BEAM_NUMBER,2\n",
+        encoding="ascii",
+    )
+    (delivery_path / "sample.ptn").write_text("", encoding="ascii")
+    if marker:
+        (case_path / "_CASE_READY").write_text("ready\n", encoding="ascii")
+
+
 def test_scan_existing_cases_skips_failed_case(tmp_path):
     """Non-retryable FAILED cases should remain skipped."""
     case_path = tmp_path / "55061194"
-    case_path.mkdir()
+    _build_ready_case_tree(case_path)
 
     settings = MagicMock()
     settings.get_case_directories.return_value = {"scan": tmp_path}
@@ -56,7 +69,7 @@ def test_scan_existing_cases_skips_failed_case(tmp_path):
 
 def test_scan_existing_cases_requeues_retryable_failed_case_without_incrementing_retry_count(tmp_path):
     case_path = tmp_path / "55061194"
-    case_path.mkdir()
+    _build_ready_case_tree(case_path)
 
     settings = MagicMock()
     settings.get_case_directories.return_value = {"scan": tmp_path}
@@ -86,7 +99,7 @@ def test_scan_existing_cases_requeues_retryable_failed_case_without_incrementing
 
 def test_scan_existing_cases_skips_completed_case(tmp_path):
     case_path = tmp_path / "55061194"
-    case_path.mkdir()
+    _build_ready_case_tree(case_path)
 
     settings = MagicMock()
     settings.get_case_directories.return_value = {"scan": tmp_path}
@@ -109,7 +122,7 @@ def test_scan_existing_cases_skips_completed_case(tmp_path):
 
 def test_scan_existing_cases_requeues_processing_case(tmp_path):
     case_path = tmp_path / "55061194"
-    case_path.mkdir()
+    _build_ready_case_tree(case_path)
 
     settings = MagicMock()
     settings.get_case_directories.return_value = {"scan": tmp_path}
@@ -145,7 +158,7 @@ def test_case_detection_handler_queues_completed_case_when_ptn_file_stabilizes(t
     handler.case_repo.get_case.return_value = _case("55061194", CaseStatus.COMPLETED)
 
     case_path = tmp_path / "55061194"
-    case_path.mkdir()
+    _build_ready_case_tree(case_path)
     ptn_file = case_path / "delivered.ptn"
     ptn_file.write_text("stable", encoding="utf-8")
     event = SimpleNamespace(is_directory=False, src_path=str(ptn_file))
@@ -213,7 +226,7 @@ def test_case_detection_handler_allows_retryable_failed_directory_event(tmp_path
     )
 
     case_path = tmp_path / "55061194"
-    case_path.mkdir()
+    _build_ready_case_tree(case_path)
     event = SimpleNamespace(is_directory=True, src_path=str(case_path))
 
     with patch("src.core.workflow_manager._queue_case", return_value=True) as queue_mock:
@@ -222,17 +235,44 @@ def test_case_detection_handler_allows_retryable_failed_directory_event(tmp_path
     queue_mock.assert_called_once_with("55061194", case_path, case_queue, logger)
 
 
+def test_case_detection_handler_ignores_group_directory_without_ready_marker(tmp_path):
+    case_queue = MagicMock()
+    logger = MagicMock()
+    handler = CaseDetectionHandler(case_queue, logger)
+    handler.settings = MagicMock()
+    handler.case_repo = MagicMock()
+
+    group_path = tmp_path / "g1"
+    group_path.mkdir()
+    event = SimpleNamespace(is_directory=True, src_path=str(group_path))
+
+    with patch("src.core.workflow_manager._queue_case", return_value=True) as queue_mock:
+        handler.on_created(event)
+
+    queue_mock.assert_not_called()
+
+
+def test_case_detection_handler_ignores_case_directory_until_ready_marker_exists(tmp_path):
+    case_queue = MagicMock()
+    logger = MagicMock()
+    handler = CaseDetectionHandler(case_queue, logger)
+    handler.settings = MagicMock()
+    handler.case_repo = MagicMock()
+
+    case_path = tmp_path / "1.2.3.4"
+    _build_ready_case_tree(case_path, marker=False)
+    event = SimpleNamespace(is_directory=True, src_path=str(case_path))
+
+    with patch("src.core.workflow_manager._queue_case", return_value=True) as queue_mock:
+        handler.on_created(event)
+
+    queue_mock.assert_not_called()
+
+
 def test_scan_existing_cases_discovers_nested_study_directories(tmp_path):
     scan_root = tmp_path / "G1"
     study_path = scan_root / "04198922" / "1.2.3.4"
-    delivery_path = study_path / "2026031923483900"
-    delivery_path.mkdir(parents=True)
-    (study_path / "RP.test.dcm").write_text("", encoding="ascii")
-    (delivery_path / "PlanInfo.txt").write_text(
-        "DICOM_PATIENT_ID,04198922\nDICOM_BEAM_NUMBER,2\n",
-        encoding="ascii",
-    )
-    (delivery_path / "sample.ptn").write_text("", encoding="ascii")
+    _build_ready_case_tree(study_path)
 
     settings = MagicMock()
     settings.get_case_directories.return_value = {"scan": scan_root}
@@ -255,14 +295,7 @@ def test_scan_existing_cases_discovers_nested_study_directories(tmp_path):
 
 def test_derive_case_identity_uses_study_uid_in_grouped_layout(tmp_path):
     study_path = tmp_path / "G2" / "1.2.840.10008.1.2.3"
-    delivery_path = study_path / "2026031923483900"
-    delivery_path.mkdir(parents=True)
-    (study_path / "RP.test.dcm").write_text("", encoding="ascii")
-    (delivery_path / "PlanInfo.txt").write_text(
-        "DICOM_PATIENT_ID,04198922\nDICOM_BEAM_NUMBER,2\n",
-        encoding="ascii",
-    )
-    (delivery_path / "sample.ptn").write_text("", encoding="ascii")
+    _build_ready_case_tree(study_path)
 
     case_id, case_path = _derive_case_identity(study_path)
 
@@ -309,14 +342,7 @@ def test_case_detection_handler_queues_moved_case_directory(tmp_path):
     handler = CaseDetectionHandler(case_queue, logger)
 
     study_path = tmp_path / "G1" / "1.2.840.10008.1.2.3"
-    delivery_path = study_path / "2026031923483900"
-    delivery_path.mkdir(parents=True)
-    (study_path / "RP.test.dcm").write_text("", encoding="ascii")
-    (delivery_path / "PlanInfo.txt").write_text(
-        "DICOM_PATIENT_ID,04198922\nDICOM_BEAM_NUMBER,2\n",
-        encoding="ascii",
-    )
-    (delivery_path / "sample.ptn").write_text("", encoding="ascii")
+    _build_ready_case_tree(study_path)
 
     event = SimpleNamespace(
         is_directory=True,
@@ -336,14 +362,7 @@ def test_case_detection_handler_debounces_duplicate_directory_events(tmp_path):
     handler = CaseDetectionHandler(case_queue, logger)
 
     study_path = tmp_path / "G1" / "1.2.840.10008.1.2.3"
-    delivery_path = study_path / "2026031923483900"
-    delivery_path.mkdir(parents=True)
-    (study_path / "RP.test.dcm").write_text("", encoding="ascii")
-    (delivery_path / "PlanInfo.txt").write_text(
-        "DICOM_PATIENT_ID,04198922\nDICOM_BEAM_NUMBER,2\n",
-        encoding="ascii",
-    )
-    (delivery_path / "sample.ptn").write_text("", encoding="ascii")
+    _build_ready_case_tree(study_path)
     event = SimpleNamespace(is_directory=True, src_path=str(study_path))
 
     with patch("src.core.workflow_manager._queue_case", return_value=True) as queue_mock:

@@ -1,4 +1,5 @@
 import importlib
+import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -236,6 +237,50 @@ def test_run_case_level_csv_interpreting_writes_grouped_room_output(
         ],
         cwd=Path("opt") / "mqi_interpreter",
     )
+
+
+@patch("src.core.dispatcher.get_db_session")
+@patch("src.core.dispatcher.ExecutionHandler")
+@patch("subprocess.run")
+def test_run_case_level_csv_interpreting_falls_back_when_configured_python_lacks_numpy(
+    mock_subprocess_run,
+    mock_exec_handler_cls,
+    mock_get_db_session,
+    mock_settings,
+):
+    dispatcher = importlib.import_module("src.core.dispatcher")
+    mock_exec_handler_instance = MagicMock(spec=ExecutionHandler)
+    mock_exec_handler_instance.execute_command.return_value = ExecutionResult(
+        success=True, output="", error="", return_code=0
+    )
+    mock_exec_handler_cls.return_value = mock_exec_handler_instance
+    mock_case_repo = MagicMock()
+    context_manager = MagicMock()
+    context_manager.__enter__.return_value = mock_case_repo
+    context_manager.__exit__.return_value = False
+    mock_get_db_session.return_value = context_manager
+
+    def _probe(command, **kwargs):
+        if command[0] == str(Path("usr") / "bin" / "python3"):
+            raise subprocess.CalledProcessError(
+                returncode=1, cmd=command, stderr="No module named numpy"
+            )
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    mock_subprocess_run.side_effect = _probe
+
+    case_id = "test_case_01"
+    case_path = Path("dummypath") / "test_case_01"
+
+    success = dispatcher.run_case_level_csv_interpreting(case_id, case_path, mock_settings)
+
+    if success is not True:
+        raise AssertionError("CSV interpreting should succeed with interpreter fallback")
+    called_command = mock_exec_handler_instance.execute_command.call_args.args[0]
+    if called_command[0] == str(Path("usr") / "bin" / "python3"):
+        raise AssertionError(
+            f"Expected a fallback interpreter, got configured interpreter {called_command[0]!r}"
+        )
 
 
 def test_run_case_level_tps_generation_writes_tps_files_under_log_csv(

@@ -3,6 +3,8 @@
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional
+import subprocess
+import sys
 
 from src.config.settings import Settings
 from src.handlers.execution_handler import ExecutionHandler
@@ -24,6 +26,57 @@ from src.core.workflow_manager import (
     derive_room_from_case_path,
 )
 from src.integrations.ptn_checker import PtnCheckerIntegration, PtnCheckerResult
+
+
+def _python_can_import_numpy(python_executable: str, working_directory: Path) -> bool:
+    """Return True when the interpreter can import numpy from the target runtime."""
+    try:
+        subprocess.run(
+            [python_executable, "-c", "import numpy"],
+            check=True,
+            capture_output=True,
+            text=True,
+            cwd=working_directory,
+            timeout=10,
+        )
+        return True
+    except (FileNotFoundError, subprocess.SubprocessError):
+        return False
+
+
+def _resolve_csv_interpreter_python(
+    configured_python: str,
+    interpreter_directory: Path,
+    logger: StructuredLogger,
+) -> str:
+    """Pick a Python interpreter that can actually run mqi_interpreter dependencies."""
+    candidates = [
+        configured_python,
+        str(interpreter_directory / ".venv" / "bin" / "python3"),
+        sys.executable,
+    ]
+
+    seen = set()
+    ordered_candidates = []
+    for candidate in candidates:
+        if candidate and candidate not in seen:
+            ordered_candidates.append(candidate)
+            seen.add(candidate)
+
+    for candidate in ordered_candidates:
+        if _python_can_import_numpy(candidate, interpreter_directory):
+            if candidate != configured_python:
+                logger.warning(
+                    "Configured CSV interpreter Python is missing runtime dependencies; using fallback",
+                    {"configured_python": configured_python, "fallback_python": candidate},
+                )
+            return candidate
+
+    logger.warning(
+        "No CSV interpreter Python candidate passed dependency probe; using configured interpreter",
+        {"configured_python": configured_python},
+    )
+    return configured_python
 
 def _resolve_treatment_beam_index_from_raw_number(
     raw_beam_number: int, beam_metadata: List[Dict[str, Any]]
@@ -167,9 +220,14 @@ def run_case_level_csv_interpreting(case_id: str, case_path: Path,
             python_exe = settings.get_executable("python", handler_name="CsvInterpreter")
             mqi_script = settings.get_executable("mqi_interpreter_script", handler_name="CsvInterpreter")
             mqi_interpreter_dir = settings.get_path("mqi_interpreter_dir", handler_name="CsvInterpreter")
+            resolved_python = _resolve_csv_interpreter_python(
+                configured_python=str(python_exe),
+                interpreter_directory=Path(mqi_interpreter_dir),
+                logger=logger,
+            )
 
             command = [
-                str(python_exe),
+                str(resolved_python),
                 str(mqi_script),
                 "--logdir",
                 str(case_path),

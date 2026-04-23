@@ -22,6 +22,8 @@ from src.utils.db_context import get_db_session
 from src.core.case_aggregator import queue_case as _queue_case
 from src.core.retry_policy import is_retryable_failed_case
 
+_READY_MARKER = "_CASE_READY"
+
 
 def _looks_like_case_directory(path: Path) -> bool:
     """Return True for a study directory containing an RTPLAN and delivery subfolders."""
@@ -36,6 +38,11 @@ def _looks_like_case_directory(path: Path) -> bool:
         for child in path.iterdir()
     )
     return has_rtplan and has_delivery_subdir
+
+
+def _is_ready_case_directory(path: Path) -> bool:
+    """Return True only for fully published case roots."""
+    return _looks_like_case_directory(path) and (path / _READY_MARKER).exists()
 
 
 def _derive_case_identity(case_path: Path) -> tuple[str, Path]:
@@ -399,6 +406,9 @@ class CaseDetectionHandler(FileSystemEventHandler):
             return
 
         if not is_directory:
+            return
+
+        if queue_reason != "ptn_checker" and not _is_ready_case_directory(path):
             return
 
         case_id, case_path = _derive_case_identity(path)
