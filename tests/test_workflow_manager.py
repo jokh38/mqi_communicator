@@ -7,6 +7,8 @@ from unittest.mock import MagicMock, patch
 from src.domain.enums import CaseStatus
 from src.core.workflow_manager import (
     CaseDetectionHandler,
+    _derive_case_identity,
+    _discover_case_directories,
     derive_room_from_case_path,
     derive_room_from_path,
     scan_existing_cases,
@@ -243,6 +245,112 @@ def test_scan_existing_cases_discovers_nested_study_directories(tmp_path):
     context_manager = MagicMock()
     context_manager.__enter__.return_value = case_repo
     context_manager.__exit__.return_value = False
+
+    with patch("src.core.workflow_manager.get_db_session", return_value=context_manager), \
+         patch("src.core.workflow_manager._queue_case", return_value=True) as queue_mock:
+        scan_existing_cases(case_queue, settings, logger)
+
+    queue_mock.assert_called_once_with("1.2.3.4", study_path, case_queue, logger)
+
+
+def test_derive_case_identity_uses_study_uid_in_grouped_layout(tmp_path):
+    study_path = tmp_path / "G2" / "1.2.840.10008.1.2.3"
+    delivery_path = study_path / "2026031923483900"
+    delivery_path.mkdir(parents=True)
+    (study_path / "RP.test.dcm").write_text("", encoding="ascii")
+    (delivery_path / "PlanInfo.txt").write_text(
+        "DICOM_PATIENT_ID,04198922\nDICOM_BEAM_NUMBER,2\n",
+        encoding="ascii",
+    )
+    (delivery_path / "sample.ptn").write_text("", encoding="ascii")
+
+    case_id, case_path = _derive_case_identity(study_path)
+
+    assert case_id == "1.2.840.10008.1.2.3"
+    assert case_path == study_path
+
+
+def test_discover_case_directories_does_not_fallback_to_group_directory(tmp_path):
+    scan_root = tmp_path
+    study_path = scan_root / "G2" / "1.2.840.10008.1.2.3"
+    delivery_path = study_path / "2026031923483900"
+    delivery_path.mkdir(parents=True)
+    (study_path / "RP.test.dcm").write_text("", encoding="ascii")
+    (delivery_path / "PlanInfo.txt").write_text(
+        "DICOM_PATIENT_ID,04198922\nDICOM_BEAM_NUMBER,2\n",
+        encoding="ascii",
+    )
+    (delivery_path / "sample.ptn").write_text("", encoding="ascii")
+
+    discovered = _discover_case_directories(scan_root)
+
+    assert discovered == [("1.2.840.10008.1.2.3", study_path)]
+
+
+def test_case_detection_handler_ignores_extracting_directory_events(tmp_path):
+    case_queue = MagicMock()
+    logger = MagicMock()
+    handler = CaseDetectionHandler(case_queue, logger)
+
+    event = SimpleNamespace(
+        is_directory=True,
+        src_path=str(tmp_path / "extract_123.tmp" / "study"),
+    )
+
+    with patch("src.core.workflow_manager._queue_case", return_value=True) as queue_mock:
+        handler.on_created(event)
+
+    queue_mock.assert_not_called()
+
+
+def test_case_detection_handler_queues_moved_case_directory(tmp_path):
+    case_queue = MagicMock()
+    logger = MagicMock()
+    handler = CaseDetectionHandler(case_queue, logger)
+
+    study_path = tmp_path / "G1" / "1.2.840.10008.1.2.3"
+    delivery_path = study_path / "2026031923483900"
+    delivery_path.mkdir(parents=True)
+    (study_path / "RP.test.dcm").write_text("", encoding="ascii")
+    (delivery_path / "PlanInfo.txt").write_text(
+        "DICOM_PATIENT_ID,04198922\nDICOM_BEAM_NUMBER,2\n",
+        encoding="ascii",
+    )
+    (delivery_path / "sample.ptn").write_text("", encoding="ascii")
+
+    event = SimpleNamespace(
+        is_directory=True,
+        src_path=str(tmp_path / "staging" / "ignored"),
+        dest_path=str(study_path),
+    )
+
+    with patch("src.core.workflow_manager._queue_case", return_value=True) as queue_mock:
+        handler.on_moved(event)
+
+    queue_mock.assert_called_once_with("1.2.840.10008.1.2.3", study_path, case_queue, logger)
+
+
+def test_case_detection_handler_debounces_duplicate_directory_events(tmp_path):
+    case_queue = MagicMock()
+    logger = MagicMock()
+    handler = CaseDetectionHandler(case_queue, logger)
+
+    study_path = tmp_path / "G1" / "1.2.840.10008.1.2.3"
+    delivery_path = study_path / "2026031923483900"
+    delivery_path.mkdir(parents=True)
+    (study_path / "RP.test.dcm").write_text("", encoding="ascii")
+    (delivery_path / "PlanInfo.txt").write_text(
+        "DICOM_PATIENT_ID,04198922\nDICOM_BEAM_NUMBER,2\n",
+        encoding="ascii",
+    )
+    (delivery_path / "sample.ptn").write_text("", encoding="ascii")
+    event = SimpleNamespace(is_directory=True, src_path=str(study_path))
+
+    with patch("src.core.workflow_manager._queue_case", return_value=True) as queue_mock:
+        handler.on_created(event)
+        handler.on_created(event)
+
+    queue_mock.assert_called_once_with("1.2.840.10008.1.2.3", study_path, case_queue, logger)
 
 
 def test_derive_room_helpers_support_grouped_and_flat_paths(tmp_path):

@@ -267,3 +267,51 @@ def test_process_new_case_skips_retryable_failed_case_at_retry_limit():
 
     case_repo.reset_case_and_beams_for_retry.assert_not_called()
     case_repo.increment_retry_count.assert_not_called()
+
+
+def test_process_new_case_skips_processing_case():
+    app = MQIApplication(config_path=Path("config/config.yaml"))
+    app.logger = MagicMock()
+    app.settings = _mock_settings()
+    app.fraction_tracker = MagicMock()
+
+    case_repo = MagicMock()
+    case_repo.get_case.return_value = _existing_case(CaseStatus.PROCESSING)
+    repo_context = MagicMock()
+    repo_context.__enter__.return_value = case_repo
+    repo_context.__exit__.return_value = False
+
+    with patch("main.get_db_session", return_value=repo_context):
+        app._process_new_case(
+            {"case_id": "55061194", "case_path": "/cases/55061194"},
+            MagicMock(),
+            {},
+            {},
+        )
+
+    case_repo.reset_case_and_beams_for_retry.assert_not_called()
+    case_repo.increment_retry_count.assert_not_called()
+
+
+def test_process_new_case_skips_csv_interpreting_case():
+    app = MQIApplication(config_path=Path("config/config.yaml"))
+    app.logger = MagicMock()
+    app.settings = _mock_settings()
+    app.fraction_tracker = MagicMock()
+
+    case_repo = MagicMock()
+    case_repo.get_case.return_value = _existing_case(CaseStatus.CSV_INTERPRETING)
+    repo_context = MagicMock()
+    repo_context.__enter__.return_value = case_repo
+    repo_context.__exit__.return_value = False
+
+    with patch("main.get_db_session", return_value=repo_context):
+        app._process_new_case(
+            {"case_id": "55061194", "case_path": "/cases/55061194"},
+            MagicMock(),
+            {},
+            {},
+        )
+
+    case_repo.reset_case_and_beams_for_retry.assert_not_called()
+    case_repo.increment_retry_count.assert_not_called()

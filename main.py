@@ -548,7 +548,12 @@ class MQIApplication:
 
             _existing = case_repo.get_case(case_id)
             if _existing:
-                if _existing.status in {CaseStatus.COMPLETED, CaseStatus.CANCELLED}:
+                if _existing.status in {
+                    CaseStatus.COMPLETED,
+                    CaseStatus.CANCELLED,
+                    CaseStatus.PROCESSING,
+                    CaseStatus.CSV_INTERPRETING,
+                }:
                     self.logger.info(
                         f"Skipping already-{_existing.status.value} case {case_id}"
                     )

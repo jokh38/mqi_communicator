@@ -45,9 +45,6 @@ def _derive_case_identity(case_path: Path) -> tuple[str, Path]:
       <scan_root>/<patient_id>/<study_uid>/<delivery_timestamp>
     """
     if _looks_like_case_directory(case_path):
-        patient_candidate = case_path.parent.name if case_path.parent else case_path.name
-        if patient_candidate and patient_candidate != case_path.name:
-            return patient_candidate, case_path
         return case_path.name, case_path
 
     if case_path.parent and _looks_like_case_directory(case_path.parent):
@@ -75,10 +72,21 @@ def _discover_case_directories(scan_directory: Path) -> List[tuple[str, Path]]:
     if discovered:
         return discovered
 
-    # Backward-compatible fallback: treat immediate child directories as cases.
+    # Legacy fallback: search one level below immediate children so grouped
+    # layouts still resolve to study directories rather than room/group roots.
     fallback = []
     for item in scan_directory.iterdir():
-        if item.is_dir():
+        if not item.is_dir():
+            continue
+        if _looks_like_case_directory(item):
+            fallback.append(_derive_case_identity(item))
+            continue
+        found_nested_case = False
+        for child in item.iterdir():
+            if child.is_dir() and _looks_like_case_directory(child):
+                fallback.append(_derive_case_identity(child))
+                found_nested_case = True
+        if not found_nested_case and item.name not in {"G1", "G2"}:
             fallback.append((item.name, item))
     fallback.sort(key=lambda item: (item[0], str(item[1])))
     return fallback
@@ -334,6 +342,8 @@ class CaseDetectionHandler(FileSystemEventHandler):
         self.logger = logger
         self.settings = None
         self.case_repo = None
+        self._recent_queue_events: Dict[tuple[str, str], float] = {}
+        self._debounce_seconds = 5.0
 
     def on_created(self, event) -> None:
         """Handles the 'created' event from the file system watcher."""
@@ -343,9 +353,57 @@ class CaseDetectionHandler(FileSystemEventHandler):
         """Handles PTN modifications after file writes settle."""
         self._handle_event(event)
 
+    def on_moved(self, event) -> None:
+        """Handle atomic directory moves into the watched tree."""
+        target_path = getattr(event, "dest_path", None)
+        if target_path is None:
+            return
+        self._handle_event_for_path(
+            path=Path(target_path),
+            is_directory=event.is_directory,
+            queue_reason=None,
+            original_event=event,
+        )
+
     def _handle_event(self, event) -> None:
+        src_path = Path(event.src_path)
         if event.is_directory:
-            case_id, case_path = _derive_case_identity(Path(event.src_path))
+            self._handle_event_for_path(
+                path=src_path,
+                is_directory=True,
+                queue_reason=None,
+                original_event=event,
+            )
+            return
+
+        if src_path.suffix.lower() != ".ptn" or self.settings is None:
+            return
+
+        self._handle_event_for_path(
+            path=src_path.parent,
+            is_directory=True,
+            queue_reason="ptn_checker",
+            original_event=event,
+            observed_ptn_path=src_path,
+        )
+
+    def _handle_event_for_path(
+        self,
+        path: Path,
+        is_directory: bool,
+        queue_reason: Optional[str],
+        original_event,
+        observed_ptn_path: Optional[Path] = None,
+    ) -> None:
+        if self._should_ignore_path(path):
+            return
+
+        if not is_directory:
+            return
+
+        case_id, case_path = _derive_case_identity(path)
+
+        if queue_reason != "ptn_checker":
             # Defense in depth: the file watcher emits events for every
             # directory mutation (including ones from our own pipeline writing
             # CSVs/TPS files into the tree), which can redeliver an already
@@ -377,20 +435,24 @@ class CaseDetectionHandler(FileSystemEventHandler):
                         {
                             "case_id": case_id,
                             "status": status.value,
-                            "src_path": str(event.src_path),
+                            "src_path": str(getattr(original_event, "src_path", path)),
                         },
                     )
                     return
+
+            if self._is_duplicate_queue_event(case_id, queue_reason):
+                self.logger.debug(
+                    "Ignoring duplicate case event inside debounce window",
+                    {"case_id": case_id, "src_path": str(path)},
+                )
+                return
 
             self.logger.info(f"New case detected: {case_id} at {case_path}")
             _queue_case(case_id, case_path, self.case_queue, self.logger)
             return
 
-        src_path = Path(event.src_path)
-        if src_path.suffix.lower() != ".ptn" or self.settings is None:
+        if self.settings is None:
             return
-
-        case_id, case_path = _derive_case_identity(src_path.parent)
 
         if self.case_repo is not None:
             case_data = self.case_repo.get_case(case_id)
@@ -402,9 +464,36 @@ class CaseDetectionHandler(FileSystemEventHandler):
             case_data=case_data,
             case_path=case_path,
             settings=self.settings,
-            observed_ptn_files=[src_path],
+            observed_ptn_files=[observed_ptn_path] if observed_ptn_path is not None else None,
         ):
+            return
+
+        if self._is_duplicate_queue_event(case_id, queue_reason):
+            self.logger.debug(
+                "Ignoring duplicate PTN checker event inside debounce window",
+                {"case_id": case_id, "src_path": str(observed_ptn_path or path)},
+            )
             return
 
         self.logger.info(f"Stable PTN detected for completed case: {case_id}")
         _queue_case(case_id, case_path, self.case_queue, self.logger, reason="ptn_checker")
+
+    def _is_duplicate_queue_event(self, case_id: str, reason: Optional[str]) -> bool:
+        cache_key = (reason or "default", case_id)
+        now = time.monotonic()
+        last_seen = self._recent_queue_events.get(cache_key)
+        if last_seen is not None and now - last_seen < self._debounce_seconds:
+            return True
+        self._recent_queue_events[cache_key] = now
+        return False
+
+    def _should_ignore_path(self, path: Path) -> bool:
+        for part in path.parts:
+            lowered = part.lower()
+            if lowered.endswith(".extracting") or lowered.endswith(".zip.tmp"):
+                return True
+            if ".backup." in lowered:
+                return True
+            if lowered.startswith("extract_") and lowered.endswith(".tmp"):
+                return True
+        return False
