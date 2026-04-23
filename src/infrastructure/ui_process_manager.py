@@ -162,11 +162,6 @@ class UIProcessManager:
 
                 if platform.system() == "Windows":
                     popen_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
-                else:
-                    # Use a separate process group for web mode without fully
-                    # detaching the session; parent-death signaling still
-                    # enforces immediate shutdown when main.py exits.
-                    popen_kwargs["preexec_fn"] = os.setpgrp
 
                 self._process = subprocess.Popen(command, **popen_kwargs)
             else:
@@ -186,8 +181,6 @@ class UIProcessManager:
                             "cwd": str(self.project_root),
                             "creation_flags": creation_flags
                         })
-                else:
-                    popen_kwargs["start_new_session"] = True
 
                 self._process = subprocess.Popen(command, **popen_kwargs)
 
@@ -534,15 +527,18 @@ class UIProcessManager:
         return True
 
     def _check_port_available(self, port: int) -> bool:
-        """Check if port is available for binding."""
+        """Check if port is available for binding.
+
+        Uses SO_REUSEADDR to match uvicorn's actual bind behaviour so that
+        sockets lingering in TIME_WAIT do not cause a false EADDRINUSE.
+        """
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                 s.bind(('', port))
                 return True
         except OSError as exc:
             if getattr(exc, "errno", None) == errno.EADDRINUSE:
-                if self.logger:
-                    self.logger.error(f"Port {port} is already in use")
                 return False
 
             if self.logger:
@@ -617,13 +613,6 @@ class UIProcessManager:
                 "pid": owner_info.get("pid") if owner_info else None,
             })
         return True
-
-    def _find_next_available_web_port(self, start_port: int, max_attempts: int = 50) -> Optional[int]:
-        """Find the next available port at or above start_port."""
-        for candidate in range(start_port, start_port + max_attempts):
-            if self._check_port_available(candidate):
-                return candidate
-        return None
 
     def _reclaim_port_without_owner(self, port: int) -> bool:
         """Forcefully reclaim a port when the owning process cannot be identified."""

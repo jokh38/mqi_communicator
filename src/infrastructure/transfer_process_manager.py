@@ -54,8 +54,6 @@ class TransferProcessManager:
         }
         if platform.system() == "Windows":
             popen_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
-        else:
-            popen_kwargs["start_new_session"] = True
 
         try:
             self._process = subprocess.Popen(command, **popen_kwargs)
