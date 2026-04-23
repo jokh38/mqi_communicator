@@ -86,3 +86,32 @@ Initializing MQI Communicator - Clearing selected components
 ✓ Initialization complete: 22 item(s) removed
 ===================================================================
 ```
+
+## kill_all_mqi_processes.sh
+
+Stops `mqi_communicator` and `mqi-transfer` through `systemd`, then force-cleans up any remaining MQI-related processes.
+
+### Usage
+
+```bash
+./scripts/kill_all_mqi_processes.sh [config_path]
+```
+
+### What It Cleans Up
+
+- `mqi_communicator.service`
+- `mqi-transfer.service`
+- Runtime PIDs from `.runtime/main_process.json` and `.runtime/ui_process.pid`
+- Processes matching:
+  - `mqi_communicator/main.py`
+  - `uvicorn src.web.app:app`
+  - `mqi_transfer.py`
+- Any listener still bound to:
+  - the configured dashboard port from `config/config.yaml`
+  - the configured transfer port from `mqi_transfer/Linux/app_config.ini`
+
+### Notes
+
+- The script requires `sudo` because it stops `systemd` units first.
+- It removes stale runtime PID files after cleanup.
+- For safe inspection during testing, set `MQI_KILL_SCRIPT_DRY_RUN=1`.
