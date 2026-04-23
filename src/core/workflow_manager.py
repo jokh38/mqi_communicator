@@ -50,8 +50,16 @@ def _derive_case_identity(case_path: Path) -> tuple[str, Path]:
 
     Preferred structure:
       <scan_root>/<patient_id>/<study_uid>/<delivery_timestamp>
+
+    The case_id is the patient_id (the directory that holds the
+    _CASE_READY marker).  The case_path points to the study_uid
+    directory where the actual DICOM and delivery data live.
     """
     if _looks_like_case_directory(case_path):
+        # When _CASE_READY sits in the parent, that parent name is
+        # the patient/case ID, not the study UID directory name.
+        if (case_path.parent / _READY_MARKER).exists():
+            return case_path.parent.name, case_path
         return case_path.name, case_path
 
     if case_path.parent and _looks_like_case_directory(case_path.parent):
@@ -417,85 +425,91 @@ class CaseDetectionHandler(FileSystemEventHandler):
         if not is_directory:
             return
 
-        if queue_reason != "ptn_checker" and not _is_ready_case_directory(path):
-            return
-
-        case_id, case_path = _derive_case_identity(path)
-
         if queue_reason != "ptn_checker":
-            # Defense in depth: the file watcher emits events for every
-            # directory mutation (including ones from our own pipeline writing
-            # CSVs/TPS files into the tree), which can redeliver an already
-            # terminal case to the queue.  In serial multigpu mode those
-            # duplicates block the queue on a case that has nothing to do,
-            # so skip them before they ever reach the worker loop.
-            if self.settings is not None:
-                try:
-                    if self.case_repo is not None:
-                        case_data = self.case_repo.get_case(case_id)
-                    else:
-                        with get_db_session(self.settings, self.logger) as case_repo:
-                            case_data = case_repo.get_case(case_id)
-                except Exception as exc:
-                    self.logger.warning(
-                        "Failed to check case status before queuing; queuing anyway",
-                        {"case_id": case_id, "error": str(exc)},
-                    )
-                    case_data = None
-
-                status = getattr(case_data, "status", None) if case_data is not None else None
-                terminal_statuses = {CaseStatus.COMPLETED, CaseStatus.CANCELLED}
-                failed_and_non_retryable = (
-                    status == CaseStatus.FAILED and not is_retryable_failed_case(case_data)
-                )
-                if status in terminal_statuses or failed_and_non_retryable:
-                    self.logger.debug(
-                        "Ignoring directory event for terminal case",
-                        {
-                            "case_id": case_id,
-                            "status": status.value,
-                            "src_path": str(getattr(original_event, "src_path", path)),
-                        },
-                    )
-                    return
-
-            if self._is_duplicate_queue_event(case_id, queue_reason):
-                self.logger.debug(
-                    "Ignoring duplicate case event inside debounce window",
-                    {"case_id": case_id, "src_path": str(path)},
-                )
+            if _is_ready_case_directory(path):
+                # The event directory is itself a valid case root.
+                candidates = [_derive_case_identity(path)]
+            elif (path / _READY_MARKER).exists():
+                # The _CASE_READY marker is here but the actual case
+                # directories are nested inside (e.g. patient_id/study_uid).
+                candidates = _discover_case_directories(path)
+            else:
                 return
 
-            self.logger.info(f"New case detected: {case_id} at {case_path}")
-            _queue_case(case_id, case_path, self.case_queue, self.logger)
+            for case_id, case_path in candidates:
+                self._queue_if_eligible(case_id, case_path, original_event)
             return
 
         if self.settings is None:
             return
 
+        ptn_case_id, ptn_case_path = _derive_case_identity(path)
+
         if self.case_repo is not None:
-            case_data = self.case_repo.get_case(case_id)
+            case_data = self.case_repo.get_case(ptn_case_id)
         else:
             with get_db_session(self.settings, self.logger) as case_repo:
-                case_data = case_repo.get_case(case_id)
+                case_data = case_repo.get_case(ptn_case_id)
 
         if not should_route_case_to_ptn_checker(
             case_data=case_data,
-            case_path=case_path,
+            case_path=ptn_case_path,
             settings=self.settings,
             observed_ptn_files=[observed_ptn_path] if observed_ptn_path is not None else None,
         ):
             return
 
-        if self._is_duplicate_queue_event(case_id, queue_reason):
+        if self._is_duplicate_queue_event(ptn_case_id, queue_reason):
             self.logger.debug(
                 "Ignoring duplicate PTN checker event inside debounce window",
-                {"case_id": case_id, "src_path": str(observed_ptn_path or path)},
+                {"case_id": ptn_case_id, "src_path": str(observed_ptn_path or path)},
             )
             return
 
-        self.logger.info(f"Stable PTN detected for completed case: {case_id}")
-        _queue_case(case_id, case_path, self.case_queue, self.logger, reason="ptn_checker")
+        self.logger.info(f"Stable PTN detected for completed case: {ptn_case_id}")
+        _queue_case(ptn_case_id, ptn_case_path, self.case_queue, self.logger, reason="ptn_checker")
+
+    def _queue_if_eligible(self, case_id: str, case_path: Path, original_event) -> None:
+        """Check case status and queue it if not terminal or duplicate."""
+        if self.settings is not None:
+            try:
+                if self.case_repo is not None:
+                    case_data = self.case_repo.get_case(case_id)
+                else:
+                    with get_db_session(self.settings, self.logger) as case_repo:
+                        case_data = case_repo.get_case(case_id)
+            except Exception as exc:
+                self.logger.warning(
+                    "Failed to check case status before queuing; queuing anyway",
+                    {"case_id": case_id, "error": str(exc)},
+                )
+                case_data = None
+
+            status = getattr(case_data, "status", None) if case_data is not None else None
+            terminal_statuses = {CaseStatus.COMPLETED, CaseStatus.CANCELLED}
+            failed_and_non_retryable = (
+                status == CaseStatus.FAILED and not is_retryable_failed_case(case_data)
+            )
+            if status in terminal_statuses or failed_and_non_retryable:
+                self.logger.debug(
+                    "Ignoring directory event for terminal case",
+                    {
+                        "case_id": case_id,
+                        "status": status.value,
+                        "src_path": str(getattr(original_event, "src_path", case_path)),
+                    },
+                )
+                return
+
+        if self._is_duplicate_queue_event(case_id, None):
+            self.logger.debug(
+                "Ignoring duplicate case event inside debounce window",
+                {"case_id": case_id, "src_path": str(case_path)},
+            )
+            return
+
+        self.logger.info(f"New case detected: {case_id} at {case_path}")
+        _queue_case(case_id, case_path, self.case_queue, self.logger)
 
     def _is_duplicate_queue_event(self, case_id: str, reason: Optional[str]) -> bool:
         cache_key = (reason or "default", case_id)
