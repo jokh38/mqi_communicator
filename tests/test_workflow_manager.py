@@ -356,6 +356,21 @@ def test_case_detection_handler_queues_moved_case_directory(tmp_path):
     queue_mock.assert_called_once_with("1.2.840.10008.1.2.3", study_path, case_queue, logger)
 
 
+def test_case_detection_handler_queues_case_when_ready_marker_is_created(tmp_path):
+    case_queue = MagicMock()
+    logger = MagicMock()
+    handler = CaseDetectionHandler(case_queue, logger)
+
+    study_path = tmp_path / "G2" / "1.2.840.10008.1.2.3"
+    _build_ready_case_tree(study_path)
+    event = SimpleNamespace(is_directory=False, src_path=str(study_path / "_CASE_READY"))
+
+    with patch("src.core.workflow_manager._queue_case", return_value=True) as queue_mock:
+        handler.on_created(event)
+
+    queue_mock.assert_called_once_with("1.2.840.10008.1.2.3", study_path, case_queue, logger)
+
+
 def test_case_detection_handler_debounces_duplicate_directory_events(tmp_path):
     case_queue = MagicMock()
     logger = MagicMock()

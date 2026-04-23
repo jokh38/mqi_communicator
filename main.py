@@ -18,6 +18,8 @@ import sys
 import signal
 import time
 import os
+import configparser
+import socket
 import multiprocessing as mp
 from pathlib import Path
 from typing import Optional, NoReturn, Dict
@@ -106,6 +108,32 @@ class MQIApplication:
         """
         return CaseRepository(db_conn, self.logger)
 
+    def _use_external_transfer_service(self) -> bool:
+        """Return True when the transfer receiver is managed by systemd."""
+        value = os.environ.get("MQI_EXTERNAL_TRANSFER_SERVICE", "")
+        return value.lower() in {"1", "true", "yes", "on"}
+
+    def _get_transfer_listen_port(self) -> int:
+        """Read the transfer receiver port from the bundled config."""
+        transfer_config = (
+            Path(__file__).resolve().parent.parent / "mqi_transfer" / "Linux" / "app_config.ini"
+        )
+        config = configparser.ConfigParser()
+        if transfer_config.exists():
+            config.read(transfer_config)
+        return config.getint("server", "listen_port", fallback=80)
+
+    def _wait_for_transfer_port(self, port: int, timeout: float = 10.0) -> bool:
+        """Wait until the external transfer service accepts TCP connections."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                with socket.create_connection(("127.0.0.1", port), timeout=0.5):
+                    return True
+            except OSError:
+                time.sleep(0.25)
+        return False
+
     def _validate_scan_directory(self) -> Optional[Path]:
         """Validates and returns the scan directory from settings.
 
@@ -165,13 +193,24 @@ class MQIApplication:
     def start_dashboard(self) -> None:
         """Starts MQI Transfer first, then the dashboard UI in a separate process."""
         try:
-            self.transfer_process_manager = TransferProcessManager(
-                project_root=Path(__file__).resolve().parent.parent,
-                python_executable=sys.executable,
-                logger=self.logger,
-            )
-            if not self.transfer_process_manager.start():
-                raise RuntimeError("Failed to start MQI Transfer receiver on port 80")
+            if self._use_external_transfer_service():
+                listen_port = self._get_transfer_listen_port()
+                if not self._wait_for_transfer_port(listen_port):
+                    raise RuntimeError(
+                        f"External MQI Transfer receiver is not listening on port {listen_port}"
+                    )
+                self.logger.info(
+                    "Using external MQI Transfer service",
+                    {"port": listen_port},
+                )
+            else:
+                self.transfer_process_manager = TransferProcessManager(
+                    project_root=Path(__file__).resolve().parent.parent,
+                    python_executable=sys.executable,
+                    logger=self.logger,
+                )
+                if not self.transfer_process_manager.start():
+                    raise RuntimeError("Failed to start MQI Transfer receiver on port 80")
 
             if not self.settings.get_ui_config().get("auto_start", False):
                 self.logger.info("Dashboard auto-start disabled")

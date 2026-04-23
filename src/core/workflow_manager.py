@@ -383,6 +383,15 @@ class CaseDetectionHandler(FileSystemEventHandler):
             )
             return
 
+        if src_path.name == _READY_MARKER:
+            self._handle_event_for_path(
+                path=src_path.parent,
+                is_directory=True,
+                queue_reason=None,
+                original_event=event,
+            )
+            return
+
         if src_path.suffix.lower() != ".ptn" or self.settings is None:
             return
 

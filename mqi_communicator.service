@@ -1,0 +1,22 @@
+[Unit]
+Description=MQI Communicator
+Wants=network-online.target mqi-transfer.service
+After=network-online.target mqi-transfer.service
+Requires=mqi-transfer.service
+
+[Service]
+Type=simple
+User=jokh38
+Group=jokh38
+WorkingDirectory=/home/jokh38/MOQUI_SMC/mqi_communicator
+ExecStart=/home/jokh38/MOQUI_SMC/mqi_communicator/.venv/bin/python3 /home/jokh38/MOQUI_SMC/mqi_communicator/main.py config/config.yaml
+Restart=on-failure
+RestartSec=5
+KillMode=control-group
+KillSignal=SIGTERM
+TimeoutStopSec=30
+Environment=PYTHONUNBUFFERED=1
+Environment=MQI_EXTERNAL_TRANSFER_SERVICE=1
+
+[Install]
+WantedBy=multi-user.target

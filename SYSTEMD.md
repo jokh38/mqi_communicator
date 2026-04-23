@@ -11,6 +11,8 @@ Use `systemd` to launch `mqi_transfer.py` as a normal user and grant only the ca
 
 This is safer than starting the service with `sudo` because the process does not get full root privileges.
 
+When `mqi_communicator` is launched as a separate service, set `MQI_EXTERNAL_TRANSFER_SERVICE=1` so it uses the systemd-managed transfer service instead of spawning its own receiver.
+
 ## Suggested Service File
 
 Create `/etc/systemd/system/mqi-transfer.service`:
