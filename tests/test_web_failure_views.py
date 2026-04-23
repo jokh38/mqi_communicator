@@ -183,6 +183,27 @@ def test_workflow_view_renders_retryable_permanent_counts_and_phase_summary(tmp_
     assert "simulation" in response.text
 
 
+def test_log_modal_uses_bounded_dialog_width(tmp_path: Path):
+    provider = MagicMock()
+    case_view = _failed_case_view(tmp_path)
+    raw_case = case_view["case_data"]
+    provider.case_repo.get_case.return_value = raw_case
+    provider.case_repo.get_beams_for_case.return_value = []
+    provider.case_repo.get_workflow_steps.return_value = []
+    provider._process_cases_with_beams_data.return_value = [case_view]
+
+    app = create_app()
+    app.state.provider = provider
+    client = TestClient(app)
+
+    response = client.get(f"/ui/logs/{raw_case.case_id}")
+
+    assert response.status_code == 200
+    assert "Workflow Logs: case-failed" in response.text
+    assert 'data-modal-dialog class="relative transform overflow-hidden rounded-lg bg-white text-left shadow-xl transition-all w-full max-w-3xl' in response.text
+    assert '<span class="sr-only">Close</span>' not in response.text
+
+
 def test_case_detail_renders_grouped_room_output_locations(tmp_path: Path):
     case_repo = MagicMock()
     gpu_repo = MagicMock()
