@@ -42,7 +42,10 @@ def test_communicator_startup_fails_hard_if_transfer_cannot_start():
     app = MQIApplication(config_path=Path("mqi_communicator/config/config.yaml"))
     app.logger = MagicMock()
     app.settings = MagicMock()
-    app.settings.get_ui_config.return_value = {"auto_start": True, "web": {"enabled": True, "port": 8080}}
+    app.settings.get_ui_config.return_value = {
+        "auto_start": True,
+        "web": {"enabled": True, "port": 8080},
+    }
     app.settings.get_database_path.return_value = Path("/tmp/mqi_communicator.db")
     app.config_path = None
 
@@ -56,6 +59,37 @@ def test_communicator_startup_fails_hard_if_transfer_cannot_start():
 
     ui_manager_cls.assert_not_called()
     transfer_manager.start.assert_called_once()
+
+
+def test_communicator_startup_continues_when_dashboard_cannot_start():
+    app = MQIApplication(config_path=Path("mqi_communicator/config/config.yaml"))
+    app.logger = MagicMock()
+    app.settings = MagicMock()
+    app.settings.get_ui_config.return_value = {"auto_start": True, "web": {"enabled": True, "port": 8080}}
+    app.settings.get_database_path.return_value = Path("/tmp/mqi_communicator.db")
+    app.config_path = None
+
+    transfer_manager = MagicMock()
+    transfer_manager.start.return_value = True
+    ui_manager = MagicMock()
+    ui_manager.start.return_value = False
+
+    with patch("main.TransferProcessManager", return_value=transfer_manager), \
+         patch("main.UIProcessManager", return_value=ui_manager):
+        app.start_dashboard()
+
+    transfer_manager.start.assert_called_once()
+    transfer_manager.stop.assert_not_called()
+    ui_manager.start.assert_called_once()
+    app.logger.error.assert_called()
+
+
+def test_communicator_service_does_not_require_transfer_service():
+    service_text = Path("mqi_communicator.service").read_text(encoding="utf-8")
+
+    assert "Requires=mqi-transfer.service" not in service_text
+    assert "Wants=network-online.target mqi-transfer.service" in service_text
+    assert "After=network-online.target mqi-transfer.service" in service_text
 
 
 def test_transfer_manager_uses_configured_listen_port(tmp_path: Path):

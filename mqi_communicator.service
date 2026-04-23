@@ -2,7 +2,6 @@
 Description=MQI Communicator
 Wants=network-online.target mqi-transfer.service
 After=network-online.target mqi-transfer.service
-Requires=mqi-transfer.service
 
 [Service]
 Type=simple

@@ -191,7 +191,7 @@ class MQIApplication:
             self.logger.error("Failed to start file watcher", {"error": str(e)})
 
     def start_dashboard(self) -> None:
-        """Starts MQI Transfer first, then the dashboard UI in a separate process."""
+        """Starts MQI Transfer first, then optionally starts the dashboard UI."""
         try:
             if self._use_external_transfer_service():
                 listen_port = self._get_transfer_listen_port()
@@ -211,7 +211,17 @@ class MQIApplication:
                 )
                 if not self.transfer_process_manager.start():
                     raise RuntimeError("Failed to start MQI Transfer receiver on port 80")
+        except Exception as e:
+            self.logger.error("Failed to start MQI Transfer receiver", {"error": str(e)})
+            if self.transfer_process_manager:
+                self.transfer_process_manager.stop()
+            raise
 
+        self._start_dashboard_ui()
+
+    def _start_dashboard_ui(self) -> None:
+        """Starts the optional dashboard UI without making communicator startup fatal."""
+        try:
             if not self.settings.get_ui_config().get("auto_start", False):
                 self.logger.info("Dashboard auto-start disabled")
                 return
@@ -266,12 +276,14 @@ class MQIApplication:
                         self.logger.info(f"  → {url}")
                     self.logger.info("=" * 60)
             else:
-                raise RuntimeError("Failed to start dashboard UI process on port 8080")
+                self.logger.error(
+                    "Failed to start dashboard UI process; communicator will continue without dashboard"
+                )
         except Exception as e:
-            self.logger.error("Failed to start dashboard", {"error": str(e)})
-            if self.transfer_process_manager:
-                self.transfer_process_manager.stop()
-            raise
+            self.logger.error(
+                "Failed to start dashboard UI process; communicator will continue without dashboard",
+                {"error": str(e)},
+            )
 
     def start_gpu_monitor(self) -> None:
         """Starts the GPU monitoring service in a background thread."""
