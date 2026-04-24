@@ -283,10 +283,13 @@ class TpsGenerator:
         Returns:
             Dict[str, Any]: Dictionary containing format context for templates.
         """
-        # Get base_directory from config
-        base_dir = self.settings._yaml_config.get("paths", {}).get(
-            "base_directory", "/home/SMC/MOQUI_SMC"
-        )
+        try:
+            base_dir = self.settings.get_path(
+                "base_directory", handler_name="CsvInterpreter"
+            )
+        except (KeyError, ValueError):
+            base_dir = "/home/SMC/MOQUI_SMC"
+
         from src.core.workflow_manager import derive_room_from_path
 
         room = derive_room_from_path(case_path, self.settings)
@@ -359,7 +362,7 @@ class TpsGenerator:
         """
         try:
             # Get required parameters from config
-            tps_config = self.settings._yaml_config.get("tps_generator", {})
+            tps_config = self.settings.get_tps_generator_config()
             validation_config = tps_config.get("validation", {})
             required_params = validation_config.get("required_params", [])
             if not required_params:

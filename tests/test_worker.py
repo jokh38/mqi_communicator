@@ -13,8 +13,8 @@ from src.domain.enums import GpuStatus
 
 
 @patch("src.core.worker.allocate_gpus_for_pending_beams")
-@patch("src.repositories.gpu_repo.GpuRepository")
-@patch("src.utils.db_context.get_db_session")
+@patch("src.core.worker.GpuRepository")
+@patch("src.core.worker.get_db_session")
 @patch("src.core.worker.TpsGenerator")
 @patch("src.core.worker.submit_beam_worker")
 def test_try_allocate_pending_beams_uses_persisted_beam_number(
@@ -169,7 +169,7 @@ def test_try_allocate_pending_beams_writes_grouped_room_tps_files():
 
     assert (
         tps_generator.generate_tps_file_with_gpu_assignments.call_args.kwargs["output_dir"]
-        == Path("tmp") / "csv_output" / "G1" / "case-1"
+        == Path("tmp") / "csv_output" / "G1" / "case-1" / "Log_csv"
     )
 
 

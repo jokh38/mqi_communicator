@@ -66,6 +66,12 @@ def _get_case_queue(request: Request):
     return getattr(request.app.state, "case_queue", None)
 
 
+async def _run_sync_for_request(request: Request, func, *args):
+    if getattr(request.app.state, "run_sync_inline", False):
+        return func(*args)
+    return await asyncio.to_thread(func, *args)
+
+
 def _find_delivery(provider: DashboardDataProvider, case_id: str, delivery_id: str) -> Optional[Dict[str, Any]]:
     """Resolve a single delivery view row for a case."""
     deliveries = provider.case_repo.get_deliveries_for_case(case_id)
@@ -141,7 +147,7 @@ def create_app() -> FastAPI:
     @app.get("/ui/workflow", response_class=HTMLResponse)
     async def workflow(request: Request) -> HTMLResponse:
         provider = _get_provider(request)
-        await asyncio.to_thread(provider.refresh_all_data)
+        await _run_sync_for_request(request, provider.refresh_all_data)
         return templates.TemplateResponse(
             request,
             "workflow.html",
@@ -162,7 +168,9 @@ def create_app() -> FastAPI:
         selected_case_id: str = "",
     ) -> HTMLResponse:
         provider = _get_provider(request)
-        raw_cases = await asyncio.to_thread(provider.case_repo.get_all_cases_with_beams)
+        raw_cases = await _run_sync_for_request(
+            request, provider.case_repo.get_all_cases_with_beams
+        )
         processed_cases = provider._process_cases_with_beams_data(
             raw_cases,
             include_result_summary=False,

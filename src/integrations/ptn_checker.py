@@ -243,23 +243,6 @@ class PtnCheckerIntegration:
 
         raise RuntimeError(output)
 
-    def _load_run_analysis(self):
-        module_path = self.ptn_checker_path / "main.py"
-        if not module_path.exists():
-            raise FileNotFoundError(f"PTN checker entrypoint not found: {module_path}")
-
-        spec = importlib.util.spec_from_file_location("external_ptn_checker_main", module_path)
-        if spec is None or spec.loader is None:
-            raise ImportError(f"Could not load PTN checker module from {module_path}")
-
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-
-        run_analysis = getattr(module, "run_analysis", None)
-        if run_analysis is None:
-            raise AttributeError(f"run_analysis not found in {module_path}")
-        return run_analysis
-
     def _extract_report_path(self, analysis_data: Optional[Dict[str, Any]]) -> Optional[Path]:
         report_paths = self._extract_report_paths(analysis_data)
         if report_paths:

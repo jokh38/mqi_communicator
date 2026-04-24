@@ -216,6 +216,109 @@ def test_init_db_migrates_legacy_gpu_assignment_foreign_key_to_beams(tmp_path: P
         raise AssertionError(f"Expected migrated assignment 'beam-1', got {migrated_row[0]!r}")
 
 
+def test_init_db_preserves_has_live_compute_during_gpu_assignment_fk_migration(tmp_path: Path) -> None:
+    """Rebuilding gpu_resources for FK migration must not drop live-compute state."""
+    db_path = tmp_path / "legacy_gpu_live_compute.db"
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        """
+        CREATE TABLE cases (
+            case_id TEXT PRIMARY KEY,
+            case_path TEXT NOT NULL DEFAULT '/tmp/case-1',
+            status TEXT NOT NULL DEFAULT 'pending',
+            progress REAL DEFAULT 0.0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            error_message TEXT,
+            assigned_gpu TEXT,
+            interpreter_completed BOOLEAN DEFAULT 0,
+            retry_count INTEGER DEFAULT 0
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE beams (
+            beam_id TEXT PRIMARY KEY,
+            parent_case_id TEXT NOT NULL,
+            beam_path TEXT NOT NULL,
+            beam_number INTEGER,
+            status TEXT NOT NULL,
+            progress REAL DEFAULT 0.0,
+            hpc_job_id TEXT,
+            error_message TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (parent_case_id) REFERENCES cases (case_id)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE gpu_resources (
+            uuid TEXT PRIMARY KEY,
+            gpu_index INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            memory_total INTEGER NOT NULL,
+            memory_used INTEGER NOT NULL,
+            memory_free INTEGER NOT NULL,
+            temperature INTEGER NOT NULL,
+            utilization INTEGER NOT NULL,
+            core_clock INTEGER NOT NULL DEFAULT 0,
+            has_live_compute BOOLEAN NOT NULL DEFAULT 0,
+            status TEXT NOT NULL,
+            assigned_case TEXT,
+            last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (assigned_case) REFERENCES cases (case_id)
+        )
+        """
+    )
+    conn.execute("INSERT INTO cases (case_id) VALUES ('case-1')")
+    conn.execute(
+        """
+        INSERT INTO beams (
+            beam_id, parent_case_id, beam_path, beam_number, status, progress
+        ) VALUES ('beam-1', 'case-1', '/tmp/beam-1', 1, 'pending', 0.0)
+        """
+    )
+    conn.execute("PRAGMA foreign_keys = OFF")
+    conn.execute(
+        """
+        INSERT INTO gpu_resources (
+            uuid, gpu_index, name, memory_total, memory_used, memory_free,
+            temperature, utilization, core_clock, has_live_compute, status, assigned_case
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        ("GPU-1", 0, "RTX 3090", 24576, 1024, 23552, 30, 5, 1500, 1, "assigned", "beam-1"),
+    )
+    conn.commit()
+    conn.close()
+
+    settings = Mock()
+    settings.get_database_config.return_value = {
+        "connection_timeout_seconds": 30,
+        "journal_mode": "WAL",
+        "synchronous": "NORMAL",
+        "cache_size": -2000,
+    }
+    logger = Mock()
+
+    db = DatabaseConnection(db_path=db_path, settings=settings, logger=logger)
+    try:
+        db.init_db()
+        migrated_row = db.connection.execute(
+            "SELECT has_live_compute FROM gpu_resources WHERE uuid = ?",
+            ("GPU-1",),
+        ).fetchone()
+    finally:
+        db.close()
+
+    if migrated_row is None:
+        raise AssertionError("Expected migrated GPU row to exist")
+    if migrated_row[0] != 1:
+        raise AssertionError(f"Expected has_live_compute=1 after migration, got {migrated_row[0]!r}")
+
+
 def test_find_and_lock_multiple_gpus_reserves_without_persisting_case_id(tmp_path: Path) -> None:
     """Fresh reservations should not persist case IDs into the beam assignment column."""
     db_path = tmp_path / "gpu_reservation.db"

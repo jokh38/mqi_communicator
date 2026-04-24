@@ -1,12 +1,30 @@
+import asyncio
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from fastapi.testclient import TestClient
+import httpx
 
 from src.domain.enums import CaseStatus
 from src.web.app import create_app
+
+
+class ASGITestClient:
+    def __init__(self, app):
+        self.app = app
+        self.app.state.run_sync_inline = True
+
+    def get(self, path: str):
+        return asyncio.run(self._request("GET", path))
+
+    def post(self, path: str):
+        return asyncio.run(self._request("POST", path))
+
+    async def _request(self, method: str, path: str):
+        transport = httpx.ASGITransport(app=self.app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            return await client.request(method, path)
 
 
 def _case(
@@ -72,7 +90,7 @@ def test_case_detail_context_exposes_retry_eligibility(tmp_path: Path):
 
     app = create_app()
     app.state.provider = provider
-    client = TestClient(app)
+    client = ASGITestClient(app)
 
     response = client.get(f"/ui/cases/{raw_case.case_id}/details")
 
@@ -88,7 +106,7 @@ def test_retry_post_endpoint_rejects_ineligible_case(tmp_path: Path):
     app = create_app()
     app.state.provider = provider
     app.state.case_queue = MagicMock()
-    client = TestClient(app)
+    client = ASGITestClient(app)
 
     response = client.post(f"/ui/cases/{raw_case.case_id}/retry")
 
@@ -106,7 +124,7 @@ def test_retry_post_endpoint_resets_increments_and_requeues_eligible_case(tmp_pa
     app = create_app()
     app.state.provider = provider
     app.state.case_queue = MagicMock()
-    client = TestClient(app)
+    client = ASGITestClient(app)
 
     response = client.post(f"/ui/cases/{raw_case.case_id}/retry")
 

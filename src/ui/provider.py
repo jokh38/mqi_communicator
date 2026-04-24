@@ -164,26 +164,6 @@ class DashboardDataProvider:
 
         return metrics
 
-    def _process_case_data(self, raw_cases: List[CaseData]) -> List[Dict[str, Any]]:
-        """Processes raw case data into a format suitable for display.
-
-        Args:
-            raw_cases (List[CaseData]): A list of raw case data.
-
-        Returns:
-            List[Dict[str, Any]]: A list of processed case data.
-        """
-        processed_cases = []
-        for case in raw_cases:
-            processed_cases.append({
-                "case_id": case.case_id,
-                "status": case.status,
-                "progress": case.progress,
-                "assigned_gpu": case.assigned_gpu,
-                "elapsed_time": (datetime.now(timezone.utc) - case.created_at.replace(tzinfo=timezone.utc)).total_seconds() if case.created_at else 0
-            })
-        return processed_cases
-
     def _process_gpu_data(
         self,
         raw_gpu_data: List[GpuResource],

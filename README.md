@@ -190,8 +190,6 @@ Development dependencies:
 - `flake8` — linting
 - `mypy` — type checking
 
-Note: `paramiko` is listed in requirements.txt but is not used by the current local-only `ExecutionHandler`.
-
 System prerequisites used by the code are documented in
 [`docs/system-prerequisites.md`](docs/system-prerequisites.md).
 
@@ -251,7 +249,6 @@ This section documents behavior that is visible in the code today and is easy to
 - HPC connection settings are read from `connections.hpc`, not `hpc_connection`.
 - Result upload behavior depends on the `ResultUploader` handler mode.
 - Remote simulation submission exists, but remote job completion monitoring is currently much lighter than the local log-based progress tracking path.
-- `paramiko` is listed in `requirements.txt` but the current `ExecutionHandler` is local-only and does not use SSH.
 - The web dashboard reads state from SQLite on each page load; there are no live-update mechanisms.
 - The process registry prevents duplicate instances by writing to `.runtime/main_process.json` and terminating stale processes on startup.
 - Case retry: on startup, cases in `PENDING`, `CSV_INTERPRETING`, `PROCESSING`, or `POSTPROCESSING` status are re-queued up to `max_case_retries` (default 3). `COMPLETED`, `FAILED`, and `CANCELLED` cases are never automatically retried.

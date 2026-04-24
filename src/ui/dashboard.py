@@ -12,14 +12,11 @@ manager in its own process space.
 
 import sys
 import signal
-import os
 import time
-import json
 from pathlib import Path
 from typing import NoReturn, Optional, Dict, Any
 import argparse
-from datetime import datetime, timezone, timedelta
-from logging.handlers import RotatingFileHandler
+from datetime import datetime
 import logging
 from src.config.settings import Settings
 from src.infrastructure.logging_handler import StructuredLogger
@@ -87,6 +84,7 @@ class DashboardProcess:
                 "database_path": self.database_path
             })
         except Exception as e:
+            # Logger initialization failed; stderr/stdout is the only available channel.
             print(f"Failed to initialize logging: {e}")
             sys.exit(1)
     
@@ -176,6 +174,7 @@ class DashboardProcess:
             if self.logger:
                 self.logger.error("Dashboard process failed", {"error": str(e)})
             else:
+                # Failure happened before logger initialization completed.
                 print(f"Dashboard process failed: {e}")
         finally:
             self.cleanup()
@@ -187,7 +186,11 @@ class DashboardProcess:
             if self.logger:
                 self.logger.info("Dashboard process cleanup complete")
         except Exception as e:
-            print(f"Error during cleanup: {e}")
+            if self.logger:
+                self.logger.error("Error during cleanup", {"error": str(e)})
+            else:
+                # Failure happened before logger initialization completed.
+                print(f"Error during cleanup: {e}")
 
 
 def setup_signal_handlers(dashboard: DashboardProcess) -> None:
@@ -252,7 +255,7 @@ def main() -> NoReturn:
             f.write("Traceback:\n")
             traceback.print_exc(file=f)
 
-        # Also print to stderr for immediate feedback if possible
+        # Pre-logger emergency path: also print to stderr for immediate feedback.
         print(f"CRITICAL: Dashboard failed to start. See {error_log_path.resolve()} for details.", file=sys.stderr)
         sys.exit(1)
 

@@ -24,8 +24,8 @@ class TestProgressTrackingBaseline:
         state = InitialState()
         mock_context = Mock()
         mock_context.id = "test_beam_123"
-        mock_context.path = Mock()
-        mock_context.path.is_dir = Mock(return_value=True)
+        mock_context.path = Path("/tmp/csv_output/case_123/test_beam_123")
+        mock_context.path.mkdir(parents=True, exist_ok=True)
         mock_context.logger = Mock()
         mock_context.case_repo = Mock()
         mock_context.shared_context = {}
@@ -51,7 +51,8 @@ class TestProgressTrackingBaseline:
             mock_context.case_repo.get_beam = Mock(return_value=mock_beam)
 
             # Create TPS file
-            tps_dir = Path("/tmp/csv_output/case_123")
+            mock_context.path.mkdir(parents=True, exist_ok=True)
+            tps_dir = Path("/tmp/csv_output/case_123/Log_csv")
             tps_dir.mkdir(parents=True, exist_ok=True)
             tps_file = tps_dir / "moqui_tps_test_beam_123.in"
             tps_file.touch()
@@ -71,6 +72,8 @@ class TestProgressTrackingBaseline:
                     tps_file.unlink()
                 if tps_dir.exists():
                     tps_dir.rmdir()
+                if mock_context.path.exists():
+                    mock_context.path.rmdir()
                 if tps_dir.parent.exists():
                     tps_dir.parent.rmdir()
 
@@ -82,8 +85,8 @@ class TestProgressTrackingBaseline:
         state = InitialState()
         mock_context = Mock()
         mock_context.id = "test_beam_456"
-        mock_context.path = Mock()
-        mock_context.path.is_dir = Mock(return_value=True)
+        mock_context.path = Path("/tmp/csv_output2/case_456/test_beam_456")
+        mock_context.path.mkdir(parents=True, exist_ok=True)
         mock_context.logger = Mock()
         mock_context.case_repo = Mock()
         mock_context.shared_context = {}
@@ -105,7 +108,7 @@ class TestProgressTrackingBaseline:
         mock_context.case_repo.get_beam = Mock(return_value=mock_beam)
 
         # Create TPS file
-        tps_dir = Path("/tmp/csv_output2/case_456")
+        tps_dir = Path("/tmp/csv_output2/case_456/Log_csv")
         tps_dir.mkdir(parents=True, exist_ok=True)
         tps_file = tps_dir / "moqui_tps_test_beam_456.in"
         tps_file.touch()
@@ -124,6 +127,8 @@ class TestProgressTrackingBaseline:
                 tps_file.unlink()
             if tps_dir.exists():
                 tps_dir.rmdir()
+            if mock_context.path.exists():
+                mock_context.path.rmdir()
             if tps_dir.parent.exists():
                 tps_dir.parent.rmdir()
 

@@ -39,13 +39,15 @@ def test_load_execution_handler_settings(temp_config_file: Path):
 
 def test_repo_config_uses_built_moqui_runtime_dir() -> None:
     settings = Settings(config_path=Path("config/config.yaml"))
+    base_directory = settings._yaml_config["paths"]["base_directory"]
 
-    if settings.get_path("mqi_run_dir", handler_name="HpcJobSubmitter") != "/home/SMC/MOQUI_SMC/moqui_SMC":
+    if settings.get_path("mqi_run_dir", handler_name="HpcJobSubmitter") != f"{base_directory}/moqui_SMC":
         raise AssertionError("mqi_run_dir should resolve to the moqui repo root")
 
 
 def test_repo_config_runs_built_tps_env_from_moqui_root() -> None:
     settings = Settings(config_path=Path("config/config.yaml"))
+    base_directory = settings._yaml_config["paths"]["base_directory"]
 
     command = settings.get_command(
         "submit_simulation",
@@ -54,15 +56,16 @@ def test_repo_config_runs_built_tps_env_from_moqui_root() -> None:
         beam_id="55061194_2025042401440800",
     )
 
-    if "cd /home/SMC/MOQUI_SMC/moqui_SMC" not in command:
+    if f"cd {base_directory}/moqui_SMC" not in command:
         raise AssertionError(f"Unexpected runtime command: {command}")
-    expected_exec = "./build/tps_env/tps_env /home/SMC/MOQUI_SMC/data/Output/55061194/Log_csv/moqui_tps_55061194_2025042401440800.in"
+    expected_exec = f"./build/tps_env/tps_env {base_directory}/data/Output/55061194/Log_csv/moqui_tps_55061194_2025042401440800.in"
     if expected_exec not in command:
         raise AssertionError(f"Expected executable path missing from command: {command}")
 
 
 def test_repo_config_uses_single_case_prefix_in_sim_log_name() -> None:
     settings = Settings(config_path=Path("config/config.yaml"))
+    base_directory = settings._yaml_config["paths"]["base_directory"]
 
     log_path = settings.get_path(
         "log_path",
@@ -71,7 +74,7 @@ def test_repo_config_uses_single_case_prefix_in_sim_log_name() -> None:
         beam_id="55061194_2025042401440800",
     )
 
-    if log_path != "/home/SMC/MOQUI_SMC/mqi_communicator/logs/sim_55061194_2025042401440800.log":
+    if log_path != f"{base_directory}/mqi_communicator/logs/sim_55061194_2025042401440800.log":
         raise AssertionError(f"Unexpected log path: {log_path}")
 
 
@@ -90,10 +93,11 @@ def test_repo_config_exposes_moqui_runtime_section() -> None:
 
 def test_repo_config_exposes_ptn_checker_section() -> None:
     settings = Settings(config_path=Path("config/config.yaml"))
+    base_directory = settings._yaml_config["paths"]["base_directory"]
 
     ptn_config = settings.get_ptn_checker_config()
 
-    if ptn_config["path"] != "/home/SMC/MOQUI_SMC/ptn_checker":
+    if ptn_config["path"] != f"{base_directory}/ptn_checker":
         raise AssertionError(f"Unexpected PTN checker path: {ptn_config!r}")
     if ptn_config["output_subdir"] != "ptn_checker_output":
         raise AssertionError(f"Unexpected PTN checker output_subdir: {ptn_config!r}")
@@ -101,6 +105,7 @@ def test_repo_config_exposes_ptn_checker_section() -> None:
 
 def test_repo_config_resolves_ptn_checker_output_dir_with_room_grouping() -> None:
     settings = Settings(config_path=Path("config/config.yaml"))
+    base_directory = settings._yaml_config["paths"]["base_directory"]
 
     grouped_output = settings.get_path(
         "ptn_checker_output_dir",
@@ -117,16 +122,17 @@ def test_repo_config_resolves_ptn_checker_output_dir_with_room_grouping() -> Non
         room_path="",
     )
 
-    if grouped_output != "/home/SMC/MOQUI_SMC/data/Output/G1/55061194/Daily_PTN":
+    if grouped_output != f"{base_directory}/data/Output/G1/55061194/Daily_PTN":
         raise AssertionError(f"Unexpected grouped PTN checker output dir: {grouped_output}")
-    if flat_output != "/home/SMC/MOQUI_SMC/data/Output/55061194/Daily_PTN":
+    if flat_output != f"{base_directory}/data/Output/55061194/Daily_PTN":
         raise AssertionError(f"Unexpected flat PTN checker output dir: {flat_output}")
 
 
 def test_settings_resolves_repo_relative_config_when_cwd_differs() -> None:
     settings = Settings(config_path=Path("config/config.yaml"))
+    base_directory = settings._yaml_config["paths"]["base_directory"]
 
     scan_directory = settings.get_case_directories()["scan"]
 
-    if scan_directory != Path("/home/SMC/MOQUI_SMC/data/SHI_log"):
+    if scan_directory != Path(f"{base_directory}/data/SHI_log"):
         raise AssertionError(f"Expected repo-relative config resolution, got {scan_directory!r}")

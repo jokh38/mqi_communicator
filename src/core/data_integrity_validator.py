@@ -2,16 +2,15 @@
 # Target File: src/core/data_integrity_validator.py
 # =====================================================================================
 """
-Data integrity validation module for ensuring complete data transfer.
+Data integrity validation module for RT plan and beam metadata checks.
 
 This module provides functionality to:
 1. Read RT plan DICOM files to determine expected beam/field count
-2. Validate that all expected subfolders are present after data transfer
-3. Ensure data transfer completion before processing begins
+2. Extract treatment beam metadata before processing begins
 """
 
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 import pydicom
 from pydicom.errors import InvalidDicomError
 import re
@@ -166,104 +165,9 @@ class DataIntegrityValidator:
             return beam_count
 
         except InvalidDicomError as e:
-            raise ProcessingError(f"Invalid DICOM file: {str(e)}")
+            raise ProcessingError(f"Invalid DICOM file: {str(e)}") from e
         except Exception as e:
-            raise ProcessingError(f"Error parsing RT plan file: {str(e)}")
-
-    def count_beam_subdirectories(self, case_path: Path) -> int:
-        """
-        Count the number of beam subdirectories in the case directory.
-
-        Args:
-            case_path: Path to the case directory
-
-        Returns:
-            Number of subdirectories found
-        """
-        try:
-            subdirs = [d for d in case_path.iterdir() if d.is_dir()]
-            count = len(subdirs)
-            self.logger.debug(f"Found {count} subdirectories in {case_path}")
-            return count
-        except Exception as e:
-            self.logger.error(f"Error counting subdirectories in " f"{case_path}: {str(e)}")
-            return 0
-
-    def validate_data_transfer_completion(
-        self, case_id: str, case_path: Path
-    ) -> Tuple[bool, str]:
-        """
-        Validate that data transfer is complete for a case.
-
-        This function:
-        1. Finds and parses the RT plan file to get expected beam count
-        2. Counts actual beam subdirectories present
-        3. Validates that the counts match
-
-        Args:
-            case_id: The case identifier
-            case_path: Path to the case directory
-
-        Returns:
-            Tuple of (is_valid, error_message)
-            - is_valid: True if data transfer appears complete
-            - error_message: Error description if validation fails, empty string if valid
-        """
-        try:
-            self.logger.info(f"Validating data transfer completion for " f"case: {case_id}")
-
-            # Step 1: Find RT plan file
-            rtplan_path = self.find_rtplan_file(case_path)
-            if not rtplan_path:
-                error_msg = f"No RT plan file found in case directory: " f"{case_path}"
-                self.logger.warning(error_msg)
-                return False, error_msg
-
-            # Step 2: Parse RT plan to get expected beam count
-            try:
-                expected_beam_count = self.parse_rtplan_beam_count(rtplan_path)
-            except ProcessingError as e:
-                error_msg = f"Failed to parse RT plan file: {str(e)}"
-                self.logger.error(error_msg)
-                return False, error_msg
-
-            # Step 3: Count actual beam subdirectories
-            actual_subdir_count = self.count_beam_subdirectories(case_path)
-
-            # Step 4: Validate counts match
-            if expected_beam_count == 0:
-                self.logger.warning(f"RT plan indicates 0 beams for case {case_id}")
-                # This might be valid in some cases, but worth noting
-                return True, ""
-
-            if actual_subdir_count < expected_beam_count:
-                error_msg = (
-                    f"Data transfer incomplete: Expected "
-                    f"{expected_beam_count} beams from RT plan, but only "
-                    f"found {actual_subdir_count} subdirectories"
-                )
-                self.logger.warning(error_msg)
-                return False, error_msg
-
-            if actual_subdir_count > expected_beam_count:
-                # This might be okay - there could be extra directories
-                self.logger.info(
-                    f"Found {actual_subdir_count} subdirectories, "
-                    f"RT plan expects {expected_beam_count} beams. "
-                    f"Extra directories may be present."
-                )
-
-            self.logger.info(
-                f"Data transfer validation passed for case "
-                f"{case_id}: {expected_beam_count} expected beams, "
-                f"{actual_subdir_count} subdirectories found"
-            )
-            return True, ""
-
-        except Exception as e:
-            error_msg = f"Unexpected error during data transfer " f"validation: {str(e)}"
-            self.logger.error(error_msg)
-            return False, error_msg
+            raise ProcessingError(f"Error parsing RT plan file: {str(e)}") from e
 
     def get_beam_information(self, case_path: Path) -> Dict:
         """
@@ -535,4 +439,4 @@ class DataIntegrityValidator:
         except Exception as e:
             raise ProcessingError(
                 f"Unexpected error during gantry number extraction: {str(e)}"
-            )
+            ) from e

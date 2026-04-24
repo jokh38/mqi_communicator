@@ -9,7 +9,7 @@ from typing import Optional, Dict, Any, List
 from pathlib import Path
 from datetime import datetime
 
-from src.domain.enums import CaseStatus, GpuStatus, WorkflowStep, BeamStatus
+from src.domain.enums import CaseStatus, GpuStatus, StepStatus, WorkflowStep, BeamStatus
 
 @dataclass
 class CaseData:
@@ -95,22 +95,11 @@ class WorkflowStepRecord:
     """Data Transfer Object for workflow step tracking."""
     case_id: str
     step: WorkflowStep
-    status: str
+    status: StepStatus
     started_at: datetime
     completed_at: Optional[datetime] = None
     error_message: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
-
-@dataclass
-class SystemStats:
-    """Data Transfer Object for system statistics."""
-    total_cases: int
-    active_cases: int
-    completed_cases: int
-    failed_cases: int
-    total_gpus: int
-    available_gpus: int
-    last_updated: datetime
 
 # -------------------------------------------------------------------------------------
 # Phase 1 DTOs for job descriptions (additive; non-breaking)

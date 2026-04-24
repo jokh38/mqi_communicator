@@ -7,12 +7,8 @@ from functools import wraps
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
-from src.config.constants import (
-    PHASE_HPC_RUNNING,
-    PHASE_COMPLETED,
-    PROGRESS_COMPLETED,
-)
 from src.core.case_aggregator import update_case_status_from_beams
+from src.core.tps_utils import resolve_tps_output_dir
 from src.domain.enums import BeamStatus, CaseStatus
 from src.core.retry_policy import (
     mark_permanent_error_message,
@@ -22,6 +18,15 @@ from src.domain.errors import PermanentFailureError, ProcessingError, RetryableE
 
 if TYPE_CHECKING:
     from src.core.workflow_manager import WorkflowManager
+
+
+PHASE_HPC_RUNNING = "HPC_RUNNING"
+PHASE_COMPLETED = "COMPLETED"
+PROGRESS_COMPLETED = 100.0
+
+RETRYABLE_SIMULATION_FAILURE_MARKERS = (
+    "No free GPU remains after BeamLayerMultiGpu filtering",
+)
 
 
 def _resolve_room_context(context: 'WorkflowManager') -> dict[str, str]:
@@ -143,20 +148,19 @@ class InitialState(WorkflowState):
         # Get beam info to find TPS file
         beam = context.case_repo.get_beam(context.id)
         if not beam:
-            raise ProcessingError(f"Could not retrieve beam data for beam_id: {context.id}")
+            raise PermanentFailureError(
+                f"Could not retrieve beam data for beam_id: {context.id}"
+            )
 
         # TPS files are stored under Output/{room}/{case_id}/Log_csv/.
         room = _resolve_room_context(context)["room"]
-        csv_output_base = context.settings.get_path("csv_output_dir", handler_name="CsvInterpreter")
-        tps_output_dir = (
-            Path(csv_output_base) / room / beam.parent_case_id / "Log_csv"
-            if room
-            else Path(csv_output_base) / beam.parent_case_id / "Log_csv"
+        tps_output_dir = resolve_tps_output_dir(
+            context.settings, case_id=beam.parent_case_id, room=room
         )
         tps_file = tps_output_dir / f"moqui_tps_{context.id}.in"
 
         if not tps_file.exists():
-            raise ProcessingError(
+            raise PermanentFailureError(
                 f"moqui_tps.in not found for beam {context.id}: {tps_file}.")
 
         context.shared_context["tps_file_path"] = tps_file
@@ -255,7 +259,10 @@ class SimulationState(WorkflowState):
             process=sim_process
         )
         if getattr(wait_res, "failed", False):
-            raise ProcessingError(getattr(wait_res, "error", "Local simulation failed"))
+            error_message = getattr(wait_res, "error", "Local simulation failed")
+            if any(marker in error_message for marker in RETRYABLE_SIMULATION_FAILURE_MARKERS):
+                raise RetryableError(error_message)
+            raise ProcessingError(error_message)
 
         context.logger.info("Simulation completed successfully",
                             {"beam_id": context.id})
@@ -355,8 +362,14 @@ class FailedState(WorkflowState):
 
     def execute(
             self, context: 'WorkflowManager') -> Optional[WorkflowState]:
-        self._update_status(context, BeamStatus.FAILED, "Beam workflow entered failed state", log_level="error")
         beam = context.case_repo.get_beam(context.id)
+        if beam is None or beam.status != BeamStatus.FAILED:
+            self._update_status(
+                context,
+                BeamStatus.FAILED,
+                "Beam workflow entered failed state",
+                log_level="error",
+            )
         if beam:
             update_case_status_from_beams(beam.parent_case_id,
                                           context.case_repo)

@@ -59,15 +59,18 @@ class DatabaseConfig(BaseModel):
     )
     synchronous: SynchronousMode = Field(
         default=SynchronousMode.NORMAL,
+        alias="synchronous_mode",
         description="SQLite synchronous mode"
     )
     cache_size: int = Field(
         default=-2000,
+        alias="cache_size_mb",
         description="SQLite cache size (negative=KB, positive=pages)"
     )
 
     model_config = {
-        "use_enum_values": True  # Serialize enums as their values
+        "use_enum_values": True,  # Serialize enums as their values
+        "populate_by_name": True,
     }
 
 
@@ -81,6 +84,7 @@ class ProcessingConfig(BaseModel):
     """
     max_retries: int = Field(
         default=3,
+        alias="max_case_retries",
         ge=0,
         le=10,
         description="Maximum number of retries for failed operations"
@@ -97,6 +101,10 @@ class ProcessingConfig(BaseModel):
         le=32,
         description="Maximum number of worker processes"
     )
+
+    model_config = {
+        "populate_by_name": True,
+    }
 
 
 class ProgressTrackingConfig(BaseModel):
@@ -145,6 +153,7 @@ class LoggingConfig(BaseModel):
     """
     level: LogLevel = Field(
         default=LogLevel.INFO,
+        alias="log_level",
         description="Logging level"
     )
     log_dir: str = Field(
@@ -171,7 +180,8 @@ class LoggingConfig(BaseModel):
     )
 
     model_config = {
-        "use_enum_values": True
+        "use_enum_values": True,
+        "populate_by_name": True,
     }
 
 
@@ -179,18 +189,10 @@ class GpuConfig(BaseModel):
     """GPU configuration with validation.
 
     Attributes:
-        enabled: Whether GPU processing is enabled
         gpu_monitor_command: Shell command to query GPU status (e.g. nvidia-smi)
         monitor_interval: Interval in seconds between GPU status polls
         assignment_grace_period_seconds: Grace window before reclaiming an assigned GPU
-        memory_threshold_mb: Minimum free memory required (MB)
-        utilization_threshold_percent: Maximum utilization threshold (%)
-        polling_interval_seconds: GPU status polling interval
     """
-    enabled: bool = Field(
-        default=True,
-        description="Whether GPU processing is enabled"
-    )
     gpu_monitor_command: Optional[str] = Field(
         default=None,
         description="Shell command to query GPU status"
@@ -206,24 +208,6 @@ class GpuConfig(BaseModel):
         ge=0,
         le=3600,
         description="Grace window before reclaiming an assigned GPU with no active compute app"
-    )
-    memory_threshold_mb: int = Field(
-        default=1000,
-        ge=0,
-        le=100000,
-        description="Minimum free GPU memory required in MB"
-    )
-    utilization_threshold_percent: int = Field(
-        default=80,
-        ge=0,
-        le=100,
-        description="Maximum GPU utilization threshold percentage"
-    )
-    polling_interval_seconds: int = Field(
-        default=10,
-        ge=1,
-        le=300,
-        description="GPU status polling interval in seconds"
     )
 
 
@@ -342,7 +326,6 @@ class UIConfig(BaseModel):
     Attributes:
         mode: UI execution mode (terminal or web)
         auto_start: Whether to auto-start the dashboard on app launch
-        port: Port for the UI server
         web: Web dashboard sub-configuration
         refresh_interval_seconds: UI refresh interval
         max_cases_display: Maximum number of cases to display
@@ -354,12 +337,6 @@ class UIConfig(BaseModel):
     auto_start: bool = Field(
         default=False,
         description="Whether to auto-start the dashboard on app launch"
-    )
-    port: int = Field(
-        default=8501,
-        ge=1,
-        le=65535,
-        description="Port for the UI server"
     )
     web: WebConfig = Field(
         default_factory=WebConfig,

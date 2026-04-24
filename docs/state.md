@@ -1,0 +1,141 @@
+# State
+
+- Audit findings verified against codebase
+- Two corrections applied:
+  - `except Exception` count: 100, not 35+
+  - `BeamStatus.CSV_INTERPRETING` and `BeamStatus.TPS_GENERATION` are NOT dead (set at `main.py:447,476`)
+- Dead enum count reduced from 8 to 6
+- `CODEBASE_AUDIT.md` updated with verification status table
+- `docs/plan.md` created with 7 phases, 30+ specific fixes
+- Phase 1 critical bug fixes implemented:
+  - BUG-1 dispatcher cleanup now releases GPU assignments by beam ID, not case ID
+  - BUG-2 Pydantic config accepts YAML aliases and Settings exposes alias keys to runtime callers
+  - BUG-3 simulation progress tracking starts at the configured running phase boundary
+  - BUG-4 `update_case_and_beams_status()` uses one transaction
+  - BUG-5 GPU FK migration preserves `has_live_compute`
+- Component validated with:
+  - `python -m pytest tests/test_pydantic_config.py tests/test_settings_pydantic_integration.py tests/test_database_connection.py tests/test_case_repo_atomic.py tests/test_dispatcher.py tests/test_execution_handler.py`
+  - Result: 91 passed after Phase 2 test removals
+- Phase 2 dead code removal implemented:
+  - Deleted `src/config/constants.py`; inlined the 3 live progress constants into `src/domain/states.py`
+  - Removed the 20 audited dead production methods
+  - Removed test-only transfer helpers from `ExecutionHandler` and the corresponding tests
+  - Removed dead `SystemStats` DTO
+- Phase 2 component validated with:
+  - `python -m compileall -q src tests`
+  - Result: passed
+  - `python -m pytest tests/test_execution_handler.py tests/test_states.py tests/test_ui_provider.py tests/test_gpu_monitor.py tests/test_ui_process_manager.py tests/test_case_repo_mapping.py tests/test_case_repo_retry.py tests/test_ptn_checker_integration.py tests/test_ptn_checker_workflow.py tests/test_process_registry.py`
+  - Result: 56 passed
+  - `python -m pytest tests/test_pydantic_config.py tests/test_settings_pydantic_integration.py tests/test_database_connection.py tests/test_case_repo_atomic.py tests/test_dispatcher.py tests/test_execution_handler.py`
+  - Result: 91 passed
+- Phase 3 batch 1 duplication extraction implemented:
+  - D1 process tree helpers extracted to `src/infrastructure/process_utils.py`
+  - D2 delivery timestamp parsing extracted to `src/utils/planinfo.py`
+  - D3 GPU row-to-DTO mapping extracted to `GpuRepository._map_row_to_gpu_resource()`
+- Phase 3 batch 1 component validated with:
+  - `python -m compileall -q src tests`
+  - Result: passed
+  - `python -m pytest tests/test_process_registry.py tests/test_ui_process_manager.py tests/test_case_aggregator.py tests/test_fraction_grouper.py tests/test_gpu_monitor.py tests/test_gpu_status.py tests/test_case_repo_mapping.py`
+  - Result: 36 passed
+- Phase 3 batch 2 duplication extraction implemented:
+  - D4 TPS output directory path construction extracted to `src/core/tps_utils.py`
+  - D5 TPS generation multi-GPU loop extracted to `generate_tps_files_for_gpu_assignments()`
+  - D6 PlanInfo beam number parsing extracted to `src/utils/planinfo.py`
+  - Corrected stale worker test expectation to include the established `Log_csv` TPS output directory
+- Phase 3 batch 2 component validated with:
+  - `python -m compileall -q src tests`
+  - Result: passed
+  - `python -m pytest tests/test_dispatcher.py tests/test_worker.py tests/test_states.py tests/test_case_aggregator.py tests/test_fraction_grouper.py`
+  - Result: 45 passed
+  - `python -m pytest tests/test_tps_generator.py -k 'not uses_beam_specific_output_dir'`
+  - Result: 2 passed, 1 deselected
+- Phase 4 config layer cleanup implemented:
+  - Added explicit `progress_tracking` and `retry_policy` sections to `config/config.yaml`
+  - Removed unused YAML keys: `database.enable_foreign_keys`, `logging.console_level`, `processing.case_timeout_seconds`, `processing.scan_interval_seconds`, `ui.port`, and `tps_generator.default_paths.base_directory`
+  - Removed unused validated `GpuConfig` fields: `enabled`, `memory_threshold_mb`, `utilization_threshold_percent`, and `polling_interval_seconds`
+  - Removed unused validated `UIConfig.port`; `ui.web.port` remains the actual web dashboard port
+  - Added `Settings.get_retry_policy_config()`
+  - Replaced `TpsGenerator` direct `_yaml_config` reads with public `Settings` accessors
+  - Corrected the TPS generator path test to derive the local base directory from settings instead of hardcoding `/home/SMC/MOQUI_SMC`
+- Phase 4 component validated with:
+  - `python -m pytest tests/test_pydantic_config.py tests/test_settings_pydantic_integration.py tests/test_tps_generator.py -q`
+  - Result: 62 passed
+  - `python -m compileall -q src tests`
+  - Result: passed
+  - `python -m pytest tests/test_pydantic_config.py tests/test_settings_pydantic_integration.py tests/test_tps_generator.py tests/test_states.py tests/test_gpu_monitor.py tests/test_gpu_status.py tests/test_case_repo_mapping.py -q`
+  - Result: 88 passed
+- Phase 5 enum and state-machine cleanup implemented:
+  - Removed dead `WorkflowStep` values: `PENDING`, `SIMULATION_RUNNING`, `COMPLETED`, and `FAILED`
+  - Added `StepStatus` enum and replaced dispatcher workflow-step status string literals with enum values
+  - Kept `CaseStatus.CANCELLED` and documented it as reserved for future cancellation
+  - Fixed `CASE_STAGE_MAPPING`: `PROCESSING` is now stage 2 and `POSTPROCESSING` is now stage 3
+  - Wired `CaseStatus.POSTPROCESSING` during PTN postprocessing, then restored `CaseStatus.COMPLETED` when PTN analysis finishes
+  - Guarded `FailedState.execute()` so an already-failed beam is not rewritten before case-level status aggregation
+- Phase 5 component validated with:
+  - `python -m pytest tests/test_enum_state_cleanup.py tests/test_states.py tests/test_dispatcher.py tests/test_case_repo_mapping.py tests/test_ui_provider.py tests/test_case_failure_metadata.py -q`
+  - Result: 50 passed
+  - `python -m pytest tests/test_workflow_manager.py tests/test_main_loop.py tests/test_worker.py -q`
+  - Result: 39 passed
+  - `python -m compileall -q src tests`
+  - Result: passed
+- Phase 6 batch 1 error handling and logging cleanup implemented:
+  - Added regression coverage for exception chaining, non-bootstrap direct `print()` calls, and the dispatcher fail-case path
+  - Preserved original exception causes when `DataIntegrityValidator` converts DICOM parsing and unexpected gantry extraction failures into `ProcessingError`
+  - Replaced `DisplayManager` fallback `print()` calls with `Console.print()`
+  - Replaced `Settings` emergency fallback `print()` calls with `sys.stderr.write()`
+  - Documented dashboard `print()` calls that remain as pre-logger emergency paths and changed cleanup errors to use the structured logger when available
+  - Standardized dispatcher error handling on `CaseRepository.fail_case()` instead of case-only `update_case_status(FAILED)`
+  - Left `Settings` stdlib `logging.getLogger()` fallback in place because settings can be loaded before `LoggerFactory` is configured; this is now documented inline
+- Phase 6 batch 1 component validated with:
+  - `python -m pytest tests/test_error_handling_logging_cleanup.py tests/test_dispatcher.py tests/test_settings_pydantic_integration.py tests/test_tps_generator.py tests/test_states.py tests/test_worker.py -q`
+  - Result: 62 passed
+  - `python -m compileall -q src tests`
+  - Result: passed
+- Phase 6 batch 2 retry classification implemented:
+  - Preserved beam-level retry/permanent markers when aggregating failed beam status up to case status
+  - Added a production `RetryableError` raise for the transient MOQUI GPU exhaustion failure: `No free GPU remains after BeamLayerMultiGpu filtering`
+  - Added production `PermanentFailureError` raises for initial validation failures where beam data or the generated TPS input is missing
+  - Added focused regression coverage for case-level marker preservation and the two production raise-site classifications
+- Phase 6 batch 2 component validated with:
+  - `python -m pytest tests/test_error_handling_logging_cleanup.py tests/test_retry_policy.py tests/test_states.py tests/test_case_aggregator.py tests/test_workflow_manager.py tests/test_dispatcher.py tests/test_worker.py -q`
+  - Result: 72 passed
+  - `python -m compileall -q src tests`
+  - Result: passed
+- Phase 6 batch 3 exception triage implemented:
+  - Added AST regression coverage that prevents broad `except Exception` handlers from returning to critical repository GPU update/allocation paths and shared repository query execution
+  - Narrowed `BaseRepository._execute_query()` to catch `sqlite3.Error`
+  - Narrowed `GpuRepository.update_resources()` to catch only malformed GPU payload keys and SQLite failures, preserving the original cause when wrapping as `GpuResourceError`
+  - Narrowed `GpuRepository.find_and_lock_multiple_gpus()` to catch only SQLite failures, preserving the original cause when wrapping as `GpuResourceError`
+- Phase 6 batch 3 component validated with:
+  - `python -m pytest tests/test_error_handling_logging_cleanup.py -q`
+  - Result: 9 passed
+  - `python -m compileall -q src tests`
+  - Result: passed
+  - `python -m pytest tests/test_error_handling_logging_cleanup.py tests/test_gpu_monitor.py tests/test_gpu_status.py tests/test_case_repo_mapping.py tests/test_case_repo_retry.py tests/test_case_repo_atomic.py tests/test_dispatcher.py tests/test_states.py -q`
+  - Result: 58 passed
+- Phase 6 remaining gaps:
+  - Broad `except Exception` handlers still remain in intentionally defensive UI/top-level boundaries and in lower-priority parsing/process cleanup paths; Phase 6.6 narrowed the selected critical repository/GPU paths, not the entire codebase
+- Phase 7 import and documentation cleanup implemented:
+  - Removed planned unused imports from `dashboard.py`, `case_aggregator.py`, and `dispatcher.py`
+  - Removed planned redundant local re-imports from `execution_handler.py`, `dispatcher.py`, and `worker.py`
+  - Updated stale `paramiko` and `dashboard.auto_start` documentation references in `README.md` and `INSTALLATION.md`
+  - Updated stale worker test patching to target the module-level `get_db_session` dependency after removing the local re-import
+- Phase 7 component validated with:
+  - `python -m pytest tests/test_import_documentation_cleanup.py -q`
+  - Result: 3 passed
+  - `python -m compileall -q src tests`
+  - Result: passed
+  - `python -m pytest tests/test_import_documentation_cleanup.py tests/test_error_handling_logging_cleanup.py tests/test_case_aggregator.py tests/test_dispatcher.py tests/test_worker.py tests/test_gpu_monitor.py tests/test_ui_provider.py tests/test_ui_process_manager.py -q`
+  - Result: 67 passed
+- Post-plan validation cleanup implemented:
+  - Updated stale config path tests to derive expected paths from the active repository config instead of hardcoding `/home/SMC/MOQUI_SMC`
+  - Updated older InitialState/progress tests to create TPS inputs in the current `{case_id}/Log_csv` directory
+  - Restored Linux process isolation kwargs for the MQI transfer receiver and web UI process launch paths
+  - Fixed an order-dependent dispatcher error-handler test by patching the module object it calls
+  - Replaced hanging synchronous FastAPI `TestClient` usage in web tests with in-process `httpx.ASGITransport`; production web routes still use `asyncio.to_thread`, while tests set `app.state.run_sync_inline`
+- Full automated test suite validated:
+  - `python -m pytest -q`
+  - Result: 276 passed
+  - `python -m compileall -q src tests`
+  - Result: passed
+- Operational end-to-end validation not performed in this environment; no live MOQUI/GPU/DICOM workflow run was executed

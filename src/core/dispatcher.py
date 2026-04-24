@@ -9,11 +9,15 @@ import sys
 from src.config.settings import Settings
 from src.handlers.execution_handler import ExecutionHandler
 from src.infrastructure.logging_handler import StructuredLogger
-from src.domain.enums import CaseStatus, WorkflowStep
+from src.domain.enums import CaseStatus, StepStatus, WorkflowStep
 from src.domain.errors import ProcessingError
 from src.core.data_integrity_validator import DataIntegrityValidator
 from src.infrastructure.logging_handler import LoggerFactory
 from src.core.tps_generator import TpsGenerator
+from src.core.tps_utils import (
+    generate_tps_files_for_gpu_assignments,
+    resolve_tps_output_dir,
+)
 from src.repositories.gpu_repo import GpuRepository
 from src.utils.db_context import get_db_session
 
@@ -21,8 +25,6 @@ from src.core.case_aggregator import ensure_logger as _ensure_logger
 from src.core.case_aggregator import _normalize_beam_identifier
 from src.core.case_aggregator import prepare_case_delivery_data
 from src.core.workflow_manager import (
-    scan_existing_cases,
-    CaseDetectionHandler,
     derive_room_from_case_path,
 )
 from src.integrations.ptn_checker import PtnCheckerIntegration, PtnCheckerResult
@@ -158,15 +160,11 @@ def _handle_dispatcher_error(
     )
     try:
         with get_db_session(settings, logger, handler_name=handler_name) as case_repo:
-            case_repo.update_case_status(
-                case_id,
-                CaseStatus.FAILED,
-                error_message=str(error)
-            )
+            case_repo.fail_case(case_id, error_message=str(error))
             case_repo.record_workflow_step(
                 case_id=case_id,
                 step=workflow_step,
-                status="failed",
+                status=StepStatus.FAILED,
                 metadata={"error": str(error)}
             )
     except Exception as db_e:
@@ -198,7 +196,7 @@ def run_case_level_csv_interpreting(case_id: str, case_path: Path,
             case_repo.record_workflow_step(
                 case_id=case_id,
                 step=WorkflowStep.CSV_INTERPRETING,
-                status="started",
+                status=StepStatus.STARTED,
                 metadata={"message": "Running mqi_interpreter for the whole case."})
 
             case_repo.update_case_status(
@@ -263,7 +261,6 @@ def run_case_level_csv_interpreting(case_id: str, case_path: Path,
                     f"after case-level CSV interpreting.")
 
             # Copy DICOM files to rtplan directory for TPS execution
-            from src.core.data_integrity_validator import DataIntegrityValidator
             import shutil
             validator = DataIntegrityValidator(logger)
             rtplan_path = validator.find_rtplan_file(case_path)
@@ -298,7 +295,7 @@ def run_case_level_csv_interpreting(case_id: str, case_path: Path,
             case_repo.record_workflow_step(
                 case_id=case_id,
                 step=WorkflowStep.CSV_INTERPRETING,
-                status="completed",
+                status=StepStatus.COMPLETED,
                 metadata={
                     "message": "mqi_interpreter finished successfully",
                     "csv_files_generated": csv_count,
@@ -336,7 +333,7 @@ def run_case_level_tps_generation(
             case_repo.record_workflow_step(
                 case_id=case_id,
                 step=WorkflowStep.TPS_GENERATION,
-                status="started",
+                status=StepStatus.STARTED,
                 metadata={"message": f"Generating TPS file with {beam_count} beam assignments."}
             )
 
@@ -361,7 +358,7 @@ def run_case_level_tps_generation(
                 case_repo.record_workflow_step(
                     case_id=case_id,
                     step=WorkflowStep.TPS_GENERATION,
-                    status="pending",
+                    status=StepStatus.PENDING,
                     metadata={
                         "message": error_message,
                         "beams_total": beam_count,
@@ -395,7 +392,7 @@ def run_case_level_tps_generation(
                 case_repo.record_workflow_step(
                     case_id=case_id,
                     step=WorkflowStep.TPS_GENERATION,
-                    status="failed",
+                    status=StepStatus.FAILED,
                     metadata={"error": error_message}
                 )
                 return None
@@ -418,7 +415,7 @@ def run_case_level_tps_generation(
                 case_repo.record_workflow_step(
                     case_id=case_id,
                     step=WorkflowStep.TPS_GENERATION,
-                    status="failed",
+                    status=StepStatus.FAILED,
                     metadata={"error": error_message}
                 )
                 return None
@@ -432,7 +429,7 @@ def run_case_level_tps_generation(
                 case_repo.record_workflow_step(
                     case_id=case_id,
                     step=WorkflowStep.TPS_GENERATION,
-                    status="failed",
+                    status=StepStatus.FAILED,
                     metadata={"error": error_message}
                 )
                 return None
@@ -471,83 +468,50 @@ def run_case_level_tps_generation(
 
             # Get output directory for TPS files
             room = derive_room_from_case_path(case_path, settings)
-            csv_output_base = settings.get_path("csv_output_dir", handler_name="CsvInterpreter")
-            tps_output_dir = (
-                Path(csv_output_base) / room / case_id / "Log_csv"
-                if room
-                else Path(csv_output_base) / case_id / "Log_csv"
-            )
+            tps_output_dir = resolve_tps_output_dir(settings, case_id=case_id, room=room)
 
             tps_generator = TpsGenerator(settings, logger)
 
             execution_mode = settings.get_handler_mode("HpcJobSubmitter")
-            if multigpu_enabled and beam_uses_all_available_gpus:
-                beam = beams[0]
-                beam_number = beam.beam_number
-                if beam_number is None:
-                    raise ProcessingError(f"Beam number missing for {beam.beam_id}")
-
-                for gpu_assignment in gpu_assignments:
-                    gpu_repo.assign_gpu_to_case(gpu_assignment["gpu_uuid"], beam.beam_id)
-                    gpu_assignment["beam_id"] = beam.beam_id
-
-                success = tps_generator.generate_tps_file_with_gpu_assignments(
-                    case_path=case_path,
-                    case_id=case_id,
-                    gpu_assignments=gpu_assignments,
-                    execution_mode=execution_mode,
-                    output_dir=tps_output_dir,
-                    beam_name=beam.beam_id,
-                    beam_number=beam_number,
+            selected_beams = (
+                beams[:1]
+                if multigpu_enabled and beam_uses_all_available_gpus
+                else beams[:len(gpu_assignments)]
+            )
+            generation_result = generate_tps_files_for_gpu_assignments(
+                tps_generator=tps_generator,
+                gpu_repo=gpu_repo,
+                case_path=case_path,
+                case_id=case_id,
+                gpu_assignments=gpu_assignments,
+                beams=selected_beams,
+                execution_mode=execution_mode,
+                output_dir=tps_output_dir,
+                multigpu_enabled=multigpu_enabled,
+                beam_uses_all_available_gpus=beam_uses_all_available_gpus,
+                stop_on_failure=True,
+                raise_on_missing_beam_number=True,
+            )
+            if not generation_result.success:
+                error_message = (
+                    generation_result.error_message
+                    or f"TPS file generation failed for case {case_id}"
                 )
-
-                if not success:
-                    error_message = f"TPS file generation failed for beam {beam.beam_id} in case {case_id}"
-                    logger.error(error_message)
-                    for allocated_gpu in gpu_assignments:
-                        gpu_uuid = allocated_gpu.get("gpu_uuid")
-                        if gpu_uuid:
-                            gpu_repo.release_gpu(gpu_uuid)
-                    case_repo.record_workflow_step(
-                        case_id=case_id,
-                        step=WorkflowStep.TPS_GENERATION,
-                        status="failed",
-                        metadata={"error": error_message, "failed_beam": beam.beam_id}
-                    )
-                    return None
-            else:
-                for i, (gpu_assignment, beam) in enumerate(zip(gpu_assignments, beams[:len(gpu_assignments)])):
-                    gpu_repo.assign_gpu_to_case(gpu_assignment["gpu_uuid"], beam.beam_id)
-                    gpu_assignment["beam_id"] = beam.beam_id
-
-                    beam_gpu_assignment = [gpu_assignment]
-                    beam_number = beam.beam_number
-                    if beam_number is None:
-                        raise ProcessingError(f"Beam number missing for {beam.beam_id}")
-                    success = tps_generator.generate_tps_file_with_gpu_assignments(
-                        case_path=case_path,
-                        case_id=case_id,
-                        gpu_assignments=beam_gpu_assignment,
-                        execution_mode=execution_mode,
-                        output_dir=tps_output_dir,
-                        beam_name=beam.beam_id,
-                        beam_number=beam_number
-                    )
-
-                    if not success:
-                        error_message = f"TPS file generation failed for beam {beam.beam_id} in case {case_id}"
-                        logger.error(error_message)
-                        for allocated_gpu in gpu_assignments:
-                            gpu_uuid = allocated_gpu.get("gpu_uuid")
-                            if gpu_uuid:
-                                gpu_repo.release_gpu(gpu_uuid)
-                        case_repo.record_workflow_step(
-                            case_id=case_id,
-                            step=WorkflowStep.TPS_GENERATION,
-                            status="failed",
-                            metadata={"error": error_message, "failed_beam": beam.beam_id}
-                        )
-                        return None
+                logger.error(error_message)
+                for allocated_gpu in gpu_assignments:
+                    gpu_uuid = allocated_gpu.get("gpu_uuid")
+                    if gpu_uuid:
+                        gpu_repo.release_gpu(gpu_uuid)
+                case_repo.record_workflow_step(
+                    case_id=case_id,
+                    step=WorkflowStep.TPS_GENERATION,
+                    status=StepStatus.FAILED,
+                    metadata={
+                        "error": error_message,
+                        "failed_beam": generation_result.failed_beam_id,
+                    }
+                )
+                return None
 
             allocated_count = len(gpu_assignments)
             # When beam_uses_all_available_gpus is on, len(gpu_assignments) is the
@@ -564,7 +528,7 @@ def run_case_level_tps_generation(
             case_repo.record_workflow_step(
                 case_id=case_id,
                 step=WorkflowStep.TPS_GENERATION,
-                status="completed" if pending_count == 0 else "partial",
+                status=StepStatus.COMPLETED if pending_count == 0 else StepStatus.PARTIAL,
                 metadata={
                     "message": f"Generated TPS file with {allocated_count} beam-to-GPU assignments ({pending_count} beams pending)",
                     "beams_total": beam_count,
@@ -588,7 +552,8 @@ def run_case_level_tps_generation(
         try:
             with get_db_session(settings, logger, handler_name=handler_name) as case_repo:
                 gpu_repo = GpuRepository(case_repo.db, logger, settings)
-                gpu_repo.release_all_for_case(case_id)
+                for beam in case_repo.get_beams_for_case(case_id):
+                    gpu_repo.release_all_for_case(beam.beam_id)
         except Exception as cleanup_error:
             logger.error("Failed to cleanup GPU allocations", {"error": str(cleanup_error)})
         return None
@@ -703,9 +668,22 @@ def run_case_level_ptn_analysis(
         case_repo.record_workflow_step(
             case_id=case_id,
             step=WorkflowStep.POSTPROCESSING,
-            status="started",
+            status=StepStatus.STARTED,
             metadata={"message": "Starting PTN checker analysis for delivery records."},
         )
+        case_repo.update_case_status(
+            case_id=case_id,
+            status=CaseStatus.POSTPROCESSING,
+            progress=80.0,
+        )
+
+        def finish_ptn_case(result: PtnCheckerResult) -> PtnCheckerResult:
+            case_repo.update_case_status(
+                case_id=case_id,
+                status=CaseStatus.COMPLETED,
+                progress=100.0,
+            )
+            return result
 
         if rtplan_path is None:
             result = PtnCheckerResult(
@@ -723,7 +701,7 @@ def run_case_level_ptn_analysis(
             case_repo.record_workflow_step(
                 case_id=case_id,
                 step=WorkflowStep.POSTPROCESSING,
-                status="failed",
+                status=StepStatus.FAILED,
                 error_message=result.error_message,
                 metadata={
                     "message": "PTN checker analysis finished.",
@@ -731,7 +709,7 @@ def run_case_level_ptn_analysis(
                     "output_dir": str(default_output_dir),
                 },
             )
-            return result
+            return finish_ptn_case(result)
 
         if not deliveries:
             ptn_files = validator.find_ptn_files(case_path)
@@ -772,7 +750,7 @@ def run_case_level_ptn_analysis(
                 case_repo.record_workflow_step(
                     case_id=case_id,
                     step=WorkflowStep.POSTPROCESSING,
-                    status="completed" if fallback_result.success else "failed",
+                    status=StepStatus.COMPLETED if fallback_result.success else StepStatus.FAILED,
                     error_message=fallback_result.error_message,
                     metadata={
                         "message": "PTN checker analysis finished via fallback single-log execution.",
@@ -794,7 +772,7 @@ def run_case_level_ptn_analysis(
                         ),
                     },
                 )
-                return fallback_result
+                return finish_ptn_case(fallback_result)
 
             result = PtnCheckerResult(
                 success=False,
@@ -811,7 +789,7 @@ def run_case_level_ptn_analysis(
             case_repo.record_workflow_step(
                 case_id=case_id,
                 step=WorkflowStep.POSTPROCESSING,
-                status="failed",
+                status=StepStatus.FAILED,
                 error_message=result.error_message,
                 metadata={
                     "message": "PTN checker analysis finished.",
@@ -819,7 +797,7 @@ def run_case_level_ptn_analysis(
                     "output_dir": str(default_output_dir),
                 },
             )
-            return result
+            return finish_ptn_case(result)
 
         overall_status = "SUCCESS"
         overall_error = None
@@ -868,7 +846,7 @@ def run_case_level_ptn_analysis(
         case_repo.record_workflow_step(
             case_id=case_id,
             step=WorkflowStep.POSTPROCESSING,
-            status="completed" if result.success else "failed",
+            status=StepStatus.COMPLETED if result.success else StepStatus.FAILED,
             error_message=result.error_message,
             metadata={
                 "message": "PTN checker analysis finished.",
@@ -878,4 +856,4 @@ def run_case_level_ptn_analysis(
                 "delivery_success_count": success_count,
             },
         )
-        return result
+        return finish_ptn_case(result)

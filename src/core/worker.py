@@ -17,6 +17,10 @@ from src.infrastructure.logging_handler import StructuredLogger, LoggerFactory
 from src.core.case_aggregator import allocate_gpus_for_pending_beams, update_case_status_from_beams
 from src.core.workflow_manager import WorkflowManager, derive_room_from_case_path
 from src.core.tps_generator import TpsGenerator
+from src.core.tps_utils import (
+    generate_tps_files_for_gpu_assignments,
+    resolve_tps_output_dir,
+)
 from src.config.settings import Settings
 from src.utils.db_context import get_db_session
 from src.domain.enums import BeamStatus
@@ -304,80 +308,47 @@ def try_allocate_pending_beams(pending_beams_by_case: Dict, executor: ProcessPoo
             remaining_jobs = pending_jobs[num_allocated:]
 
         # Get output directory for TPS files
-        from src.utils.db_context import get_db_session
         with get_db_session(settings, logger, handler_name="HpcJobSubmitter") as case_repo:
             beams = case_repo.get_beams_for_case(case_id)
             room = derive_room_from_case_path(case_path, settings)
-            csv_output_base = settings.get_path("csv_output_dir", handler_name="CsvInterpreter")
-            tps_output_dir = (
-                Path(csv_output_base) / room / case_id / "Log_csv"
-                if room
-                else Path(csv_output_base) / case_id / "Log_csv"
-            )
+            tps_output_dir = resolve_tps_output_dir(settings, case_id=case_id, room=room)
 
             gpu_repo_inst = GpuRepository(case_repo.db, logger, settings)
 
             # Generate a separate TPS file for each newly allocated beam
-            all_success = True
             execution_mode = settings.get_handler_mode("HpcJobSubmitter")
-            if multigpu_enabled and beam_uses_all_available_gpus:
-                job = jobs_to_dispatch[0]
+            selected_beams = []
+            all_success = True
+            for job in jobs_to_dispatch:
                 beam_id = job["beam_id"]
                 beam_data = next((b for b in beams if b.beam_id == beam_id), None)
                 if not beam_data:
                     logger.error(f"Could not find beam data for {beam_id}")
                     all_success = False
+                    continue
+                selected_beams.append(beam_data)
+
+            generation_result = generate_tps_files_for_gpu_assignments(
+                tps_generator=tps_generator,
+                gpu_repo=gpu_repo_inst,
+                case_path=case_path,
+                case_id=case_id,
+                gpu_assignments=new_gpu_assignments,
+                beams=selected_beams,
+                execution_mode=execution_mode,
+                output_dir=tps_output_dir,
+                multigpu_enabled=multigpu_enabled,
+                beam_uses_all_available_gpus=beam_uses_all_available_gpus,
+            )
+            if not generation_result.success:
+                all_success = False
+                failed_beam_id = generation_result.failed_beam_id
+                if generation_result.error_message and generation_result.error_message.startswith("Beam number missing"):
+                    logger.error(generation_result.error_message)
+                elif failed_beam_id:
+                    logger.error(f"Failed to update TPS file for beam {failed_beam_id} of case {case_id}")
                 else:
-                    beam_number = beam_data.beam_number
-                    if beam_number is None:
-                        logger.error(f"Beam number missing for {beam_id}")
-                        all_success = False
-                    else:
-                        for gpu_assignment in new_gpu_assignments:
-                            gpu_repo_inst.assign_gpu_to_case(gpu_assignment["gpu_uuid"], beam_id)
-                        success = tps_generator.generate_tps_file_with_gpu_assignments(
-                            case_path=case_path,
-                            case_id=case_id,
-                            gpu_assignments=new_gpu_assignments,
-                            execution_mode=execution_mode,
-                            output_dir=tps_output_dir,
-                            beam_name=beam_data.beam_id,
-                            beam_number=beam_number
-                        )
-                        if not success:
-                            logger.error(f"Failed to update TPS file for beam {beam_id} of case {case_id}")
-                            all_success = False
-            else:
-                for gpu_assignment, job in zip(new_gpu_assignments, jobs_to_dispatch):
-                    beam_id = job["beam_id"]
-                    beam_data = next((b for b in beams if b.beam_id == beam_id), None)
-                    if not beam_data:
-                        logger.error(f"Could not find beam data for {beam_id}")
-                        all_success = False
-                        continue
-
-                    beam_number = beam_data.beam_number
-                    if beam_number is None:
-                        logger.error(f"Beam number missing for {beam_id}")
-                        all_success = False
-                        continue
-
-                    gpu_repo_inst.assign_gpu_to_case(gpu_assignment["gpu_uuid"], beam_id)
-
-                    beam_gpu_assignment = [gpu_assignment]
-                    success = tps_generator.generate_tps_file_with_gpu_assignments(
-                        case_path=case_path,
-                        case_id=case_id,
-                        gpu_assignments=beam_gpu_assignment,
-                        execution_mode=execution_mode,
-                        output_dir=tps_output_dir,
-                        beam_name=beam_data.beam_id,
-                        beam_number=beam_number
-                    )
-
-                    if not success:
-                        logger.error(f"Failed to update TPS file for beam {beam_id} of case {case_id}")
-                        all_success = False
+                    logger.error(generation_result.error_message or f"Failed to update TPS files for case {case_id}")
 
         if not all_success:
             logger.error(f"Failed to update TPS files for some pending beams of case {case_id}")

@@ -1,4 +1,5 @@
 """Contains the abstract base class for all repository implementations."""
+import sqlite3
 from abc import ABC
 from typing import Optional, Any
 
@@ -52,7 +53,7 @@ class BaseRepository(ABC):
                     # For INSERT, UPDATE, DELETE, return the number of affected rows
                     return cursor.rowcount
                     
-        except Exception as e:
+        except sqlite3.Error as e:
             self.logger.error(
                 f"Database query failed: {query}", {"error": str(e), "params": params}
             )

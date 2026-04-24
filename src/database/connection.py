@@ -49,10 +49,12 @@ class DatabaseConnection:
         db_config = self.settings.get_database_config()
         timeout = db_config.get("connection_timeout_seconds", 30)
         journal_mode = db_config.get("journal_mode", "WAL")
-        synchronous = db_config.get("synchronous_mode", "NORMAL")  # W-2 fix: match config key
-        # W-2 fix: convert cache_size_mb to pages (-N means N KB in SQLite)
-        cache_size_mb = db_config.get("cache_size_mb", 64)
-        cache_size = -cache_size_mb * 1024  # Convert MB to KB (negative for KB mode)
+        synchronous = db_config.get("synchronous_mode", db_config.get("synchronous", "NORMAL"))
+        cache_size_mb = db_config.get("cache_size_mb")
+        if cache_size_mb is not None:
+            cache_size = -int(cache_size_mb) * 1024  # SQLite negative cache_size is KiB.
+        else:
+            cache_size = db_config.get("cache_size", -64 * 1024)
         busy_timeout_ms = db_config.get("busy_timeout_ms", 5000)  # W-2 fix: add busy timeout
 
         try:
@@ -392,6 +394,7 @@ class DatabaseConnection:
                 temperature INTEGER NOT NULL,
                 utilization INTEGER NOT NULL,
                 core_clock INTEGER NOT NULL DEFAULT 0,
+                has_live_compute BOOLEAN NOT NULL DEFAULT 0,
                 status TEXT NOT NULL,
                 assigned_case TEXT,
                 last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -401,11 +404,11 @@ class DatabaseConnection:
         conn.execute("""
             INSERT INTO gpu_resources_new (
                 uuid, gpu_index, name, memory_total, memory_used, memory_free,
-                temperature, utilization, core_clock, status, assigned_case, last_updated
+                temperature, utilization, core_clock, has_live_compute, status, assigned_case, last_updated
             )
             SELECT
                 uuid, gpu_index, name, memory_total, memory_used, memory_free,
-                temperature, utilization, core_clock, status, assigned_case, last_updated
+                temperature, utilization, core_clock, has_live_compute, status, assigned_case, last_updated
             FROM gpu_resources
         """)
         conn.execute("DROP TABLE gpu_resources")

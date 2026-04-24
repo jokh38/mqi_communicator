@@ -8,7 +8,11 @@ from enum import Enum
 
 
 class CaseStatus(Enum):
-    """Enumeration of possible case statuses."""
+    """Enumeration of possible case statuses.
+
+    CANCELLED is reserved for a future cancellation workflow and is not set by
+    the current runtime.
+    """
     PENDING = "pending"
     CSV_INTERPRETING = "csv_interpreting"
     PROCESSING = "processing"
@@ -33,14 +37,22 @@ class BeamStatus(Enum):
 
 
 class WorkflowStep(Enum):
-    """Enumeration of workflow steps."""
-    PENDING = "pending"
+    """Enumeration of persisted workflow steps."""
     CSV_INTERPRETING = "csv_interpreting"
     TPS_GENERATION = "tps_generation"
-    SIMULATION_RUNNING = "simulation_running"
     POSTPROCESSING = "postprocessing"
+
+
+class StepStatus(str, Enum):
+    """Enumeration of persisted workflow step status values."""
+    STARTED = "started"
     COMPLETED = "completed"
     FAILED = "failed"
+    PENDING = "pending"
+    PARTIAL = "partial"
+
+    def __str__(self) -> str:
+        return self.value
 
 
 class GpuStatus(Enum):
@@ -64,8 +76,8 @@ BEAM_STAGE_MAPPING = {
 CASE_STAGE_MAPPING = {
     CaseStatus.PENDING: 0,
     CaseStatus.CSV_INTERPRETING: 1,
-    CaseStatus.PROCESSING: 3,
-    CaseStatus.POSTPROCESSING: 4,
+    CaseStatus.PROCESSING: 2,
+    CaseStatus.POSTPROCESSING: 3,
     CaseStatus.COMPLETED: 4,
     CaseStatus.FAILED: 4,
     CaseStatus.CANCELLED: 4,

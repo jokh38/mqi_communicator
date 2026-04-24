@@ -1,7 +1,5 @@
 """A long-running service that periodically fetches GPU resource data."""
-import subprocess
 import csv
-import time
 import threading
 from io import StringIO
 from typing import List, Dict, Any, Optional, Set
@@ -378,29 +376,3 @@ class GpuMonitor:
         # Check utilization range
         if not (0 <= gpu_info['utilization'] <= 100):
             raise ValueError(f"Invalid utilization: {gpu_info['utilization']}%")
-
-    def check_nvidia_smi_available(self) -> bool:
-        """Check if the nvidia-smi command is available and working.
-
-        Returns:
-            bool: True if nvidia-smi is available and working, False otherwise.
-        """
-        try:
-            result = subprocess.run(
-                ['nvidia-smi', '--version'],
-                capture_output=True,
-                timeout=10,
-                check=True
-            )
-            
-            self.logger.debug("nvidia-smi is available", {
-                "version_output": result.stdout.strip()
-            })
-            
-            return True
-            
-        except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired) as e:
-            self.logger.warning("nvidia-smi not available", {
-                "error": str(e)
-            })
-            return False

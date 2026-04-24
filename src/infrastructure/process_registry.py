@@ -4,13 +4,14 @@ import json
 import os
 import platform
 import shlex
-import signal
 import subprocess
 import sys
 import time
 from json import JSONDecodeError
 from pathlib import Path
 from typing import Any, Optional
+
+from src.infrastructure import process_utils
 
 
 class ProcessRegistry:
@@ -293,70 +294,10 @@ class ProcessRegistry:
             return None
 
     def _terminate_process_tree(self, pid: int, timeout: float = 5.0) -> bool:
-        if platform.system() == "Windows":
-            return self._terminate_process_tree_windows(pid)
-        return self._terminate_process_tree_unix(pid, timeout=timeout)
-
-    def _terminate_process_tree_windows(self, pid: int) -> bool:
-        try:
-            self._run_command(
-                ["taskkill", "/PID", str(pid), "/T", "/F"],
-            )
-        except (subprocess.CalledProcessError, FileNotFoundError, OSError):
-            return False
-        return True
-
-    def _terminate_process_tree_unix(self, pid: int, timeout: float = 5.0) -> bool:
-        descendants = self._collect_descendant_pids(pid)
-        ordered_pids = descendants + [pid]
-
-        for target_pid in ordered_pids:
-            try:
-                os.kill(target_pid, signal.SIGTERM)
-            except ProcessLookupError:
-                continue
-            except Exception:
-                return False
-
-        deadline = time.time() + timeout
-        while time.time() < deadline:
-            if all(not self._pid_exists(target_pid) for target_pid in ordered_pids):
-                return True
-            time.sleep(0.1)
-
-        for target_pid in ordered_pids:
-            try:
-                os.kill(target_pid, signal.SIGKILL)
-            except ProcessLookupError:
-                continue
-            except Exception:
-                return False
-        return True
+        return process_utils.terminate_process_tree(pid, timeout=timeout)
 
     def _collect_descendant_pids(self, pid: int) -> list[int]:
-        try:
-            result = self._run_command(
-                ["ps", "-eo", "pid=,ppid="],
-            )
-        except (subprocess.CalledProcessError, FileNotFoundError, OSError):
-            return []
-
-        children_by_parent: dict[int, list[int]] = {}
-        for line in result.stdout.splitlines():
-            parts = line.split()
-            if len(parts) != 2 or not parts[0].isdigit() or not parts[1].isdigit():
-                continue
-            child = int(parts[0])
-            parent = int(parts[1])
-            children_by_parent.setdefault(parent, []).append(child)
-
-        descendants = []
-        stack = list(children_by_parent.get(pid, []))
-        while stack:
-            child_pid = stack.pop()
-            descendants.append(child_pid)
-            stack.extend(children_by_parent.get(child_pid, []))
-        return descendants
+        return process_utils.collect_descendant_pids(pid)
 
     def _wait_for_exit(self, pid: int, timeout: float = 5.0) -> bool:
         deadline = time.time() + timeout
@@ -367,46 +308,10 @@ class ProcessRegistry:
         return not self._pid_exists(pid)
 
     def _pid_exists(self, pid: int) -> bool:
-        try:
-            os.kill(pid, 0)
-        except ProcessLookupError:
-            return False
-        except Exception:
-            return True
-        return True
+        return process_utils.pid_exists(pid)
 
     def _get_process_command(self, pid: int) -> str:
-        if platform.system() == "Windows":
-            return self._get_process_command_windows(pid)
-
-        try:
-            result = self._run_command(
-                ["ps", "-p", str(pid), "-o", "args="],
-            )
-        except (subprocess.CalledProcessError, FileNotFoundError, OSError):
-            return ""
-        return result.stdout.strip()
-
-    def _get_process_command_windows(self, pid: int) -> str:
-        try:
-            result = self._run_command(
-                [
-                    "wmic",
-                    "process",
-                    "where",
-                    f"ProcessId={pid}",
-                    "get",
-                    "CommandLine",
-                    "/value",
-                ],
-            )
-        except (subprocess.CalledProcessError, FileNotFoundError, OSError):
-            return ""
-
-        for line in result.stdout.splitlines():
-            if line.startswith("CommandLine="):
-                return line.split("=", 1)[1].strip()
-        return ""
+        return process_utils.get_process_command(pid)
 
     def _get_process_cwd(self, pid: int) -> Optional[Path]:
         if platform.system() == "Windows":

@@ -1,5 +1,3 @@
-import logging
-import shutil
 import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -36,42 +34,6 @@ def test_execute_command_local_mode_uses_argument_list_and_shell_false(mock_run)
     )
 
 
-@patch("shutil.copy")
-def test_upload_file_copies_locally(mock_copy):
-    handler = ExecutionHandler.__new__(ExecutionHandler)
-    handler.settings = MagicMock()
-    handler.logger = MagicMock()
-
-    handler.upload_file("a.txt", "b.txt")
-    mock_copy.assert_called_once_with("a.txt", "b.txt")
-
-
-@patch("shutil.copy")
-def test_download_file_copies_locally(mock_copy):
-    handler = ExecutionHandler.__new__(ExecutionHandler)
-    handler.settings = MagicMock()
-    handler.logger = MagicMock()
-
-    handler.download_file("src.txt", "dst.txt")
-    mock_copy.assert_called_once_with("src.txt", "dst.txt")
-
-
-def test_upload_to_pc_localdata_local_mode_logs_simulation(caplog, tmp_path):
-    handler = ExecutionHandler.__new__(ExecutionHandler)
-    handler.settings = MagicMock()
-    handler.logger = MagicMock()
-
-    source_file = tmp_path / "source.txt"
-    source_file.write_text("test content")
-    case_id = "case_123"
-
-    with caplog.at_level(logging.INFO):
-        handler.upload_to_pc_localdata(source_file, case_id)
-
-    assert f"Simulating upload by copying to local directory for case {case_id}" in caplog.text
-    shutil.rmtree(f"./localdata_uploads/{case_id}", ignore_errors=True)
-
-
 @patch("subprocess.Popen")
 def test_start_local_process_with_string_command(mock_popen):
     handler = ExecutionHandler.__new__(ExecutionHandler)
@@ -106,3 +68,37 @@ def test_start_local_process_with_list_command(mock_popen):
         text=True,
         cwd=None,
     )
+
+
+def test_wait_for_job_completion_simulation_progress_starts_at_or_above_running_phase(tmp_path):
+    handler = ExecutionHandler.__new__(ExecutionHandler)
+    handler.settings = MagicMock()
+    handler.settings.get_processing_config.return_value = {}
+    handler.settings.get_completion_patterns.return_value = {
+        "success_pattern": "Simulation completed successfully",
+        "failure_patterns": [],
+    }
+    handler.logger = MagicMock()
+
+    log_path = tmp_path / "simulation.log"
+    log_path.write_text("starting with 10 batches\nGenerating particles for (1 of 10 batches)\n")
+    case_repo = MagicMock()
+    process = MagicMock()
+    process.poll.return_value = 0
+    process.returncode = 0
+
+    with patch("time.sleep"), patch("time.time", side_effect=[0.0, 0.0]):
+        result = handler.wait_for_job_completion(
+            timeout=30,
+            poll_interval=1,
+            log_file_path=str(log_path),
+            beam_id="beam-1",
+            case_repo=case_repo,
+            process=process,
+        )
+
+    if result.failed:
+        raise AssertionError(f"Expected successful process result, got {result!r}")
+    first_progress = case_repo.update_beam_progress.call_args_list[0].args[1]
+    if first_progress < 40.0:
+        raise AssertionError(f"Expected first tracked progress >= 40.0, got {first_progress}")
