@@ -1,32 +1,159 @@
 # MQI Communicator - Python dependencies
 #
+# Fully-pinned offline-installable requirements file.
+# Every package is pinned to the exact version available in the local wheel cache
+# at C:\MOQUI_SMC\dependencies, enabling air-gapped installation via:
+#   pip install -r requirements.txt --no-index --find-links=C:\MOQUI_SMC\dependencies
+#
+# Python: 3.10.12
+#
 # This file is limited to packages installable with pip.
 # External executables such as `ttyd` and `nvidia-smi` are documented in
 # docs/system-prerequisites.md.
 
-# Runtime dependencies
+# ============================================================================
+# Runtime dependencies (direct)
+# ============================================================================
 
-# File system monitoring for detecting new case directories
-watchdog>=3.0.0
+# Web dashboard framework
+fastapi==0.136.1
+uvicorn==0.46.0
+jinja2==3.1.6
+python-multipart==0.0.26
 
-# Rich terminal UI for the dashboard display
-rich>=13.0.0
+# Data validation and settings management using Pydantic models
+pydantic==2.13.3
 
 # YAML configuration file parsing
-PyYAML>=6.0.0
+pyyaml==6.0.3
 
 # DICOM file handling for RT plan reading and validation
-pydicom>=2.3.0
+pydicom==3.0.2
 
-# Test dependencies
-pytest>=7.0.0
+# File system monitoring for detecting new case directories
+watchdog==6.0.0
 
-# Development tooling
-black>=22.0.0
-flake8>=5.0.0
-mypy>=1.0.0
+# Rich terminal UI for the dashboard display
+rich==15.0.0
 
-fastapi>=0.95.0
-uvicorn>=0.22.0
-jinja2>=3.1.2
-python-multipart>=0.0.6
+# ============================================================================
+# Runtime transitive dependencies
+# ============================================================================
+
+# Required by fastapi (ASGI toolkit)
+starlette==1.0.0
+
+# Required by starlette (async I/O)
+anyio==4.13.0
+
+# Required by uvicorn (HTTP/1.1 protocol)
+h11==0.16.0
+
+# Required by uvicorn (CLI interface)
+click==8.3.3
+
+# Required by jinja2 (HTML template escaping)
+markupsafe==3.0.3
+
+# Required by pydantic (core validation engine)
+pydantic_core==2.46.3
+
+# Required by many packages (backports for Python <3.12)
+typing_extensions==4.15.0
+
+# Required by fastapi, pydantic (runtime type introspection)
+typing_inspection==0.4.2
+
+# Required by pydantic (annotated type support)
+annotated_types==0.7.0
+
+# Required by fastapi (annotated doc extraction)
+annotated_doc==0.0.4
+
+# Required by rich (Markdown rendering)
+markdown_it_py==4.0.0
+
+# Required by rich (syntax highlighting)
+pygments==2.20.0
+
+# Required by markdown_it_py (URL utilities)
+mdurl==0.1.2
+
+# Required by httpx, httpcore (TLS certificate bundle)
+certifi==2026.4.22
+
+# Required by anyio, httpx (internationalized domain names)
+idna==3.13
+
+# Required by click on Windows (colored terminal output)
+colorama==0.4.6
+
+# ============================================================================
+# Development / testing dependencies (direct)
+# ============================================================================
+
+# Test framework
+pytest==9.0.3
+
+# HTTP client for testing the web dashboard API
+httpx==0.28.1
+
+# Code formatter
+black==26.3.1
+
+# Linter
+flake8==7.3.0
+
+# Static type checker
+mypy==1.20.2
+
+# ============================================================================
+# Development transitive dependencies
+# ============================================================================
+
+# Required by httpx (low-level HTTP client)
+httpcore==1.0.9
+
+# Required by pytest (plugin management)
+pluggy==1.6.0
+
+# Required by pytest (INI-style config parsing)
+iniconfig==2.3.0
+
+# Required by pytest, black (version parsing)
+packaging==26.1
+
+# Required by black, mypy (file path pattern matching)
+pathspec==1.1.0
+
+# Required by black (platform-specific directories)
+platformdirs==4.9.6
+
+# Required by mypy, black (mypy type stubs)
+mypy_extensions==1.1.0
+
+# Required by flake8 (PEP 8 style checking)
+pycodestyle==2.14.0
+
+# Required by flake8 (unused import detection)
+pyflakes==3.4.0
+
+# Required by flake8 (complexity checking)
+mccabe==0.7.0
+
+# Required by black (tokenization)
+pytokens==0.4.1
+
+# Required by mypy (runtime type utilities)
+librt==0.9.0
+
+# ============================================================================
+# Python 3.10 stdlib backports (not in local wheel cache)
+# These use >= pinning since exact whl files are not available locally.
+# ============================================================================
+
+# Required by anyio, pytest - stdlib backport for Python <3.11
+exceptiongroup==1.3.1
+
+# Required by pytest, black, mypy - stdlib backport for Python <3.11
+tomli==2.4.1
