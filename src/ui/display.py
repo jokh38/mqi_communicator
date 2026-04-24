@@ -174,22 +174,22 @@ class DisplayManager:
             if self.live:
                 self.live.refresh()
             else:
-                # Fallback: simple print-based display
-                print("\n" + "="*60)
+                # Fallback: simple console-based display when Rich Live is unavailable.
+                self.console.print("\n" + "="*60)
                 current_time = datetime.now(self._local_tz).strftime('%Y-%m-%d %H:%M:%S KST')
-                print(f"MQI DASHBOARD - {current_time}")
-                print("="*60)
-                print(f"Total Cases: {stats_data.get('total_cases', 0)}")
-                print(f"Pending: {stats_data.get('pending', 0)}, Processing: {stats_data.get('processing', 0)}")
-                print(f"GPUs: {len(gpu_data)} available")
-                print(f"Active Cases: {len(cases_data)}")
+                self.console.print(f"MQI DASHBOARD - {current_time}")
+                self.console.print("="*60)
+                self.console.print(f"Total Cases: {stats_data.get('total_cases', 0)}")
+                self.console.print(f"Pending: {stats_data.get('pending', 0)}, Processing: {stats_data.get('processing', 0)}")
+                self.console.print(f"GPUs: {len(gpu_data)} available")
+                self.console.print(f"Active Cases: {len(cases_data)}")
                 if cases_data:
-                    print("\nActive Cases:")
+                    self.console.print("\nActive Cases:")
                     for case in cases_data:
                         from src.domain.enums import CASE_STAGE_MAPPING, TOTAL_STAGES
                         current_stage = CASE_STAGE_MAPPING.get(case['status'], 0)
-                        print(f"  - {case['case_id']}: {case['status']} ({current_stage}/{TOTAL_STAGES})")
-                print("="*60)
+                        self.console.print(f"  - {case['case_id']}: {case['status']} ({current_stage}/{TOTAL_STAGES})")
+                self.console.print("="*60)
         except Exception as e:
             self.logger.error("Error updating display", {"error": str(e)})
             raise

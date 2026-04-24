@@ -7,7 +7,6 @@
 import os
 import errno
 import shutil
-import signal
 import socket
 import subprocess
 import sys
@@ -16,6 +15,7 @@ import time
 from typing import Optional, Dict, Any, IO
 from pathlib import Path
 
+from src.infrastructure import process_utils
 from src.infrastructure.logging_handler import StructuredLogger
 from src.config.settings import Settings
 
@@ -162,6 +162,8 @@ class UIProcessManager:
 
                 if platform.system() == "Windows":
                     popen_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+                else:
+                    popen_kwargs["preexec_fn"] = os.setpgrp
 
                 self._process = subprocess.Popen(command, **popen_kwargs)
             else:
@@ -456,76 +458,6 @@ class UIProcessManager:
 
         return base_command
 
-    def _verify_ttyd_startup(self, timeout: int = 5) -> bool:
-        """
-        Verify that ttyd server started successfully by checking stdout.
-
-        Args:
-            timeout: Seconds to wait for startup confirmation
-
-        Returns:
-            True if startup confirmed, False otherwise
-        """
-        import select
-
-        if not self._process or not self._process.stdout:
-            return False
-
-        start_time = time.time()
-
-        while time.time() - start_time < timeout:
-            # Check if process crashed
-            if self._process.poll() is not None:
-                if self.logger:
-                    self.logger.error("ttyd process terminated unexpectedly")
-                return False
-
-            # Try to read startup output (non-blocking)
-            try:
-                if platform.system() == 'Windows':
-                    # Windows: simplified check
-                    time.sleep(0.5)
-                    if self._process.poll() is None:
-                        return True
-                else:
-                    # Unix: use select
-                    ready, _, _ = select.select([self._process.stdout], [], [], 0.1)
-                    if ready:
-                        line = self._process.stdout.readline().decode('utf-8', errors='ignore')
-                        if 'Listening on port' in line or 'listening' in line.lower():
-                            if self.logger:
-                                self.logger.info(f"ttyd server started: {line.strip()}")
-                            return True
-            except Exception as e:
-                if self.logger:
-                    self.logger.warning(f"Error checking ttyd startup: {e}")
-
-            time.sleep(0.1)
-
-        if self.logger:
-            self.logger.warning("Could not confirm ttyd startup within timeout")
-        return False
-
-    def _validate_ttyd_available(self) -> bool:
-        """Check if ttyd executable is available."""
-        import shutil
-
-        ui_config = self.config.get_ui_config()
-        web_config = ui_config.get("web", {})
-        ttyd_path = web_config.get("ttyd_path", "ttyd")
-
-        if shutil.which(ttyd_path) is None:
-            if self.logger:
-                self.logger.error(
-                    f"ttyd executable not found: {ttyd_path}",
-                    {
-                        "message": "Please install ttyd or update 'ui.web.ttyd_path' in config",
-                        "install_url": "https://github.com/tsl0922/ttyd"
-                    }
-                )
-            return False
-        return True
-
     def _check_port_available(self, port: int) -> bool:
         """Check if port is available for binding.
 
@@ -736,19 +668,7 @@ class UIProcessManager:
 
     def _get_process_command(self, pid: int) -> str:
         """Return a readable command line for a PID when available."""
-        try:
-            result = subprocess.run(
-                ["ps", "-p", str(pid), "-o", "command="],
-                check=False,
-                capture_output=True,
-                text=True,
-            )
-            command = result.stdout.strip()
-            if command:
-                return command
-        except Exception:
-            pass
-        return ""
+        return process_utils.get_process_command(pid)
 
     def _wait_for_port_available(self, port: int, timeout: float = 5.0) -> bool:
         """Wait for a TCP port to become available."""
@@ -761,102 +681,12 @@ class UIProcessManager:
 
     def _terminate_process_tree(self, pid: int, timeout: float = 5.0) -> bool:
         """Terminate a process and its descendants."""
-        if platform.system() == "Windows":
-            return self._terminate_process_tree_windows(pid)
-        return self._terminate_process_tree_unix(pid, timeout=timeout)
-
-    def _terminate_process_tree_windows(self, pid: int) -> bool:
-        """Terminate a process tree on Windows."""
-        try:
-            result = subprocess.run(
-                ["taskkill", "/PID", str(pid), "/T", "/F"],
-                check=False,
-                capture_output=True,
-                text=True,
-            )
-            return result.returncode == 0
-        except Exception:
-            return False
-
-    def _terminate_process_tree_unix(self, pid: int, timeout: float = 5.0) -> bool:
-        """Terminate a process tree on Unix-like platforms."""
-        pids = self._collect_descendant_pids(pid)
-        pids.append(pid)
-
-        for target_pid in reversed(pids):
-            try:
-                os.kill(target_pid, signal.SIGTERM)
-            except ProcessLookupError:
-                continue
-            except Exception:
-                return False
-
-        deadline = time.time() + timeout
-        while time.time() < deadline:
-            alive = [target_pid for target_pid in pids if self._pid_exists(target_pid)]
-            if not alive:
-                return True
-            time.sleep(0.1)
-
-        for target_pid in reversed(pids):
-            try:
-                os.kill(target_pid, signal.SIGKILL)
-            except ProcessLookupError:
-                continue
-            except Exception:
-                return False
-
-        time.sleep(0.1)
-        return not any(self._pid_exists(target_pid) for target_pid in pids)
+        return process_utils.terminate_process_tree(pid, timeout=timeout, root_first=True)
 
     def _collect_descendant_pids(self, pid: int) -> list[int]:
         """Collect descendant PIDs for a root process using ps."""
-        descendants: list[int] = []
-        queue = [pid]
-
-        while queue:
-            parent_pid = queue.pop()
-            try:
-                result = subprocess.run(
-                    ["ps", "-o", "pid=", "--ppid", str(parent_pid)],
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                )
-            except Exception:
-                continue
-
-            child_pids = []
-            for line in result.stdout.splitlines():
-                line = line.strip()
-                if line.isdigit():
-                    child_pid = int(line)
-                    child_pids.append(child_pid)
-                    descendants.append(child_pid)
-
-            queue.extend(child_pids)
-
-        return descendants
+        return process_utils.collect_descendant_pids(pid)
 
     def _pid_exists(self, pid: int) -> bool:
         """Check whether a PID still exists."""
-        try:
-            os.kill(pid, 0)
-            return True
-        except ProcessLookupError:
-            return False
-        except PermissionError:
-            return True
-
-    def _get_process_creation_flags(self) -> int:
-        """Gets the appropriate process creation flags based on the platform.
-
-        Returns:
-            int: The process creation flags.
-        """
-        if platform.system() == "Windows":
-            # CREATE_NEW_CONSOLE flag to open a new console window
-            return subprocess.CREATE_NEW_CONSOLE
-        else:
-            # No special flags needed for Unix-like systems
-            return 0
+        return process_utils.pid_exists(pid)

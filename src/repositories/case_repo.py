@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from src.database.connection import DatabaseConnection
-from src.domain.enums import BeamStatus, CaseStatus, WorkflowStep
+from src.domain.enums import BeamStatus, CaseStatus, StepStatus, WorkflowStep
 from src.domain.models import BeamData, CaseData, DeliveryData, WorkflowStepRecord
 from src.infrastructure.logging_handler import StructuredLogger
 from src.repositories.base import BaseRepository
@@ -128,35 +128,6 @@ class CaseRepository(BaseRepository):
 
         return None
 
-    def get_cases_by_status(self, status: CaseStatus) -> List[CaseData]:
-        """Retrieves all cases with a specific status.
-
-        Args:
-            status (CaseStatus): The case status to filter by.
-
-        Returns:
-            List[CaseData]: A list of CaseData objects matching the status.
-        """
-        self._log_operation("get_cases_by_status", status=status.value)
-
-        query = """
-            SELECT case_id, case_path, status, progress, created_at,
-                   updated_at, error_message, failure_category, failure_phase,
-                   failure_details, assigned_gpu, interpreter_completed,
-                   retry_count, ptn_checker_run_count, ptn_checker_last_run_at, ptn_checker_status
-            FROM cases
-            WHERE status = ?
-            ORDER BY created_at ASC
-        """
-
-        rows = self._execute_query(query, (status.value,), fetch_all=True)
-
-        cases = []
-        for row in rows:
-            cases.append(self._map_row_to_case_data(row))
-
-        return cases
-
     def get_all_case_ids(self) -> List[str]:
         """Retrieves all case IDs from the database.
 
@@ -184,7 +155,7 @@ class CaseRepository(BaseRepository):
         self,
         case_id: str,
         step: WorkflowStep,
-        status: str,
+        status: StepStatus | str,
         error_message: str = None,
         metadata: Dict[str, Any] = None,
         step_name: str = None,  # Added for backward compatibility
@@ -195,7 +166,7 @@ class CaseRepository(BaseRepository):
         Args:
             case_id (str): The case identifier.
             step (WorkflowStep): The workflow step being recorded.
-            status (str): The step status ('started', 'completed', 'failed').
+            status (StepStatus | str): The step status.
             error_message (str, optional): An optional error message for failed steps. Defaults to None.
             metadata (Dict[str, Any], optional): An optional metadata dictionary. Defaults to None.
             step_name (str, optional): (Backward compatibility) The name of the step. Defaults to None.
@@ -212,6 +183,8 @@ class CaseRepository(BaseRepository):
         
         if details and not error_message:
             error_message = details
+        if isinstance(status, str):
+            status = StepStatus(status)
 
         self._log_operation(
             "record_workflow_step", case_id, step=step.value, status=status
@@ -226,7 +199,7 @@ class CaseRepository(BaseRepository):
         metadata_json = json.dumps(metadata) if metadata else None
 
         self._execute_query(
-            query, (case_id, step.value, status, error_message, metadata_json)
+            query, (case_id, step.value, status.value, error_message, metadata_json)
         )
 
     def get_workflow_steps(self, case_id: str) -> List[WorkflowStepRecord]:
@@ -271,7 +244,7 @@ class CaseRepository(BaseRepository):
                         if row["completed_at"]
                         else None
                     ),
-                    status=row["status"],
+                    status=StepStatus(row["status"]),
                     error_message=row["error_message"],
                     metadata=metadata,
                 )
@@ -332,40 +305,6 @@ class CaseRepository(BaseRepository):
         self.logger.info(
             "Interpreter marked as completed", {"case_id": case_id}
         )
-
-    def update_ptn_checker_status(
-        self,
-        case_id: str,
-        status_code: str,
-        last_run_at: Optional[datetime] = None,
-    ) -> None:
-        """Update PTN checker status fields without altering run count."""
-        self._log_operation(
-            "update_ptn_checker_status",
-            case_id=case_id,
-            status_code=status_code,
-        )
-
-        query = """
-            UPDATE cases
-            SET ptn_checker_status = ?,
-                ptn_checker_last_run_at = ?,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE case_id = ?
-        """
-        serialized_last_run_at = last_run_at.isoformat() if last_run_at else None
-        self._execute_query(query, (status_code, serialized_last_run_at, case_id))
-
-    def increment_ptn_checker_run_count(self, case_id: str) -> None:
-        """Increment PTN checker invocation count for a case."""
-        self._log_operation("increment_ptn_checker_run_count", case_id=case_id)
-        query = """
-            UPDATE cases
-            SET ptn_checker_run_count = ptn_checker_run_count + 1,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE case_id = ?
-        """
-        self._execute_query(query, (case_id,))
 
     def record_ptn_checker_result(
         self,
@@ -495,23 +434,6 @@ class CaseRepository(BaseRepository):
         self.logger.info("Beam progress updated", {"beam_id": beam_id, "progress": progress})
 
 
-    def assign_hpc_job_id_to_beam(self, beam_id: str, hpc_job_id: str) -> None:
-        """Assigns an HPC job ID to a specific beam.
-
-        Args:
-            beam_id (str): The beam identifier.
-            hpc_job_id (str): The HPC job ID to assign.
-        """
-        self._log_operation(
-            "assign_hpc_job_id_to_beam", beam_id=beam_id, hpc_job_id=hpc_job_id
-        )
-        query = "UPDATE beams SET hpc_job_id = ?, updated_at = CURRENT_TIMESTAMP WHERE beam_id = ?"
-        self._execute_query(query, (hpc_job_id, beam_id))
-        self.logger.info(
-            "HPC job ID assigned to beam",
-            {"beam_id": beam_id, "hpc_job_id": hpc_job_id},
-        )
-
     def update_beam_number(self, beam_id: str, beam_number: int) -> None:
         """Persists the DICOM beam number for a beam."""
         self._log_operation("update_beam_number", beam_id=beam_id, beam_number=beam_number)
@@ -545,41 +467,6 @@ class CaseRepository(BaseRepository):
         for row in rows:
             beams.append(self._map_row_to_beam_data(row))
         return beams
-
-    def get_all_active_cases(self) -> List[CaseData]:
-        """Retrieves all cases that are currently active (not completed or failed).
-
-        Returns:
-            List[CaseData]: A list of active CaseData objects.
-        """
-        self._log_operation("get_all_active_cases")
-
-        active_statuses = [
-            CaseStatus.PENDING.value,
-            CaseStatus.CSV_INTERPRETING.value,
-            CaseStatus.PROCESSING.value,
-            CaseStatus.POSTPROCESSING.value,
-            CaseStatus.FAILED.value,
-        ]
-
-        placeholders = ",".join(["?" for _ in active_statuses])
-        query = f"""
-            SELECT case_id, case_path, status, progress, created_at,
-                   updated_at, error_message, failure_category, failure_phase,
-                   failure_details, assigned_gpu, interpreter_completed,
-                   retry_count, ptn_checker_run_count, ptn_checker_last_run_at, ptn_checker_status
-            FROM cases
-            WHERE status IN ({placeholders})
-            ORDER BY created_at ASC
-        """
-
-        rows = self._execute_query(query, tuple(active_statuses), fetch_all=True)
-
-        cases = []
-        for row in rows:
-            cases.append(self._map_row_to_case_data(row))
-
-        return cases
 
     def create_case_with_beams(self, case_id: str, case_path: str, beam_jobs: List[Dict[str, Any]]) -> None:
         """Atomically creates a case and its associated beam records.
@@ -1074,5 +961,31 @@ class CaseRepository(BaseRepository):
         """
         self._log_operation("update_case_and_beams_status", case_id,
                           case_status=case_status.value, beam_status=beam_status.value)
-        self.update_case_status(case_id, case_status, progress=progress)
-        self.update_beams_status_by_case_id(case_id, beam_status.value)
+        set_clauses = ["status = ?", "updated_at = CURRENT_TIMESTAMP"]
+        params = [case_status.value]
+
+        if progress is not None:
+            set_clauses.append("progress = ?")
+            params.append(progress)
+
+        params.append(case_id)
+
+        with self.db.transaction() as conn:
+            conn.execute(
+                f"UPDATE cases SET {', '.join(set_clauses)} WHERE case_id = ?",
+                tuple(params),
+            )
+            conn.execute(
+                "UPDATE beams SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE parent_case_id = ?",
+                (beam_status.value, case_id),
+            )
+
+        self.logger.info(
+            "Case and beam statuses updated",
+            {
+                "case_id": case_id,
+                "case_status": case_status.value,
+                "beam_status": beam_status.value,
+                "progress": progress,
+            },
+        )

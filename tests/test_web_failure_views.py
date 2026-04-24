@@ -1,14 +1,29 @@
+import asyncio
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 import warnings
 
-from fastapi.testclient import TestClient
+import httpx
 
 from src.domain.enums import BeamStatus, CaseStatus
 from src.ui.provider import DashboardDataProvider
 from src.web.app import create_app
+
+
+class ASGITestClient:
+    def __init__(self, app):
+        self.app = app
+        self.app.state.run_sync_inline = True
+
+    def get(self, path: str):
+        return asyncio.run(self._request("GET", path))
+
+    async def _request(self, method: str, path: str):
+        transport = httpx.ASGITransport(app=self.app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            return await client.request(method, path)
 
 
 def _failed_case_view(tmp_path: Path):
@@ -75,7 +90,7 @@ def test_cases_list_renders_case_level_error_column(tmp_path: Path):
 
     app = create_app()
     app.state.provider = provider
-    client = TestClient(app)
+    client = ASGITestClient(app)
 
     response = client.get("/ui/cases")
 
@@ -105,7 +120,7 @@ def test_root_view_renders_base_template(tmp_path: Path):
 
     app = create_app()
     app.state.provider = provider
-    client = TestClient(app)
+    client = ASGITestClient(app)
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
@@ -143,7 +158,7 @@ def test_case_detail_renders_case_failure_summary_and_beam_level_errors(tmp_path
 
     app = create_app()
     app.state.provider = provider
-    client = TestClient(app)
+    client = ASGITestClient(app)
 
     response = client.get("/ui/cases/case-failed/details")
 
@@ -170,7 +185,7 @@ def test_workflow_view_renders_retryable_permanent_counts_and_phase_summary(tmp_
 
     app = create_app()
     app.state.provider = provider
-    client = TestClient(app)
+    client = ASGITestClient(app)
 
     response = client.get("/ui/workflow")
 
@@ -194,7 +209,7 @@ def test_log_modal_uses_bounded_dialog_width(tmp_path: Path):
 
     app = create_app()
     app.state.provider = provider
-    client = TestClient(app)
+    client = ASGITestClient(app)
 
     response = client.get(f"/ui/logs/{raw_case.case_id}")
 
@@ -263,7 +278,7 @@ def test_case_detail_renders_grouped_room_output_locations(tmp_path: Path):
 
     app = create_app()
     app.state.provider = provider
-    client = TestClient(app)
+    client = ASGITestClient(app)
 
     response = client.get(f"/ui/cases/{case_id}/details")
 
@@ -328,7 +343,7 @@ def test_case_detail_renders_conditional_ptn_status_badge(tmp_path: Path):
 
     app = create_app()
     app.state.provider = provider
-    client = TestClient(app)
+    client = ASGITestClient(app)
 
     response = client.get(f"/ui/cases/{raw_case.case_id}/details")
 

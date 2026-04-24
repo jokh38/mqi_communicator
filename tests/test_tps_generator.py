@@ -1,6 +1,8 @@
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from src.config.settings import Settings
 from src.core.tps_generator import TpsGenerator
 
@@ -28,7 +30,8 @@ def test_generate_tps_file_uses_beam_specific_output_dir(tmp_path: Path) -> None
         raise AssertionError(f"Expected TPS generation success, got {success!r}")
     tps_file = output_dir / "moqui_tps_55061194_2025042401552900.in"
     content = tps_file.read_text(encoding="utf-8")
-    expected_line = "OutputDir /home/SMC/MOQUI_SMC/data/Output/55061194/Dose"
+    base_dir = settings.get_path("base_directory", handler_name="CsvInterpreter")
+    expected_line = f"OutputDir {base_dir}/data/Output/55061194/Dose"
     if expected_line not in content:
         raise AssertionError(f"Expected line missing from TPS file: {expected_line}")
 
@@ -107,3 +110,30 @@ def test_generate_tps_file_single_gpu_mode_keeps_scalar_gpu_id(tmp_path: Path) -
         raise AssertionError(f"Expected BeamNumbers 2 for single-GPU mode, content was:\n{content}")
     if "GPUID 3" not in content:
         raise AssertionError(f"Expected scalar GPUID for single-GPU mode, content was:\n{content}")
+
+
+def test_tps_generator_uses_public_settings_accessors_only(tmp_path: Path) -> None:
+    settings = MagicMock(spec=Settings)
+    settings.get_moqui_tps_parameters.return_value = {}
+    settings.get_tps_generator_config.return_value = {
+        "validation": {"required_params": ["GPUID", "OutputDir"]},
+        "default_paths": {},
+    }
+    settings.get_path.return_value = "/configured/base"
+    settings._yaml_config = pytest.fail
+    logger = MagicMock()
+    generator = TpsGenerator(settings=settings, logger=logger)
+    case_path = tmp_path / "case"
+    case_path.mkdir()
+
+    dynamic_paths = generator._generate_dynamic_paths(
+        case_path=case_path,
+        case_id="case-1",
+        execution_mode="local",
+    )
+
+    assert dynamic_paths["base_directory"] == "/configured/base"
+    assert generator._validate_parameters(
+        {"GPUID": 0, "OutputDir": "/tmp/out", "GantryNum": 1},
+        "case-1",
+    )

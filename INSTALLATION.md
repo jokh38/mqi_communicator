@@ -141,7 +141,7 @@ ssh -i ~/.ssh/mqi_hpc_key username@hpc.server.com "echo 'Connection successful'"
 #### Test Basic Components
 ```bash
 # Check Python and dependencies
-python -c "import watchdog, rich, paramiko, yaml; print('All dependencies imported successfully')"
+python -c "import watchdog, rich, yaml; print('All dependencies imported successfully')"
 
 # Test nvidia-smi (if GPU monitoring is needed)
 nvidia-smi --query-gpu=name,memory.total,memory.used --format=csv,noheader,nounits
@@ -173,9 +173,9 @@ export MQI_GPU_MONITOR_INTERVAL="30"
 
 ### Configuration File Sections
 
-#### Dashboard Settings
+#### UI Settings
 ```yaml
-dashboard:
+ui:
   auto_start: true                    # Auto-start dashboard UI
   refresh_interval_seconds: 1         # UI refresh rate
 ```
@@ -213,7 +213,7 @@ MQI_LOG_LEVEL=DEBUG python main.py
 ```
 
 ### Monitor Application
-- The **dashboard** will automatically start if `dashboard.auto_start: true`
+- The **dashboard** will automatically start if `ui.auto_start: true`
 - **Log files** are written to the configured log directory
 - **Database** contains case progress and GPU resource information
 
@@ -230,7 +230,7 @@ MQI_LOG_LEVEL=DEBUG python main.py
 ```bash
 # If you get import errors, verify virtual environment is activated
 which python
-pip list | grep -E "watchdog|rich|paramiko|PyYAML"
+pip list | grep -E "watchdog|rich|PyYAML"
 ```
 
 #### Permission Issues

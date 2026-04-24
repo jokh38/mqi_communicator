@@ -8,6 +8,10 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from src.infrastructure.logging_handler import LoggerFactory, StructuredLogger
+from src.utils.planinfo import (
+    parse_delivery_timestamp as _parse_delivery_timestamp,
+    parse_planinfo_beam_number,
+)
 
 
 @dataclass
@@ -56,41 +60,8 @@ class ReadyCase:
     result: CaseDeliveryResult
 
 
-def _parse_delivery_timestamp(delivery_path: Path) -> Optional[datetime]:
-    candidates = [delivery_path.name]
-    planinfo_path = delivery_path / "PlanInfo.txt"
-    if planinfo_path.exists():
-        try:
-            for raw_line in planinfo_path.read_text(encoding="utf-8", errors="ignore").splitlines():
-                key, separator, value = raw_line.strip().partition(",")
-                if separator and key.strip() == "TCSC_IRRAD_DATETIME":
-                    candidates.insert(0, value.strip())
-                    break
-        except OSError:
-            pass
-
-    for candidate in candidates:
-        try:
-            return datetime.strptime(candidate, "%Y%m%d%H%M%S%f")
-        except ValueError:
-            continue
-    return None
-
-
 def _parse_planinfo_beam_number(delivery_path: Path) -> int:
-    planinfo_path = delivery_path / "PlanInfo.txt"
-    if not planinfo_path.exists():
-        return 0
-
-    try:
-        for raw_line in planinfo_path.read_text(encoding="utf-8", errors="ignore").splitlines():
-            key, separator, value = raw_line.strip().partition(",")
-            if separator and key.strip() == "DICOM_BEAM_NUMBER":
-                return int(value.strip())
-    except (OSError, ValueError):
-        return 0
-
-    return 0
+    return parse_planinfo_beam_number(delivery_path, default=0) or 0
 
 
 def group_deliveries_into_fractions(

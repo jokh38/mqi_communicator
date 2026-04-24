@@ -13,15 +13,20 @@ import re
 import time
 import hashlib
 import multiprocessing as mp
-from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
 from src.repositories.case_repo import CaseRepository
 from src.repositories.gpu_repo import GpuRepository
-from src.domain.enums import CaseStatus, BeamStatus, WorkflowStep
+from src.domain.enums import CaseStatus, BeamStatus
 from src.domain.errors import ProcessingError
 from src.infrastructure.logging_handler import StructuredLogger, LoggerFactory
+from src.core.retry_policy import (
+    PERMANENT_ERROR_PREFIX,
+    RETRYABLE_ERROR_PREFIX,
+    mark_permanent_error_message,
+    mark_retryable_error_message,
+)
 from src.core.data_integrity_validator import DataIntegrityValidator
 from src.core.fraction_grouper import (
     CaseDeliveryResult,
@@ -31,6 +36,10 @@ from src.core.fraction_grouper import (
     log_fraction_event,
 )
 from src.utils.db_context import get_db_session
+from src.utils.planinfo import (
+    parse_delivery_timestamp as _parse_delivery_timestamp,
+    parse_planinfo_beam_number,
+)
 
 
 def _normalize_beam_identifier(value: str) -> str:
@@ -43,22 +52,7 @@ def _extract_numeric_suffix(value: str) -> Optional[int]:
 
 
 def _extract_planinfo_beam_number(beam_path: Path) -> Optional[int]:
-    planinfo_path = beam_path / "PlanInfo.txt"
-    if not planinfo_path.exists():
-        return None
-
-    try:
-        for raw_line in planinfo_path.read_text(encoding="utf-8", errors="ignore").splitlines():
-            line = raw_line.strip()
-            if not line:
-                continue
-            key, separator, value = line.partition(",")
-            if separator and key.strip() == "DICOM_BEAM_NUMBER":
-                return int(value.strip())
-    except (OSError, ValueError):
-        return None
-
-    return None
+    return parse_planinfo_beam_number(beam_path)
 
 
 def _parse_required_planinfo(beam_path: Path) -> Optional[Dict[str, Any]]:
@@ -176,27 +170,6 @@ def _resolve_treatment_beam_index(
         if len(named_matches) == 1:
             return named_matches[0]
 
-    return None
-
-
-def _parse_delivery_timestamp(beam_path: Path) -> Optional[datetime]:
-    candidates = [beam_path.name]
-    planinfo_path = beam_path / "PlanInfo.txt"
-    if planinfo_path.exists():
-        try:
-            for raw_line in planinfo_path.read_text(encoding="utf-8", errors="ignore").splitlines():
-                key, separator, value = raw_line.strip().partition(",")
-                if separator and key.strip() == "TCSC_IRRAD_DATETIME":
-                    candidates.insert(0, value.strip())
-                    break
-        except OSError:
-            pass
-
-    for candidate in candidates:
-        try:
-            return datetime.strptime(candidate, "%Y%m%d%H%M%S%f")
-        except ValueError:
-            continue
     return None
 
 
@@ -619,12 +592,15 @@ def update_case_status_from_beams(case_id: str, case_repo: CaseRepository, logge
     total_beams = len(beams)
     completed_beams = 0
     failed_beams = 0
+    failed_beam_messages = []
 
     for beam in beams:
         if beam.status == BeamStatus.COMPLETED:
             completed_beams += 1
         elif beam.status == BeamStatus.FAILED:
             failed_beams += 1
+            if getattr(beam, "error_message", None):
+                failed_beam_messages.append(str(beam.error_message))
 
     if failed_beams > 0:
         log.info(
@@ -632,7 +608,9 @@ def update_case_status_from_beams(case_id: str, case_repo: CaseRepository, logge
             {"case_id": case_id, "failed_beams": failed_beams})
         case_repo.update_case_status(
             case_id, CaseStatus.FAILED,
-            error_message=f"{failed_beams} beam(s) failed.")
+            error_message=_case_failure_message_from_beams(
+                failed_beams, failed_beam_messages
+            ))
     elif completed_beams == total_beams:
         log.info(
             f"All {total_beams} beams for case '{case_id}' are complete. "
@@ -645,6 +623,25 @@ def update_case_status_from_beams(case_id: str, case_repo: CaseRepository, logge
         except Exception:
             progress = (completed_beams / total_beams) * 100
         case_repo.update_case_status(case_id, CaseStatus.PROCESSING, progress=progress)
+
+
+def _case_failure_message_from_beams(
+    failed_beams: int, failed_beam_messages: list[str]
+) -> str:
+    """Build a case-level failure message without losing retry classification."""
+    if not failed_beam_messages:
+        return f"{failed_beams} beam(s) failed."
+
+    first_message = failed_beam_messages[0]
+    if failed_beams == 1:
+        return first_message
+
+    message = f"{failed_beams} beam(s) failed. First failure: {first_message}"
+    if any(text.startswith(PERMANENT_ERROR_PREFIX) for text in failed_beam_messages):
+        return mark_permanent_error_message(message)
+    if any(text.startswith(RETRYABLE_ERROR_PREFIX) for text in failed_beam_messages):
+        return mark_retryable_error_message(message)
+    return message
 
 
 

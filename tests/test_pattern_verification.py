@@ -75,9 +75,8 @@ class TestProgressTrackingPattern:
         state = InitialState()
         mock_context = Mock()
         mock_context.id = "test_beam_123"
-        # Use a Mock for path to allow mocking is_dir()
-        mock_context.path = Mock()
-        mock_context.path.is_dir = Mock(return_value=True)
+        mock_context.path = Path("/tmp/csv_output/case_123/test_beam_123")
+        mock_context.path.mkdir(parents=True, exist_ok=True)
         mock_context.logger = Mock()
         mock_context.case_repo = Mock()
         mock_context.shared_context = {}
@@ -95,7 +94,7 @@ class TestProgressTrackingPattern:
         mock_context.case_repo.get_beam = Mock(return_value=mock_beam)
 
         # Create TPS file
-        tps_dir = Path("/tmp/csv_output/case_123")
+        tps_dir = Path("/tmp/csv_output/case_123/Log_csv")
         tps_dir.mkdir(parents=True, exist_ok=True)
         tps_file = tps_dir / "moqui_tps_test_beam_123.in"
         tps_file.touch()
@@ -112,6 +111,7 @@ class TestProgressTrackingPattern:
             # Cleanup
             tps_file.unlink()
             tps_dir.rmdir()
+            mock_context.path.rmdir()
             tps_dir.parent.rmdir()
 
     def test_progress_update_silently_ignores_missing_phase_config(self):
@@ -120,9 +120,8 @@ class TestProgressTrackingPattern:
         state = InitialState()
         mock_context = Mock()
         mock_context.id = "test_beam_123"
-        # Use a Mock for path to allow mocking is_dir()
-        mock_context.path = Mock()
-        mock_context.path.is_dir = Mock(return_value=True)
+        mock_context.path = Path("/tmp/csv_output2/case_123/test_beam_123")
+        mock_context.path.mkdir(parents=True, exist_ok=True)
         mock_context.logger = Mock()
         mock_context.case_repo = Mock()
         mock_context.shared_context = {}
@@ -140,7 +139,7 @@ class TestProgressTrackingPattern:
         mock_context.case_repo.get_beam = Mock(return_value=mock_beam)
 
         # Create TPS file
-        tps_dir = Path("/tmp/csv_output2/case_123")
+        tps_dir = Path("/tmp/csv_output2/case_123/Log_csv")
         tps_dir.mkdir(parents=True, exist_ok=True)
         tps_file = tps_dir / "moqui_tps_test_beam_123.in"
         tps_file.touch()
@@ -157,6 +156,7 @@ class TestProgressTrackingPattern:
             # Cleanup
             tps_file.unlink()
             tps_dir.rmdir()
+            mock_context.path.rmdir()
             tps_dir.parent.rmdir()
 
 
@@ -172,9 +172,8 @@ class TestPathHandlingPattern:
         state = InitialState()
         mock_context = Mock()
         mock_context.id = "test_beam_123"
-        # Use a Mock for path to allow mocking is_dir()
-        mock_context.path = Mock()
-        mock_context.path.is_dir = Mock(return_value=True)
+        mock_context.path = Path("/tmp/csv_output3/case_123/test_beam_123")
+        mock_context.path.mkdir(parents=True, exist_ok=True)
         mock_context.logger = Mock()
         mock_context.case_repo = Mock()
         mock_context.shared_context = {}
@@ -192,7 +191,7 @@ class TestPathHandlingPattern:
         mock_context.case_repo.get_beam = Mock(return_value=mock_beam)
 
         # Create TPS file
-        tps_dir = Path("/tmp/csv_output3/case_123")
+        tps_dir = Path("/tmp/csv_output3/case_123/Log_csv")
         tps_dir.mkdir(parents=True, exist_ok=True)
         tps_file = tps_dir / "moqui_tps_test_beam_123.in"
         tps_file.touch()
@@ -209,6 +208,7 @@ class TestPathHandlingPattern:
             # Cleanup
             tps_file.unlink()
             tps_dir.rmdir()
+            mock_context.path.rmdir()
             tps_dir.parent.rmdir()
 
 

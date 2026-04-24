@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.config.settings import Settings
+from src.domain.enums import CaseStatus, StepStatus
 from src.handlers.execution_handler import ExecutionHandler, ExecutionResult
 
 
@@ -152,6 +153,12 @@ def test_run_case_level_tps_generation_persists_treatment_beam_indices(
         raise AssertionError(f"Unexpected GPU assignment result: {result!r}")
     case_repo.update_beam_number.assert_any_call("case-1_beam-b", 10)
     case_repo.update_beam_number.assert_any_call("case-1_beam-a", 2)
+    recorded_statuses = [
+        call.kwargs["status"]
+        for call in case_repo.record_workflow_step.call_args_list
+    ]
+    if not all(isinstance(status, StepStatus) for status in recorded_statuses):
+        raise AssertionError(f"Expected StepStatus values, got {recorded_statuses!r}")
 
 
 def test_run_case_level_tps_generation_releases_gpu_by_uuid_on_generation_failure(
@@ -197,6 +204,109 @@ def test_run_case_level_tps_generation_releases_gpu_by_uuid_on_generation_failur
     if result is not None:
         raise AssertionError(f"Expected TPS generation failure to return None, got {result!r}")
     gpu_repo.release_gpu.assert_called_once_with("gpu-1")
+
+
+def test_run_case_level_tps_generation_cleanup_releases_gpu_assignments_by_beam_id(
+    mock_settings,
+):
+    sys.modules.pop("src.core.dispatcher", None)
+    dispatcher = importlib.import_module("src.core.dispatcher")
+    logger = MagicMock()
+
+    case_repo = MagicMock()
+    case_repo.get_beams_for_case.return_value = [
+        SimpleNamespace(beam_id="case-1_beam-1"),
+        SimpleNamespace(beam_id="case-1_beam-2"),
+    ]
+
+    gpu_repo = MagicMock()
+    context_manager = MagicMock()
+    context_manager.__enter__.return_value = case_repo
+    context_manager.__exit__.return_value = False
+
+    with patch("src.core.dispatcher.LoggerFactory.get_logger", return_value=logger), \
+         patch("src.core.dispatcher.DataIntegrityValidator", side_effect=RuntimeError("boom")), \
+         patch("src.core.dispatcher.GpuRepository", return_value=gpu_repo), \
+         patch("src.core.dispatcher.get_db_session", return_value=context_manager):
+        result = dispatcher.run_case_level_tps_generation(
+            case_id="case-1",
+            case_path=Path("cases") / "case-1",
+            beam_count=2,
+            settings=mock_settings,
+        )
+
+    if result is not None:
+        raise AssertionError(f"Expected dispatcher failure to return None, got {result!r}")
+    gpu_repo.release_all_for_case.assert_any_call("case-1_beam-1")
+    gpu_repo.release_all_for_case.assert_any_call("case-1_beam-2")
+
+
+def test_run_case_level_ptn_analysis_marks_case_postprocessing(mock_settings, tmp_path):
+    sys.modules.pop("src.core.dispatcher", None)
+    dispatcher = importlib.import_module("src.core.dispatcher")
+    case_id = "case-ptn"
+    case_path = tmp_path / case_id
+    case_path.mkdir()
+    rtplan_path = case_path / "rtplan.dcm"
+    rtplan_path.touch()
+
+    delivery = SimpleNamespace(
+        delivery_id="delivery-1",
+        delivery_path=case_path,
+    )
+    case_repo = MagicMock()
+    case_repo.get_deliveries_for_case.return_value = [delivery]
+
+    context_manager = MagicMock()
+    context_manager.__enter__.return_value = case_repo
+    context_manager.__exit__.return_value = False
+
+    validator = MagicMock()
+    validator.find_rtplan_file.return_value = rtplan_path
+
+    integration = MagicMock()
+    integration.run_analysis.return_value = SimpleNamespace(
+        success=True,
+        status_code="SUCCESS",
+        error_message=None,
+        output_dir=tmp_path / "ptn-output",
+        report_path=None,
+        report_paths=None,
+        analysis_data={"beam": {"layers": [{"results": {
+            "evaluated_point_count": 10,
+            "pass_rate": 1.0,
+            "gamma_mean": 0.1,
+            "gamma_max": 0.2,
+        }}]}},
+    )
+
+    with patch("src.core.dispatcher.LoggerFactory.get_logger", return_value=MagicMock()), \
+         patch("src.core.dispatcher.DataIntegrityValidator", return_value=validator), \
+         patch("src.core.dispatcher.create_ptn_checker_integration", return_value=integration), \
+         patch("src.core.dispatcher.resolve_ptn_checker_output_dir", return_value=tmp_path / "ptn-output"), \
+         patch("src.core.dispatcher.get_db_session", return_value=context_manager):
+        result = dispatcher.run_case_level_ptn_analysis(case_id, case_path, mock_settings)
+
+    if result.success is not True:
+        raise AssertionError(f"Expected successful PTN result, got {result!r}")
+    case_repo.update_case_status.assert_any_call(
+        case_id=case_id,
+        status=CaseStatus.POSTPROCESSING,
+        progress=80.0,
+    )
+    case_repo.update_case_status.assert_any_call(
+        case_id=case_id,
+        status=CaseStatus.COMPLETED,
+        progress=100.0,
+    )
+    recorded_statuses = [
+        call.kwargs["status"]
+        for call in case_repo.record_workflow_step.call_args_list
+    ]
+    if StepStatus.STARTED not in recorded_statuses:
+        raise AssertionError(f"Expected started status, got {recorded_statuses!r}")
+    if StepStatus.COMPLETED not in recorded_statuses:
+        raise AssertionError(f"Expected completed status, got {recorded_statuses!r}")
 
 
 @patch("src.core.dispatcher.get_db_session")
@@ -616,7 +726,16 @@ def test_run_case_level_ptn_checker_analysis_records_success_without_failing_cas
     if result.success is not True:
         raise AssertionError(f"Expected PTN analysis success, got {result!r}")
     case_repo.record_ptn_checker_result.assert_called_once()
-    case_repo.update_case_status.assert_not_called()
+    case_repo.update_case_status.assert_any_call(
+        case_id="case-1",
+        status=CaseStatus.POSTPROCESSING,
+        progress=80.0,
+    )
+    case_repo.update_case_status.assert_any_call(
+        case_id="case-1",
+        status=CaseStatus.COMPLETED,
+        progress=100.0,
+    )
 
 
 def test_run_case_level_ptn_checker_analysis_uses_grouped_daily_output_dir(mock_settings):
@@ -682,7 +801,16 @@ def test_run_case_level_ptn_checker_analysis_records_failure_in_ptn_fields_only(
     if result.status_code != "FAILED_NO_DICOM":
         raise AssertionError(f"Expected FAILED_NO_DICOM result, got {result!r}")
     case_repo.record_ptn_checker_result.assert_called_once()
-    case_repo.update_case_status.assert_not_called()
+    case_repo.update_case_status.assert_any_call(
+        case_id="case-1",
+        status=CaseStatus.POSTPROCESSING,
+        progress=80.0,
+    )
+    case_repo.update_case_status.assert_any_call(
+        case_id="case-1",
+        status=CaseStatus.COMPLETED,
+        progress=100.0,
+    )
 
 
 def test_run_case_level_ptn_checker_analysis_records_distinct_delivery_report_paths(mock_settings):

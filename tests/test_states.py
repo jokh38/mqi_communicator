@@ -13,6 +13,7 @@ from src.domain.states import (
     SimulationState,
     FailedState,
 )
+from src.domain.enums import BeamStatus
 from src.handlers.execution_handler import ExecutionHandler
 
 
@@ -226,6 +227,24 @@ def test_permanent_failure_error_marks_failed_beam_with_permanent_prefix(
     failed_call = mock_workflow_manager.case_repo.update_beam_status.call_args_list[-1]
     assert failed_call.args[1].value == "failed"
     assert failed_call.kwargs["error_message"].startswith("[PERMANENT] ")
+
+
+def test_failed_state_does_not_rewrite_already_failed_beam(mock_workflow_manager):
+    mock_workflow_manager.case_repo.get_beam.return_value = SimpleNamespace(
+        beam_id="beam-01",
+        parent_case_id="case-abc",
+        beam_number=10,
+        status=BeamStatus.FAILED,
+    )
+    mock_workflow_manager.case_repo.get_beams_for_case.return_value = [
+        mock_workflow_manager.case_repo.get_beam.return_value
+    ]
+
+    next_state = FailedState().execute(mock_workflow_manager)
+
+    assert next_state is None
+    mock_workflow_manager.case_repo.update_beam_status.assert_not_called()
+    mock_workflow_manager.case_repo.get_case.assert_not_called()
 
 
 def test_initial_state_reads_grouped_room_tps_file(tmp_path: Path):

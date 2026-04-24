@@ -42,15 +42,20 @@ database:
   connection_timeout_seconds: 30
   journal_mode: "WAL"
   synchronous_mode: "NORMAL"
-  enable_foreign_keys: true
 
 processing:
   max_workers: 4
-  case_timeout_seconds: 3600
-  scan_interval_seconds: 60
   hpc_poll_interval_seconds: 30
   hpc_job_timeout_seconds: 3600
   max_case_retries: 3  # W-4 fix: Maximum retries for failed cases
+
+progress_tracking:
+  polling_interval_seconds: 5
+  coarse_phase_progress:
+    CSV_INTERPRETING: 10.0
+    HPC_RUNNING: 40.0
+    POSTPROCESSING: 80.0
+    COMPLETED: 100.0
 
 completion_markers:
   success_pattern: "Total execution time:"
@@ -62,7 +67,6 @@ completion_markers:
 logging:
   log_dir: "logs"
   log_level: "INFO"
-  console_level: "INFO"
   max_file_size_mb: 10
   backup_count: 5
   tz_hours: 9
@@ -87,11 +91,15 @@ ptn_checker:
 ui:
   mode: "web"                        # Choose "web" (HTMX) or "terminal" (Rich UI)
   auto_start: true
-  port: 8501
   web:
     port: 8080                        # Port for web dashboard
     host: "0.0.0.0"                   # Interface to bind to
 
+retry_policy:
+  max_attempts: 3
+  initial_delay_seconds: 1
+  max_delay_seconds: 60
+  backoff_factor: 2.0
 
 tps_generator:
   validation:
@@ -103,7 +111,6 @@ tps_generator:
       - 'BeamNumbers'
       - 'GantryNum'
   default_paths:
-    base_directory: "/home/jokh38/MOQUI_SMC"
     interpreter_outputs_dir: "{paths.local.csv_output_dir}"
     outputs_dir: "{paths.local.simulation_output_dir}"
 

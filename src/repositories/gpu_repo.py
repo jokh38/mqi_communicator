@@ -1,4 +1,5 @@
 """Manages all CRUD operations for the 'gpu_resources' table."""
+import sqlite3
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -92,12 +93,12 @@ class GpuRepository(BaseRepository):
         try:
             with self.db.transaction() as conn:
                 conn.executemany(query, params_list)
-        except Exception as e:
+        except (KeyError, sqlite3.Error) as e:
             self.logger.error(
                 "Failed to bulk update GPU resources",
                 {"error": str(e), "gpu_count": len(gpu_data)},
             )
-            raise GpuResourceError(f"Failed to update GPU resources: {e}")
+            raise GpuResourceError(f"Failed to update GPU resources: {e}") from e
 
     def assign_gpu_to_case(self, gpu_uuid: str, case_id: str) -> None:
         """Assigns a GPU to a specific case.
@@ -229,98 +230,11 @@ class GpuRepository(BaseRepository):
 
                 return gpu_allocations
 
-        except Exception as e:
+        except sqlite3.Error as e:
             self.logger.error(
                 "Failed to allocate multiple GPUs", {"case_id": case_id, "num_gpus": num_gpus, "error": str(e)}
             )
-            raise GpuResourceError(f"Failed to allocate {num_gpus} GPUs for case {case_id}: {e}")
-
-    def find_and_lock_available_gpu(
-        self, case_id: str, min_memory_mb: Optional[int] = None
-    ) -> Optional[Dict[str, str]]:
-        """Atomically reserves one idle GPU with sufficient memory.
-
-        Args:
-            case_id (str): The case identifier requesting the GPU.
-            min_memory_mb (Optional[int]): The minimum required memory in MB. Overrides config if set.
-
-        Returns:
-            Optional[Dict[str, str]]: A dictionary with the gpu_uuid if successful, None otherwise.
-
-        Raises:
-            GpuResourceError: If the allocation fails.
-        """
-        if min_memory_mb is None:
-            gpu_config = self.settings.get_gpu_config()
-            min_memory_mb = gpu_config.get("min_memory_mb", 1000)
-
-        self._log_operation(
-            "find_and_lock_available_gpu", case_id, min_memory_mb=min_memory_mb
-        )
-
-        try:
-            with self.db.transaction() as conn:
-                query = """
-                    SELECT uuid, gpu_index, memory_free
-                    FROM gpu_resources
-                    WHERE status = ? AND memory_free >= ?
-                    ORDER BY memory_free DESC
-                    LIMIT 1
-                """
-
-                cursor = conn.execute(query, (GpuStatus.IDLE.value, min_memory_mb))
-                gpu_row = cursor.fetchone()
-
-                if not gpu_row:
-                    self.logger.warning(
-                        "No available GPU found",
-                        {"case_id": case_id, "min_memory_mb": min_memory_mb},
-                    )
-                    return None
-
-                gpu_uuid = gpu_row["uuid"]
-                gpu_index = gpu_row["gpu_index"]
-
-                update_query = """
-                    UPDATE gpu_resources
-                    SET status = ?, assigned_case = NULL,
-                        last_updated = CURRENT_TIMESTAMP
-                    WHERE uuid = ? AND status = ?
-                """
-
-                cursor = conn.execute(
-                    update_query,
-                    (
-                        GpuStatus.ASSIGNED.value,
-                        gpu_uuid,
-                        GpuStatus.IDLE.value,
-                    ),
-                )
-
-                if cursor.rowcount != 1:
-                    self.logger.warning(
-                        "GPU assignment race condition",
-                        {"gpu_uuid": gpu_uuid, "case_id": case_id},
-                    )
-                    return None
-
-                self.logger.info(
-                    "GPU allocated successfully",
-                    {
-                        "gpu_uuid": gpu_uuid,
-                        "gpu_id": gpu_index,
-                        "case_id": case_id,
-                        "memory_free": gpu_row["memory_free"],
-                    },
-                )
-
-                return {"gpu_uuid": gpu_uuid, "gpu_id": gpu_index}
-
-        except Exception as e:
-            self.logger.error(
-                "Failed to allocate GPU", {"case_id": case_id, "error": str(e)}
-            )
-            raise GpuResourceError(f"Failed to allocate GPU for case {case_id}: {e}")
+            raise GpuResourceError(f"Failed to allocate {num_gpus} GPUs for case {case_id}: {e}") from e
 
     def get_all_gpu_resources(self) -> List[GpuResource]:
         """Retrieves detailed information for all tracked GPU resources.
@@ -339,74 +253,28 @@ class GpuRepository(BaseRepository):
 
         rows = self._execute_query(query, fetch_all=True)
 
-        gpus = []
-        for row in rows:
-            gpus.append(
-                GpuResource(
-                    uuid=row["uuid"],
-                    gpu_index=row["gpu_index"],
-                    name=row["name"],
-                    memory_total=row["memory_total"],
-                    memory_used=row["memory_used"],
-                    memory_free=row["memory_free"],
-                    temperature=row["temperature"],
-                    utilization=row["utilization"],
-                    core_clock=row["core_clock"],
-                    has_live_compute=bool(row["has_live_compute"]),
-                    status=GpuStatus(row["status"]),
-                    assigned_case=row["assigned_case"],
-                    last_updated=(
-                        datetime.fromisoformat(row["last_updated"])
-                        if row["last_updated"]
-                        else None
-                    ),
-                )
-            )
+        return [self._map_row_to_gpu_resource(row) for row in rows]
 
-        return gpus
-
-    def get_gpu_by_uuid(self, uuid: str) -> Optional[GpuResource]:
-        """Get a specific GPU resource by its UUID.
-
-        Args:
-            uuid (str): The GPU UUID to retrieve.
-
-        Returns:
-            Optional[GpuResource]: A GpuResource object if found, None otherwise.
-        """
-        self._log_operation("get_gpu_by_uuid", uuid)
-
-        query = """
-            SELECT uuid, gpu_index, name, memory_total, memory_used, memory_free,
-                   temperature, utilization, core_clock, has_live_compute, status, assigned_case, last_updated
-            FROM gpu_resources
-            WHERE uuid = ?
-        """
-
-        row = self._execute_query(query, (uuid,), fetch_one=True)
-
-        if row:
-            return GpuResource(
-                uuid=row["uuid"],
-                gpu_index=row["gpu_index"],
-                name=row["name"],
-                memory_total=row["memory_total"],
-                memory_used=row["memory_used"],
-                memory_free=row["memory_free"],
-                temperature=row["temperature"],
-                utilization=row["utilization"],
-                core_clock=row["core_clock"],
-                has_live_compute=bool(row["has_live_compute"]),
-                status=GpuStatus(row["status"]),
-                assigned_case=row["assigned_case"],
-                last_updated=(
-                    datetime.fromisoformat(row["last_updated"])
-                    if row["last_updated"]
-                    else None
-                ),
-            )
-
-        return None
+    def _map_row_to_gpu_resource(self, row: Any) -> GpuResource:
+        return GpuResource(
+            uuid=row["uuid"],
+            gpu_index=row["gpu_index"],
+            name=row["name"],
+            memory_total=row["memory_total"],
+            memory_used=row["memory_used"],
+            memory_free=row["memory_free"],
+            temperature=row["temperature"],
+            utilization=row["utilization"],
+            core_clock=row["core_clock"],
+            has_live_compute=bool(row["has_live_compute"]),
+            status=GpuStatus(row["status"]),
+            assigned_case=row["assigned_case"],
+            last_updated=(
+                datetime.fromisoformat(row["last_updated"])
+                if row["last_updated"]
+                else None
+            ),
+        )
 
     def get_available_gpu_count(self) -> int:
         """Get the count of available (idle) GPUs.

@@ -4,7 +4,6 @@
 # =====================================================================================
 """Contains helper functions for formatting data for the UI."""
 
-from typing import Dict, Any
 from datetime import timedelta
 
 from rich.text import Text
@@ -128,32 +127,6 @@ def format_temperature(temp: int) -> Text:
     if temp > 85:
         color = "red"
     return Text(f"{temp}°C", style=color)
-
-
-def format_progress_bar(progress: float, width: int = 20) -> Text:
-    """Creates a text-based progress bar.
-
-    Args:
-        progress (float): The progress percentage (0-100).
-        width (int, optional): The width of the progress bar. Defaults to 20.
-
-    Returns:
-        Text: A `rich` Text object representing the progress bar.
-    """
-    if progress is None:
-        progress = 0.0
-    filled_width = int(progress / 100 * width)
-    bar = "█" * filled_width + "─" * (width - filled_width)
-    
-    color = "yellow"
-    if progress > 30:
-        color = "cyan"
-    if progress > 70:
-        color = "blue"
-    if progress == 100:
-        color = "green"
-        
-    return Text(f"[{bar}] {progress:.1f}%", style=color)
 
 
 def format_stage_display(

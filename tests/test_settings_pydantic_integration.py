@@ -46,10 +46,9 @@ class TestSettingsPydanticIntegration:
                 "backup_count": 5
             },
             "gpu": {
-                "enabled": True,
-                "memory_threshold_mb": 1000,
-                "utilization_threshold_percent": 80,
-                "polling_interval_seconds": 10
+                "gpu_monitor_command": "nvidia-smi",
+                "monitor_interval": 10,
+                "assignment_grace_period_seconds": 60,
             },
             "moqui_runtime": {
                 "multigpu_enabled": True,
@@ -64,11 +63,29 @@ class TestSettingsPydanticIntegration:
                 "size_poll_interval_seconds": 1
             },
             "ui": {
+                "mode": "web",
+                "auto_start": True,
                 "refresh_interval_seconds": 1,
-                "max_cases_display": 50
+                "max_cases_display": 50,
+                "web": {"port": 8080, "host": "0.0.0.0"},
+            },
+            "retry_policy": {
+                "max_attempts": 4,
+                "initial_delay_seconds": 2,
+                "max_delay_seconds": 30,
+                "backoff_factor": 1.5,
             },
             "paths": {
                 "base_directory": "/tmp/test"
+            },
+            "tps_generator": {
+                "validation": {
+                    "required_params": ["GPUID", "OutputDir"],
+                },
+                "default_paths": {
+                    "interpreter_outputs_dir": "{paths.local.csv_output_dir}",
+                    "outputs_dir": "{paths.local.simulation_output_dir}",
+                },
             },
             "ExecutionHandler": {
                 "CsvInterpreter": "local"
@@ -135,6 +152,41 @@ class TestSettingsPydanticIntegration:
         assert proc_config["max_retries"] == 3
         assert proc_config["max_workers"] == 4
 
+    def test_settings_preserves_yaml_alias_keys_for_runtime_callers(self, tmp_path):
+        """Validated config should expose operator YAML keys consumed by runtime code."""
+        config = {
+            "database": {
+                "synchronous_mode": "OFF",
+                "cache_size_mb": 128,
+            },
+            "processing": {
+                "max_case_retries": 7,
+            },
+            "logging": {
+                "log_level": "ERROR",
+            },
+            "paths": {
+                "base_directory": "/tmp/test",
+            },
+            "ExecutionHandler": {
+                "CsvInterpreter": "local",
+            },
+        }
+        config_path = tmp_path / "config.yaml"
+        with open(config_path, "w") as f:
+            yaml.dump(config, f)
+
+        settings = Settings(config_path=config_path)
+
+        db_config = settings.get_database_config()
+        processing_config = settings.get_processing_config()
+        logging_config = settings.get_logging_config()
+
+        assert db_config["synchronous_mode"] == "OFF"
+        assert db_config["cache_size_mb"] == 128
+        assert processing_config["max_case_retries"] == 7
+        assert logging_config["log_level"] == "ERROR"
+
     def test_settings_backward_compatible_get_moqui_runtime_config(self, valid_config_file):
         settings = Settings(config_path=valid_config_file)
 
@@ -163,6 +215,30 @@ class TestSettingsPydanticIntegration:
         assert isinstance(progress_config, dict)
         assert progress_config["polling_interval_seconds"] == 5
         assert "CSV_INTERPRETING" in progress_config["coarse_phase_progress"]
+
+    def test_settings_backward_compatible_get_retry_policy_config(self, valid_config_file):
+        """Test get_retry_policy_config() returns validated retry policy values."""
+        settings = Settings(config_path=valid_config_file)
+
+        retry_config = settings.get_retry_policy_config()
+
+        assert retry_config == {
+            "max_attempts": 4,
+            "initial_delay_seconds": 2,
+            "max_delay_seconds": 30,
+            "backoff_factor": 1.5,
+        }
+
+    def test_settings_public_tps_generator_config_preserves_validation_section(
+        self, valid_config_file
+    ):
+        """TPS generator callers should not need direct _yaml_config access."""
+        settings = Settings(config_path=valid_config_file)
+
+        tps_config = settings.get_tps_generator_config()
+
+        assert tps_config["validation"]["required_params"] == ["GPUID", "OutputDir"]
+        assert "base_directory" not in tps_config["default_paths"]
 
     def test_settings_uses_pydantic_defaults_for_missing_sections(self, tmp_path):
         """Test Settings uses Pydantic defaults when config sections are missing"""

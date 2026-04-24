@@ -10,6 +10,7 @@ and early error detection.
 """
 
 import re
+import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -91,11 +92,12 @@ class Settings:
                 if hasattr(self._logger, 'warning'):
                     self._logger.warning(message, context or None)
                     return
-            # Fallback: stdlib logging
+            # Settings is loaded before LoggerFactory is configured in several entry points,
+            # so the bootstrap fallback intentionally uses stdlib logging.
             logging.basicConfig(level=logging.INFO, force=False)
             logging.getLogger(__name__).warning(message)
         except Exception:
-            print(f"Warning: {message}")
+            sys.stderr.write(f"Warning: {message}\n")
 
     def _load_from_file(self, config_path: Path) -> None:
         """
@@ -173,7 +175,7 @@ class Settings:
             logging.basicConfig(level=logging.INFO, force=False)
             logging.getLogger(__name__).error(message)
         except Exception:
-            print(f"Error: {message}")
+            sys.stderr.write(f"Error: {message}\n")
 
 
     def get_handler_mode(self, handler_name: str) -> str:
@@ -302,7 +304,12 @@ class Settings:
         """
         if self._validated_config:
             # Return validated config as dict for backward compatibility
-            return self._validated_config.database.model_dump()
+            database_config = self._validated_config.database.model_dump()
+            database_config["synchronous_mode"] = database_config["synchronous"]
+            cache_size = database_config["cache_size"]
+            if cache_size >= 0:
+                database_config["cache_size_mb"] = cache_size
+            return database_config
         return self._yaml_config.get("database", {})
 
     def get_logging_config(self) -> Dict[str, Any]:
@@ -316,6 +323,7 @@ class Settings:
         """
         if self._validated_config:
             logging_config = self._validated_config.logging.model_dump()
+            logging_config["log_level"] = logging_config["level"]
         else:
             logging_config = self._yaml_config.get("logging", {}).copy()
 
@@ -335,7 +343,9 @@ class Settings:
             Dict[str, Any]: Processing configuration (backward compatible dict format)
         """
         if self._validated_config:
-            return self._validated_config.processing.model_dump()
+            processing_config = self._validated_config.processing.model_dump()
+            processing_config["max_case_retries"] = processing_config["max_retries"]
+            return processing_config
         return self._yaml_config.get("processing", {})
 
     def get_ui_config(self) -> Dict[str, Any]:
@@ -427,6 +437,12 @@ class Settings:
         """
         return self._yaml_config.get("tps_generator", {})
 
+    def get_retry_policy_config(self) -> Dict[str, Any]:
+        """Return validated retry policy configuration."""
+        if self._validated_config:
+            return self._validated_config.retry_policy.model_dump()
+        return self._yaml_config.get("retry_policy", {})
+
     def get_progress_tracking_config(self) -> Dict[str, Any]:
         """Returns progress tracking config with safe defaults.
 
@@ -464,20 +480,3 @@ class Settings:
             "success_pattern": "Simulation completed successfully",
             "failure_patterns": ["FATAL ERROR", "ERROR:", "Segmentation fault"]
         })
-
-    def resolve_path(self, path_key: str, handler_name: str, context: Dict[str, Any]) -> str:
-        """
-        Resolves a specific path with the given context.
-
-        Args:
-            path_key: The key of the path to resolve
-            handler_name: The handler name to determine execution mode
-            context: Dictionary containing placeholder values like case_id, beam_id, etc.
-
-        Returns:
-            str: The fully resolved path
-
-        Raises:
-            KeyError: If the path cannot be found or resolved
-        """
-        return self.get_path(path_key, handler_name, **context)

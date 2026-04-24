@@ -2,10 +2,9 @@
 Provides a handler for executing commands and transferring files locally.
 """
 
-import os
 import re
-import shutil
 import subprocess
+import time
 from pathlib import Path
 from typing import Any, NamedTuple, Optional
 
@@ -19,18 +18,6 @@ class ExecutionResult(NamedTuple):
     output: str
     error: str
     return_code: int
-
-
-class UploadResult(NamedTuple):
-    """Result from a file upload operation."""
-    success: bool
-    error: Optional[str] = None
-
-
-class DownloadResult(NamedTuple):
-    """Result from a file download operation."""
-    success: bool
-    error: Optional[str] = None
 
 
 class ExecutionHandler:
@@ -81,10 +68,6 @@ class ExecutionHandler:
         """
         Wait for job completion by monitoring a log file for completion markers and progress.
         """
-        import time
-        import re
-        from pathlib import Path
-
         # Get timeout and poll interval from settings if not provided
         if timeout is None:
             timeout = self.settings.get_processing_config().get("hpc_job_timeout_seconds", 3600)
@@ -152,8 +135,8 @@ class ExecutionHandler:
                                 if total_batches is not None:
                                     for match in current_batch_pattern.finditer(new_content):
                                         current_batch = int(match.group(1))
-                                        # Calculate simulation progress (30% to 90% range for HPC phase)
-                                        sim_progress = (current_batch / total_batches) * 60 + 30
+                                        # Calculate simulation progress (40% to 90% range for HPC phase)
+                                        sim_progress = (current_batch / total_batches) * 50 + 40
 
                                         # Only update if progress increased by at least 1%
                                         if case_repo and beam_id and (sim_progress - last_progress >= 1.0):
@@ -255,85 +238,6 @@ class ExecutionHandler:
                                    output=e.stdout,
                                    error=e.stderr,
                                    return_code=e.returncode)
-
-    def post_process(self, handler_name: str, **context: Any) -> ExecutionResult:
-        """
-        Runs a post-processing command obtained from Settings.
-        """
-        command = self.settings.get_command('post_process',
-                                            handler_name=handler_name,
-                                            **context)
-        cwd = context.get('cwd')
-        return self.execute_command(command, cwd=cwd)
-
-    def upload_file(self, local_path: str, dest_path: str) -> UploadResult:
-        """
-        Copies a file to the target path (local operation).
-        """
-        try:
-            target_dir = os.path.dirname(dest_path)
-            if target_dir:
-                os.makedirs(target_dir, exist_ok=True)
-            shutil.copy(local_path, dest_path)
-            return UploadResult(success=True)
-        except Exception as e:
-            self.logger.error("File copy failed", context={"error": str(e)})
-            return UploadResult(success=False, error=str(e))
-
-    def download_file(self, src_path: str, local_path: str) -> DownloadResult:
-        """
-        Copies a file from source to destination (local operation).
-        """
-        try:
-            local_dir = os.path.dirname(local_path)
-            if local_dir:
-                os.makedirs(local_dir, exist_ok=True)
-            shutil.copy(src_path, local_path)
-            return DownloadResult(success=True)
-        except Exception as e:
-            self.logger.error("File copy failed", context={"error": str(e)})
-            return DownloadResult(success=False, error=str(e))
-
-    def download_directory(self, src_dir: str, local_dir: str) -> DownloadResult:
-        """Copies a directory tree (local operation)."""
-        try:
-            local_dir_path = Path(local_dir)
-            local_dir_path.mkdir(parents=True, exist_ok=True)
-            shutil.copytree(src_dir, local_dir, dirs_exist_ok=True)
-            return DownloadResult(success=True)
-        except Exception as e:
-            self.logger.error("Directory copy failed", context={"error": str(e)})
-            return DownloadResult(success=False, error=str(e))
-
-    def cleanup(self, handler_name: str, **context: Any) -> ExecutionResult:
-        """
-        Runs a cleanup command (e.g., 'rm -rf') from Settings.
-        """
-        command = self.settings.get_command("cleanup",
-                                            handler_name=handler_name,
-                                            **context)
-        return self.execute_command(command)
-
-    def upload_to_pc_localdata(self, local_path: Path | str, case_id: str, settings: Optional[Settings] = None,
-                                handler_name: Optional[str] = None, **context: Any) -> UploadResult:
-        """
-        Upload results to PC_localdata by copying to ./localdata_uploads/{case_id}.
-        """
-        try:
-            base_dir = Path("./localdata_uploads") / case_id
-            base_dir.mkdir(parents=True, exist_ok=True)
-            src = Path(local_path)
-            if src.is_dir():
-                shutil.copytree(src, base_dir / src.name, dirs_exist_ok=True)
-            else:
-                shutil.copy(str(src), str(base_dir / src.name))
-            import logging
-            logging.getLogger(__name__).info(
-                f"Simulating upload by copying to local directory for case {case_id}")
-            return UploadResult(success=True)
-        except Exception as e:
-            return UploadResult(success=False, error=str(e))
-
 
     def __enter__(self):
         return self

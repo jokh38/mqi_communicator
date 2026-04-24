@@ -49,6 +49,16 @@ class TestDatabaseConfig:
         assert config.synchronous == "FULL"
         assert config.cache_size == -4000
 
+    def test_database_config_accepts_yaml_key_aliases(self):
+        """YAML keys should populate the validated fields operators actually edit."""
+        config = DatabaseConfig(
+            synchronous_mode="OFF",
+            cache_size_mb=64,
+        )
+
+        assert config.synchronous == "OFF"
+        assert config.cache_size == 64
+
     def test_database_config_validates_timeout_min(self):
         """Test DatabaseConfig rejects timeout below minimum"""
         with pytest.raises(ValidationError) as exc_info:
@@ -100,6 +110,12 @@ class TestProcessingConfig:
         assert config.max_retries == 5
         assert config.retry_delay_seconds == 10
         assert config.max_workers == 8
+
+    def test_processing_config_accepts_yaml_key_aliases(self):
+        """YAML max_case_retries should not be silently ignored."""
+        config = ProcessingConfig(max_case_retries=7)
+
+        assert config.max_retries == 7
 
     def test_processing_config_validates_max_retries(self):
         """Test ProcessingConfig rejects negative retries"""
@@ -193,6 +209,12 @@ class TestLoggingConfig:
         assert config.max_file_size_mb == 20
         assert config.backup_count == 10
 
+    def test_logging_config_accepts_yaml_key_aliases(self):
+        """YAML log_level should populate LoggingConfig.level."""
+        config = LoggingConfig(log_level="ERROR")
+
+        assert config.level == "ERROR"
+
     def test_logging_config_validates_level(self):
         """Test LoggingConfig rejects invalid log level"""
         with pytest.raises(ValidationError) as exc_info:
@@ -215,13 +237,9 @@ class TestGpuConfig:
         """Test GpuConfig uses sensible defaults"""
         config = GpuConfig()
 
-        assert config.enabled is True
         assert config.gpu_monitor_command is None
         assert config.monitor_interval == 60
         assert config.assignment_grace_period_seconds == 60
-        assert config.memory_threshold_mb == 1000
-        assert config.utilization_threshold_percent == 80
-        assert config.polling_interval_seconds == 10
 
     def test_gpu_config_with_monitor_command(self):
         """Test GpuConfig accepts gpu_monitor_command and monitor_interval from YAML"""
@@ -238,13 +256,6 @@ class TestGpuConfig:
         assert config.gpu_monitor_command == nvidia_cmd
         assert config.monitor_interval == 10
         assert config.assignment_grace_period_seconds == 90
-
-    def test_gpu_config_validates_thresholds(self):
-        """Test GpuConfig validates threshold values"""
-        with pytest.raises(ValidationError) as exc_info:
-            GpuConfig(utilization_threshold_percent=150)
-
-        assert "utilization_threshold_percent" in str(exc_info.value)
 
     def test_gpu_config_validates_monitor_interval(self):
         """Test GpuConfig rejects monitor_interval below minimum"""
@@ -360,7 +371,6 @@ class TestUIConfig:
         config = UIConfig()
 
         assert config.auto_start is False
-        assert config.port == 8501
         assert isinstance(config.web, WebConfig)
         assert config.web.enabled is False
         assert config.refresh_interval_seconds == 1
@@ -370,7 +380,6 @@ class TestUIConfig:
         """Test UIConfig accepts all fields present in config.yaml"""
         config = UIConfig(
             auto_start=True,
-            port=8501,
             web=WebConfig(
                 enabled=True,
                 port=8080,
