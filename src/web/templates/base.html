@@ -211,9 +211,9 @@
 
             const ageMs = Date.now() - lastSuccessfulRefreshAt.getTime();
 
-            if (ageMs >= 15000) {
+            if (ageMs >= 20000) {
                 setConnectionState('disconnected', `No successful refresh since ${formatTimestamp(lastSuccessfulRefreshAt)}.`);
-            } else if (ageMs >= 7000) {
+            } else if (ageMs >= 12000) {
                 setConnectionState('reconnecting', `Refresh is delayed. Last success at ${formatTimestamp(lastSuccessfulRefreshAt)}.`);
             } else if (connectionState !== 'connected') {
                 setConnectionState('connected');
