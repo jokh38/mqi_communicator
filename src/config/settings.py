@@ -9,6 +9,7 @@ Phase 4 Enhancement: Adds Pydantic-based configuration validation for type safet
 and early error detection.
 """
 
+import os
 import re
 import sys
 from pathlib import Path
@@ -19,6 +20,18 @@ import logging
 from pydantic import ValidationError
 
 from src.config.pydantic_models import AppConfig
+
+
+def _detect_project_root() -> str:
+    """Resolve the MOQUI_SMC project root.
+
+    Preference order: MOQUI_SMC_ROOT env var, then the directory three
+    levels above this file (mqi_communicator/src/config -> repo root).
+    """
+    env_root = os.environ.get("MOQUI_SMC_ROOT")
+    if env_root:
+        return str(Path(env_root).expanduser().resolve())
+    return str(Path(__file__).resolve().parents[3])
 
 
 class Settings:
@@ -99,6 +112,23 @@ class Settings:
         except Exception:
             sys.stderr.write(f"Warning: {message}\n")
 
+    def _resolve_base_directory(self) -> None:
+        """Populate paths.base_directory from env / script location if unset,
+        then expand {base_directory} in config values that are read without
+        going through get_path / get_executable template resolution.
+        """
+        paths = self._yaml_config.setdefault("paths", {})
+        configured = paths.get("base_directory")
+        if not configured or not str(configured).strip():
+            paths["base_directory"] = _detect_project_root()
+        base_dir = paths["base_directory"]
+
+        ptn = self._yaml_config.get("ptn_checker")
+        if isinstance(ptn, dict):
+            path_val = ptn.get("path")
+            if isinstance(path_val, str) and "{base_directory}" in path_val:
+                ptn["path"] = path_val.format(base_directory=base_dir)
+
     def _load_from_file(self, config_path: Path) -> None:
         """
         Loads the entire configuration from a YAML file into a dictionary.
@@ -107,6 +137,7 @@ class Settings:
             with open(config_path, 'r', encoding='utf-8') as f:
                 self._yaml_config = yaml.safe_load(f) or {}
             self.execution_handler = self._yaml_config.get("ExecutionHandler", {})
+            self._resolve_base_directory()
         except Exception as e:
             self._emit_warning(
                 f"Could not load or parse config file {config_path}: {e}",

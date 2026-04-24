@@ -1,79 +1,41 @@
 # Deployment Guide: Test Bed vs SMC Production
 
-This document describes the differences between the test bed environment (`jokh38`) and the SMC distributed production environment, and the configuration changes required when deploying to each.
+This document describes the differences between the test bed and the SMC
+distributed production environment, and the configuration changes required
+when deploying to each.
 
 ## Environments
 
-| | Test Bed (`jokh38`) | SMC Production |
+| | Test Bed | SMC Production |
 |---|---|---|
-| **Host** | `jokh38@T640` (local dev machine) | `/home/SMC` (distributed deployment) |
+| **Host** | developer workstation (e.g., T640) | distributed deployment host |
 | **Purpose** | Development, testing, debugging | Clinical operation |
 | **GPU** | 4x RTX 2080 (sm_75) | Same or equivalent |
-| **Base path** | `/home/jokh38/MOQUI_SMC` | `/home/SMC/MOQUI_SMC` |
+| **Base path** | wherever the repo is checked out | wherever the repo is checked out |
 
-## Configuration Changes
+## Base path resolution
 
-All environment-specific paths are in `config/config.yaml`. When switching between environments, update the following entries:
+`paths.base_directory` in `config/config.yaml` is resolved at runtime by
+`mqi_communicator/src/config/settings.py` using this order:
 
-### 1. `paths.base_directory`
+1. The value in `config/config.yaml` if non-empty.
+2. The `MOQUI_SMC_ROOT` environment variable.
+3. The directory three levels above `settings.py` — i.e., the repo root
+   that contains `mqi_communicator/`, `mqi_transfer/`, `moqui_SMC/`, etc.
 
-```yaml
-# Test bed
-paths:
-  base_directory: "/home/jokh38/MOQUI_SMC"
+You normally do **not** need to hardcode a path. Just check the repo out
+anywhere and run. All downstream `paths.local.*`, `executables.local.python`,
+and `ptn_checker.path` entries use `{base_directory}` interpolation, so they
+follow automatically.
 
-# SMC production
-paths:
-  base_directory: "/home/SMC/MOQUI_SMC"
-```
+If you need to override, either edit `paths.base_directory` in the YAML
+or export `MOQUI_SMC_ROOT` before launch.
 
-This is the root path. All other `paths.local.*` entries use `{base_directory}` interpolation, so changing this one value reconfigures the scan directory, output directories, database path, and all tool paths automatically.
+`mqi_transfer/Linux/mqi_transfer.py` uses the same two-level fallback
+(`MOQUI_SMC_ROOT` env var, or its own script location) to resolve the
+relative `output_root` in `app_config.ini`.
 
-### 2. `executables.local.python`
-
-```yaml
-# Test bed
-executables:
-  local:
-    python: "/home/jokh38/MOQUI_SMC/mqi_communicator/.venv/bin/python3"
-
-# SMC production
-executables:
-  local:
-    python: "/home/SMC/MOQUI_SMC/mqi_communicator/.venv/bin/python3"
-```
-
-Must point to the venv Python of the target environment.
-
-### 3. `ptn_checker.path`
-
-```yaml
-# Test bed
-ptn_checker:
-  path: "/home/jokh38/MOQUI_SMC/ptn_checker"
-
-# SMC production
-ptn_checker:
-  path: "/home/SMC/MOQUI_SMC/ptn_checker"
-```
-
-### 4. `tps_generator.default_paths.base_directory`
-
-```yaml
-# Test bed
-tps_generator:
-  default_paths:
-    base_directory: "/home/jokh38/MOQUI_SMC"
-
-# SMC production
-tps_generator:
-  default_paths:
-    base_directory: "/home/SMC/MOQUI_SMC"
-```
-
-## Known Issues on the Test Bed
-
-These issues have been encountered when running the system on `jokh38`. They may or may not apply to SMC.
+## Known Issues
 
 ### Corrupt `.pyc` Bytecode Files
 
@@ -138,11 +100,14 @@ cmake --build build/tps_env
 
 When deploying to SMC production:
 
-- [ ] Update all 4 path entries in `config/config.yaml` to `/home/SMC/MOQUI_SMC`
+- [ ] Check the repo out to the target path; no path edits needed in `config.yaml`.
+- [ ] Optionally export `MOQUI_SMC_ROOT` if the service runs with a non-standard layout.
 - [ ] Rebuild moqui_SMC binary (`cmake --build build/tps_env` from `moqui_SMC/`)
 - [ ] Install Python dependencies in `.venv` (`pip install -r requirements.txt`)
 - [ ] Pin `starlette<1.0` in the venv
 - [ ] Verify GPU visibility (`nvidia-smi`)
 - [ ] Verify scan directory exists and is populated
+- [ ] Substitute `@@MOQUI_USER@@` / `@@MOQUI_ROOT@@` in the `.service` files
+      before installing under `/etc/systemd/system/`.
 - [ ] Run `./start_all.sh` and confirm both `mqi_transfer` and `mqi_communicator` stay running
 - [ ] Access web dashboard at `http://<host>:8080/ui/workflow`

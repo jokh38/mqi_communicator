@@ -16,11 +16,11 @@ Result:
 - 15 failed, 14 passed
 
 Failure categories observed:
-- Repository path expectation mismatch: tests expect `/home/SMC/MOQUI_SMC/...`, local config resolves `/home/jokh38/MOQUI_SMC/...`.
-- Sandbox write restriction: `tests/test_kill_all_mqi_processes_script.py` attempts to write `/home/jokh38/MOQUI_SMC/mqi_transfer/Linux/app_config.ini`, outside this workspace writable root.
+- Repository path expectation mismatch: tests expect `/home/SMC/MOQUI_SMC/...`, local config resolves `<repo-root>/MOQUI_SMC/...`.
+- Sandbox write restriction: `tests/test_kill_all_mqi_processes_script.py` attempts to write `<repo-root>/MOQUI_SMC/mqi_transfer/Linux/app_config.ini`, outside this workspace writable root.
 - Existing process launch contract tests fail on missing `start_new_session` / `preexec_fn` kwargs.
 - Existing InitialState/progress pattern tests return `FailedState` instead of `SimulationState`.
-- Existing TPS generator test expects `/home/SMC/MOQUI_SMC/...` output path while local config emits `/home/jokh38/MOQUI_SMC/...`.
+- Existing TPS generator test expects `/home/SMC/MOQUI_SMC/...` output path while local config emits `<repo-root>/MOQUI_SMC/...`.
 
 Component validation for Phase 1 passed:
 `python -m pytest tests/test_pydantic_config.py tests/test_settings_pydantic_integration.py tests/test_database_connection.py tests/test_case_repo_atomic.py tests/test_dispatcher.py tests/test_execution_handler.py`
@@ -88,7 +88,7 @@ Observation:
 - Compile passed.
 - 46 tests passed and 2 failed.
 - `tests/test_worker.py::test_try_allocate_pending_beams_writes_grouped_room_tps_files` expected `tmp/csv_output/G1/case-1`, but the committed worker code already used `tmp/csv_output/G1/case-1/Log_csv`; the test expectation was stale and was corrected.
-- `tests/test_tps_generator.py::test_generate_tps_file_uses_beam_specific_output_dir` remains in the previously documented local path mismatch category: it expects `/home/SMC/MOQUI_SMC/...`, while this local environment resolves `/home/jokh38/MOQUI_SMC/...`.
+- `tests/test_tps_generator.py::test_generate_tps_file_uses_beam_specific_output_dir` remains in the previously documented local path mismatch category: it expects `/home/SMC/MOQUI_SMC/...`, while this local environment resolves `<repo-root>/MOQUI_SMC/...`.
 
 Follow-up component validation passed:
 `python -m compileall -q src tests && python -m pytest tests/test_dispatcher.py tests/test_worker.py tests/test_states.py tests/test_case_aggregator.py tests/test_fraction_grouper.py`

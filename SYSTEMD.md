@@ -17,6 +17,9 @@ When `mqi_communicator` is launched as a separate service, set `MQI_EXTERNAL_TRA
 
 Create `/etc/systemd/system/mqi-transfer.service`:
 
+Substitute `@@MOQUI_USER@@` and `@@MOQUI_ROOT@@` with the service user
+and the absolute path to your MOQUI_SMC checkout before installing.
+
 ```ini
 [Unit]
 Description=MQI Transfer receiver
@@ -25,19 +28,28 @@ After=network-online.target
 
 [Service]
 Type=simple
-User=jokh38
-Group=jokh38
-WorkingDirectory=/home/jokh38/MOQUI_SMC/mqi_transfer/Linux
-ExecStart=/usr/bin/python3 /home/jokh38/MOQUI_SMC/mqi_transfer/Linux/mqi_transfer.py
+User=@@MOQUI_USER@@
+Group=@@MOQUI_USER@@
+WorkingDirectory=@@MOQUI_ROOT@@/mqi_transfer/Linux
+ExecStart=/usr/bin/python3 @@MOQUI_ROOT@@/mqi_transfer/Linux/mqi_transfer.py
 Restart=on-failure
 RestartSec=3
 
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 NoNewPrivileges=true
+Environment=MOQUI_SMC_ROOT=@@MOQUI_ROOT@@
 
 [Install]
 WantedBy=multi-user.target
+```
+
+A one-shot install command:
+
+```bash
+sed -e "s|@@MOQUI_USER@@|$USER|g" \
+    -e "s|@@MOQUI_ROOT@@|$(cd "$(dirname "$0")/.." && pwd)|g" \
+    mqi-transfer.service | sudo tee /etc/systemd/system/mqi-transfer.service
 ```
 
 ## Why This Works
@@ -74,6 +86,6 @@ If the environment allows it, consider adding:
 - `ProtectSystem=strict`
 - `ProtectHome=true`
 - `PrivateTmp=true`
-- `ReadWritePaths=/home/jokh38/MOQUI_SMC/mqi_transfer/Linux`
+- `ReadWritePaths=@@MOQUI_ROOT@@/mqi_transfer/Linux`
 
 Add these only after confirming the log file and output paths still work.

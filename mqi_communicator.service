@@ -3,12 +3,20 @@ Description=MQI Communicator
 Wants=network-online.target mqi-transfer.service
 After=network-online.target mqi-transfer.service
 
+# Before installing, substitute the placeholders below:
+#   @@MOQUI_USER@@   - Linux user to run the service as
+#   @@MOQUI_ROOT@@   - Absolute path to the MOQUI_SMC repo root
+# Example:
+#   sed -e "s|@@MOQUI_USER@@|$USER|g" \
+#       -e "s|@@MOQUI_ROOT@@|$(pwd)|g" \
+#       mqi_communicator.service | sudo tee /etc/systemd/system/mqi_communicator.service
+
 [Service]
 Type=simple
-User=jokh38
-Group=jokh38
-WorkingDirectory=/home/jokh38/MOQUI_SMC/mqi_communicator
-ExecStart=/home/jokh38/MOQUI_SMC/mqi_communicator/.venv/bin/python3 /home/jokh38/MOQUI_SMC/mqi_communicator/main.py config/config.yaml
+User=@@MOQUI_USER@@
+Group=@@MOQUI_USER@@
+WorkingDirectory=@@MOQUI_ROOT@@/mqi_communicator
+ExecStart=@@MOQUI_ROOT@@/mqi_communicator/.venv/bin/python3 @@MOQUI_ROOT@@/mqi_communicator/main.py config/config.yaml
 Restart=on-failure
 RestartSec=5
 KillMode=control-group
@@ -16,6 +24,7 @@ KillSignal=SIGTERM
 TimeoutStopSec=30
 Environment=PYTHONUNBUFFERED=1
 Environment=MQI_EXTERNAL_TRANSFER_SERVICE=1
+Environment=MOQUI_SMC_ROOT=@@MOQUI_ROOT@@
 
 [Install]
 WantedBy=multi-user.target

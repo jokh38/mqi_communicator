@@ -7,7 +7,10 @@ ExecutionHandler:
   ResultUploader: "local"
 
 paths:
-  base_directory: "/home/jokh38/MOQUI_SMC"
+  # Leave empty to auto-detect at runtime (MOQUI_SMC_ROOT env var,
+  # or the repo root inferred from settings.py). Set an absolute path
+  # here to override.
+  base_directory: ""
   local:
     scan_directory: "{base_directory}/data/SHI_log"
     csv_output_dir: "{base_directory}/data/Output"
@@ -23,7 +26,7 @@ paths:
 
 executables:
   local:
-    python: "/home/jokh38/MOQUI_SMC/mqi_communicator/.venv/bin/python3"
+    python: "{base_directory}/mqi_communicator/.venv/bin/python3"
     mqi_interpreter_script: "{base_directory}/mqi_interpreter/main_cli.py"
     raw_to_dicom_script: "{base_directory}/RawToDCM/moqui_raw2dicom.py"
 
@@ -82,7 +85,7 @@ moqui_runtime:
   max_gpus_per_beam: 4
 
 ptn_checker:
-  path: "/home/jokh38/MOQUI_SMC/ptn_checker"
+  path: "{base_directory}/ptn_checker"
   output_subdir: "ptn_checker_output"
   stability_window_seconds: 30
   min_file_age_seconds: 5
