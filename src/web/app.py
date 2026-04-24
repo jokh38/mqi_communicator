@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
@@ -139,6 +139,11 @@ def create_app() -> FastAPI:
 
     app = FastAPI(title="MQI Communicator Dashboard")
     app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+
+    @app.get("/health")
+    async def health() -> Response:
+        """Lightweight liveness endpoint for the client-side connection monitor."""
+        return Response(content="", media_type="text/html")
 
     @app.get("/", response_class=HTMLResponse)
     async def root(request: Request) -> HTMLResponse:
